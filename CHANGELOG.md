@@ -19,7 +19,7 @@
 -- [utility] write javascript code that can be used to check balance for NFT ownership
 
 - add default uri for public "viewing"
-- ensure actual image is age gated
+- create single page w/ 18+ button for viewing to ensure actual image is age gated
 
 - test minting
 - test "butthole" uri uploads
@@ -27,6 +27,8 @@
 - add "starving artists" address fund / finish PaymentSplitPusher
 -- create / find modified paymentsplitter that pushes instead of waits for pulls
 
+- [writeup] steps for uploading / creating an nft
+- [writeup] steps for minting an nft 
 
 
 # Dev
@@ -35,14 +37,10 @@ yarn add @openzeppelin/contracts
 yarn add dotenv web3 truffle-hdwallet-provider
 yarn add -D chai chai-almost mocha nodemon truffle-assertions 
 
-
 # Links
 
 https://docs.openzeppelin.com/contracts/4.x/api/token/erc721
 https://www.linkedin.com/pulse/nfts-keys-web3-authentication-pseudonymous-economy-misch-strotz
-
-
-
 
 # Addresses
 
