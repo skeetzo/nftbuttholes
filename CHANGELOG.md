@@ -9,8 +9,16 @@
 ------------------------------------------------------------------------
 
 	- added PaymentSplitPusher
+	- added default uri for public "viewing"
+
+	- method for updating / uploading butthole pics
+
+	- add "starving artists" address fund / finish PaymentSplitPusher
+	-- create / find modified paymentsplitter that pushes instead of waits for pulls
 
 # TODO
+
+- update whitelisting access contracts
 
 - write PaymentSplitPusher
 - tests for PaymentSplitPusher
@@ -18,18 +26,12 @@
 - add VIP membership "utility"
 -- [utility] write javascript code that can be used to check balance for NFT ownership
 
-- add default uri for public "viewing"
 - create single page w/ 18+ button for viewing to ensure actual image is age gated
 
 - test minting
 - test "butthole" uri uploads
 
-- add "starving artists" address fund / finish PaymentSplitPusher
--- create / find modified paymentsplitter that pushes instead of waits for pulls
-
-- [writeup] steps for uploading / creating an nft
-- [writeup] steps for minting an nft 
-
+- [writeup] steps for minting / uploading / creating an nft
 
 # Dev
 

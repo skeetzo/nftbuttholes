@@ -3,7 +3,7 @@ pragma solidity >=0.4.22 <0.9.0;
 // pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721PresetMinterPauserAutoId.sol";
-import "./ERC2981/ERC2981PerTokenRoyalties.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol";
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -12,11 +12,21 @@ import "./ERC2981/ERC2981PerTokenRoyalties.sol";
  * @author Skeetzo
  * @dev Stupid (non-Solana) butthole nfts.
  */
-contract Buttholes is ERC721PresetMinterPauserAutoId, ERC2981PerTokenRoyalties {
+contract Buttholes is ERC721PresetMinterPauserAutoId, ERC721Royalty, WhitelistedRole {
 
+  // public image uri
   string public constant buttholeFlap;
-  mapping(uint256 => string) public buttholes;
+
+  // index of uris -??? i think i need to update this when i update whos allowed to upload their butthole
+  mapping(address => string) public buttholes;
+
+  // unique butthole owners
+  address[] buttholeOwners;
+
+  // number of butthole pics
   uint256 public buttholesCount;
+
+  // royalty fee - 2%
   uint256 public constant royaltyValue = 200;
 
   /**
@@ -24,8 +34,35 @@ contract Buttholes is ERC721PresetMinterPauserAutoId, ERC2981PerTokenRoyalties {
    */
   constructor(string memory defaultButthole, string memory buttFlap) ERC721PresetMinterPauserAutoId("Butthole", "BUTT", "") {
     buttholeFlap = buttFlap;
-    buttholes[0] = defaultButthole;
+    buttholeOwners.push(address(this));
+    buttholes[address(this)] = defaultButthole;
     buttholesCount = 1;
+  }
+
+  // Buttholes //
+
+  /**
+   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
+   *
+   * Requirements:
+   *
+   * - `tokenId` must exist.
+   */
+  function addButthole(string memory _tokenURI) public {
+    // TODO
+    // butthole owner must not already exist
+    // require(!_exists(_msgSender()), "Buttholes: URI add of preexisting account");
+
+    buttholes[_msgSender()] = _tokenURI;
+    buttholesCount+=1;
+    buttholeOwners.push(_msgSender());
+  }
+
+  /**
+   * @dev Feel special.
+   */
+  function VIP() public returns (uint) {
+    return 0;
   }
 
   // ERC721 //
@@ -43,24 +80,19 @@ contract Buttholes is ERC721PresetMinterPauserAutoId, ERC2981PerTokenRoyalties {
    * @dev Return a random uri.
    */
   function _getButthole() internal returns (string memory) {
-    return buttholes[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholes))) % buttholesCount];
+    return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholesCount];
   }
 
-  // /**
-  //  * @dev Override to disable transfers for all but the contract.
-  //  */
-  // function _transfer(address from, address to, uint256 tokenId) internal virtual {
-  //   require(to == address(this), "Buttholes: may only transfer to contract");
-  //   super._transfer(from, to, tokenId);
-  // }
-
-  // Buttholes //
-
   /**
-   * @dev Feel special.
+   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
+   *
+   * Requirements:
+   *
+   * - `tokenId` must exist.
    */
-  function VIP() public returns (uint) {
-    return 0;
+  function _setButtholeURI(string memory _tokenURI) public {
+    require(_exists(_msgSender()), "Buttholes: URI set of nonexistent account");
+    buttholes[_msgSender()] = _tokenURI;
   }
 
 }
