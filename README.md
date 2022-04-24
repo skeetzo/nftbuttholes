@@ -26,7 +26,7 @@ Trading:
 
 Operation:
 - no batch minting
-- random uri upon minting, like a gumball machine... for buttholes
+- random (enough) uri upon minting, like a gumball machine... but for buttholes
 
 ---
 
