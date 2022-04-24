@@ -14,10 +14,9 @@ import "./ERC2981/ERC2981PerTokenRoyalties.sol";
  */
 contract Buttholes is ERC721PresetMinterPauserAutoId, ERC2981PerTokenRoyalties {
 
-  uint256 public constant royaltyValue = 200;
-
   mapping(uint256 => string) public buttholes;
   uint256 public buttholesCount;
+  uint256 public constant royaltyValue = 200;
 
   /**
    * @dev Contract constructor. Sets metadata extension `name` and `symbol`.

@@ -19,7 +19,7 @@ contract("Buttholes", async (accounts) => {
         notOwner          = accounts[1],
         notOwner2         = accounts[2];
 
-  web3.eth.defaultAccount = notOwner;
+  web3.eth.defaultAccount = owner;
 
   let Buttholes;
 
@@ -35,7 +35,7 @@ contract("Buttholes", async (accounts) => {
     before(async () => {});
     
     it('can be minted', async () => {
-      let minting = await Buttholes.mint(notOwner);
+      let minting = await Buttholes.mint(notOwner, {'from':notOwner});
       truffleAssert.eventEmitted(minting, 'Transfer', (ev) => {
         console.log(ev["tokenId"]);
         assert.equal(ev["from"].toString(), blacklistedAccount, "does not mint from correct address");
@@ -57,15 +57,13 @@ contract("Buttholes", async (accounts) => {
     it('can be paused', async () => {
       await catchRevertPause(Buttholes.pause({'from':notOwner}));
       await Buttholes.pause();
-      let minting = await Buttholes.mint(notOwner);
-      // finish here
+      await catchRevertPausable(Buttholes.mint(notOwner, {'from':notOwner}));
     });
 
     it('can be unpaused', async () => {
       await catchRevertUnpause(Buttholes.unpause({'from':notOwner}));
       await Buttholes.unpause();
-      let minting = await Buttholes.mint(notOwner);
-      // finish here
+      await Buttholes.mint(notOwner, {'from':notOwner});
     });
     
     xit('can be traded', async () => {
@@ -77,7 +75,7 @@ contract("Buttholes", async (accounts) => {
       truffleAssert.eventEmitted(result, 'TransferSingle', (ev) => {return true;});
     });
 
-    it('can only be returned to contract', async () => {
+    xit('can only be returned to contract', async () => {
       await catchRevertTransfer(Buttholes.safeTransferFrom(notOwner, notOwner2, tokenId));
       let balanceBefore1 = await Buttholes.balanceOf(notOwner);
       let balanceBefore2 = await Buttholes.balanceOf(Buttholes.address);
