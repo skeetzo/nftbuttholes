@@ -14,6 +14,7 @@ import "./ERC2981/ERC2981PerTokenRoyalties.sol";
  */
 contract Buttholes is ERC721PresetMinterPauserAutoId, ERC2981PerTokenRoyalties {
 
+  string public constant buttholeFlap;
   mapping(uint256 => string) public buttholes;
   uint256 public buttholesCount;
   uint256 public constant royaltyValue = 200;
@@ -21,7 +22,8 @@ contract Buttholes is ERC721PresetMinterPauserAutoId, ERC2981PerTokenRoyalties {
   /**
    * @dev Contract constructor. Sets metadata extension `name` and `symbol`.
    */
-  constructor(string memory defaultButthole) ERC721PresetMinterPauserAutoId("Butthole", "BUTT", "") {
+  constructor(string memory defaultButthole, string memory buttFlap) ERC721PresetMinterPauserAutoId("Butthole", "BUTT", "") {
+    buttholeFlap = buttFlap;
     buttholes[0] = defaultButthole;
     buttholesCount = 1;
   }
