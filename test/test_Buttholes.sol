@@ -25,6 +25,11 @@ contract TestButtholes {
     Assert.isEqual(r, 1, "Buttholes#testBurn: should return correct amount for royalty");
   }
 
+  // TODO
+  // add test for 
+    // function _existingButthole(address butthole) internal view virtual returns (bool) {
+
+
   //////////////////////////////////////////////////////////////////////////////////////////
 
 }

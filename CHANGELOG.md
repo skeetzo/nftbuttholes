@@ -5,44 +5,52 @@
 	- "majority" of contract
 	- tests setup
 	**0.0.1 : 4/23/2022**
+	- added PaymentSplitPusher
+	- added default uri for public "viewing"
+	- PaymentSplitPusher skele
+	- tests for PaymentSplitPusher
+	**0.0.2 : 4/24/2022**
+	- added "starving artists" address fund / finished PaymentSplitPusher
+	-- created modified paymentsplitter that pushes instead of waits for pulls
+
 
 ------------------------------------------------------------------------
 
-	- added PaymentSplitPusher
-	- added default uri for public "viewing"
+- add paymentsplitpusher to buttholes royalties process
 
-	- method for updating / uploading butthole pics
+- test minting
+- test "butthole" uri uploads
+- test PaymentSplitPusher
 
-	- add "starving artists" address fund / finish PaymentSplitPusher
-	-- create / find modified paymentsplitter that pushes instead of waits for pulls
+- accessible method for updating / uploading butthole pics
+- accessible method for minting
 
-# TODO
-
-- update whitelisting access contracts
-
-- write PaymentSplitPusher
-- tests for PaymentSplitPusher
+- [writeup] steps for minting / uploading / creating an nft
 
 - add VIP membership "utility"
 -- [utility] write javascript code that can be used to check balance for NFT ownership
 
+# TODO
+
 - create single page w/ 18+ button for viewing to ensure actual image is age gated
 
-- test minting
-- test "butthole" uri uploads
-
-- [writeup] steps for minting / uploading / creating an nft
 
 # Dev
 
 yarn add @openzeppelin/contracts
 yarn add dotenv web3 truffle-hdwallet-provider
-yarn add -D chai chai-almost mocha nodemon truffle-assertions 
+yarn add -D chai chai-almost mocha nodemon truffle-assertions
+
+ganache-cli -m "cloud sting village source peace dinner dance fringe slice mandate lens upon"
 
 # Links
 
 https://docs.openzeppelin.com/contracts/4.x/api/token/erc721
 https://www.linkedin.com/pulse/nfts-keys-web3-authentication-pseudonymous-economy-misch-strotz
+https://www.quicknode.com/guides/web3-sdks/how-to-integrate-ipfs-with-ethereum
+
+http://docs.ipfs.io.ipns.localhost:8080/how-to/mint-nfts-with-ipfs/#minty
+https://github.com/yusefnapora/minty
 
 # Addresses
 
