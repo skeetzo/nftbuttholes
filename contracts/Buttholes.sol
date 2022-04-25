@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.4.22 <0.9.0;
-// pragma solidity ^0.8.0;
+pragma solidity ^0.8.0;
 
-// import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol";
@@ -144,7 +142,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   /**
    * @dev Return a random uri.
    */
-  function _getButtholeOwner() internal returns (string memory) {
+  function _getButtholeOwner() internal returns (address) {
     return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholesCount];
   }
 

@@ -12,28 +12,26 @@
 	**0.0.2 : 4/24/2022**
 	- added "starving artists" address fund / finished PaymentSplitPusher
 	-- created modified paymentsplitter that pushes instead of waits for pulls
-
+	- compiled contracts
 
 ------------------------------------------------------------------------
-
-- add paymentsplitpusher to buttholes royalties process
 
 - test minting
 - test "butthole" uri uploads
 - test PaymentSplitPusher
-
-- accessible method for updating / uploading butthole pics
-- accessible method for minting
-
-- [writeup] steps for minting / uploading / creating an nft
 
 - add VIP membership "utility"
 -- [utility] write javascript code that can be used to check balance for NFT ownership
 
 # TODO
 
-- create single page w/ 18+ button for viewing to ensure actual image is age gated
+- add paymentsplitpusher to buttholes royalties process
 
+- create single page w/ 18+ button for viewing to ensure actual image is age gated
+- [writeup] steps for minting / uploading / creating an nft
+
+- accessible method for updating / uploading butthole pics
+- accessible method for minting
 
 # Dev
 
@@ -60,7 +58,6 @@ Ukraine Government:
 https://www.actionagainsthunger.org/story/donate-crypto
 Action Against Hunger USA
 0xC7c3A15b7e5C1f121fE09064f6eCe9aBF87Bbd8c
-
 
 https://internationalmedicalcorps.org/get-involved/other-ways-to-give/donatebitcoin/
 International Medical Corps
