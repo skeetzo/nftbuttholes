@@ -23,20 +23,20 @@ contract("Buttholes", async (accounts) => {
 
   let Buttholes;
 
-  before(async () => {
+  before(async function () {
     Buttholes              = await Buttholes.deployed();
     Buttholes.numberFormat = 'BN';
   });
 
-  describe('ERC721', async () => {
+  describe('ERC721', async function () {
     
     let tokenId;
 
-    before(async () => {});
+    // before(async function () {});
     
-    it('can be minted', async () => {
-      let minting = await Buttholes.mint(notOwner, {'from':notOwner});
-      truffleAssert.eventEmitted(minting, 'Transfer', (ev) => {
+    it('can be minted', async function () {
+      let result = await Buttholes.mint(notOwner, {'from':notOwner});
+      truffleAssert.eventEmitted(result, 'Transfer', (ev) => {
         console.log(ev["tokenId"]);
         assert.equal(ev["from"].toString(), blacklistedAccount, "does not mint from correct address");
         assert.equal(ev["to"].toString(), notOwner, "does not mint to correct address");
@@ -46,7 +46,7 @@ contract("Buttholes", async (accounts) => {
       });
     });
     
-    it('can be burned', async () => {
+    it('can be burned', async function () {
       let balanceBefore = await Buttholes.balanceOf(notOwner);
       assert.equal(balanceBefore, 1, "does not prepare token for burn");
       await Buttholes.burn(tokenId, {'from':notOwner});
@@ -54,19 +54,19 @@ contract("Buttholes", async (accounts) => {
       assert.equal(balanceAfter, 0, "does not burn token");
     });
 
-    it('can be paused', async () => {
+    it('can be paused', async function () {
       await catchRevertPause(Buttholes.pause({'from':notOwner}));
       await Buttholes.pause();
       await catchRevertPausable(Buttholes.mint(notOwner, {'from':notOwner}));
     });
 
-    it('can be unpaused', async () => {
+    it('can be unpaused', async function () {
       await catchRevertUnpause(Buttholes.unpause({'from':notOwner}));
       await Buttholes.unpause();
       await Buttholes.mint(notOwner, {'from':notOwner});
     });
     
-    xit('can be traded', async () => {
+    it('can be traded', async function () {
       let balanceBefore1 = await Buttholes.balanceOf(notOwner);
       let balanceBefore2 = await Buttholes.balanceOf(notOwner2);
       let result = await Buttholes.safeTransferFrom(notOwner, notOwner2, tokenId);
@@ -74,21 +74,30 @@ contract("Buttholes", async (accounts) => {
       assert.equal(await Buttholes.balanceOf(notOwner2), balanceBefore2+1, "token does not transfer in");
       truffleAssert.eventEmitted(result, 'TransferSingle', (ev) => {return true;});
     });
-
-    xit('can only be returned to contract', async () => {
-      await catchRevertTransfer(Buttholes.safeTransferFrom(notOwner, notOwner2, tokenId));
-      let balanceBefore1 = await Buttholes.balanceOf(notOwner);
-      let balanceBefore2 = await Buttholes.balanceOf(Buttholes.address);
-      let result = await Buttholes.safeTransferFrom(notOwner, Buttholes.address, tokenId);
-      assert.equal(await Buttholes.balanceOf(notOwner), balanceBefore1-1, "token does not transfer out");
-      assert.equal(await Buttholes.balanceOf(Buttholes.address), balanceBefore2+1, "token does not transfer in");
-    });
     
-    it('can set token uri', async () => {
+    it('can set token uri', async function () {
       // check that token uri has been set
-      let correctURI = "";
-      let uri = await Buttholes.tokenURI(tokenId);
-      assert.equal(uri, correctURI, "does not set token uri");
+      let result = await Buttholes.setButtholeURI(tokenURI);
+      assert.notEqual(uri, "", "does not set token uri");
+    });
+
+    ////////////////////////////////////////////////////////////////////////////////////
+
+    it('can mint random buttholes', async function () {
+      let hash = await Buttholes.tokenURI(tokenId);
+      let notDifferent = true;
+      let i = 0,
+          failLimit = 10;
+      while (notDifferent&&i<failLimit) {
+        let result = await Buttholes.mint(notOwner, {'from':notOwner});
+        truffleAssert.eventEmitted(result, 'Transfer', (ev) => {
+          if (tokenId != ev["tokenId"])
+            notDifferent = false;
+          return true;
+        });
+        i++;
+      }
+      assert.notTrue(notDifferent, "does not mint random buttholes");
     });
 
   });

@@ -53,3 +53,106 @@ console.log(data)
 
 
 
+
+
+
+
+
+
+
+
+// http://docs.ipfs.io.ipns.localhost:8080/how-to/mint-nfts-with-ipfs/#how-minty-works
+
+async mintToken(ownerAddress, metadataURI) {
+  // The smart contract adds an ipfs:// prefix to all URIs, 
+  // so make sure to remove it so it doesn't get added twice
+  metadataURI = stripIpfsUriPrefix(metadataURI)
+
+  // Call the mintToken smart contract function to issue a new token
+  // to the given address. This returns a transaction object, but the 
+  // transaction hasn't been confirmed yet, so it doesn't have our token id.
+  const tx = await this.contract.mintToken(ownerAddress, metadataURI)
+
+  // The OpenZeppelin base ERC721 contract emits a Transfer event 
+  // when a token is issued. tx.wait() will wait until a block containing 
+  // our transaction has been mined and confirmed. The transaction receipt 
+  // contains events emitted while processing the transaction.
+  const receipt = await tx.wait()
+  for (const event of receipt.events) {
+    if (event.event !== 'Transfer') {
+        console.log('ignoring unknown event type ', event.event)
+        continue
+    }
+    return event.args.tokenId.toString()
+  }
+
+  throw new Error('unable to get token id')
+}
+
+
+
+async createNFTFromAssetData(content, options) {
+  // add the asset to IPFS
+  const filePath = options.path || 'asset.bin'
+  const basename =  path.basename(filePath)
+
+  // When you add an object to IPFS with a directory prefix in its path,
+  // IPFS will create a directory structure for you. This is nice, because
+  // it gives us URIs with descriptive filenames in them e.g.
+  // 'ipfs://bafybeihhii26gwp4w7b7w7d57nuuqeexau4pnnhrmckikaukjuei2dl3fq/cat-pic.png' vs
+  // 'ipfs://bafybeihhii26gwp4w7b7w7d57nuuqeexau4pnnhrmckikaukjuei2dl3fq'
+  const ipfsPath = '/nft/' + basename
+  const { cid: assetCid } = await this.ipfs.add({ path: ipfsPath, content })
+
+  // make the NFT metadata JSON
+  const assetURI = ensureIpfsUriPrefix(assetCid) + '/' + basename
+  const metadata = await this.makeNFTMetadata(assetURI, options)
+
+  // add the metadata to IPFS
+  const { cid: metadataCid } = await this.ipfs.add({ 
+    path: '/nft/metadata.json', 
+    content: JSON.stringify(metadata)
+  })
+  const metadataURI = ensureIpfsUriPrefix(metadataCid) + '/metadata.json'
+
+  // get the address of the token owner from options, 
+  // or use the default signing address if no owner is given
+  let ownerAddress = options.owner
+  if (!ownerAddress) {
+    ownerAddress = await this.defaultOwnerAddress()
+  }
+
+  // mint a new token referencing the metadata URI
+  const tokenId = await this.mintToken(ownerAddress, metadataURI)
+
+  // format and return the results
+  return {
+    tokenId,
+    metadata,
+    assetURI,
+    metadataURI,
+    assetGatewayURL: makeGatewayURL(assetURI),
+    metadataGatewayURL: makeGatewayURL(metadataURI),
+  }
+}
+
+
+
+
+
+
+async getNFTMetadata(tokenId) {
+  const metadataURI = await this.contract.tokenURI(tokenId)
+  const metadata = await this.getIPFSJSON(metadataURI)
+
+  return {metadata, metadataURI}
+}
+
+
+
+
+
+
+
+
+
