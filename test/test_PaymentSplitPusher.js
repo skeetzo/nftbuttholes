@@ -6,7 +6,7 @@ chai.use(chaiAlmost());
 const assert = require("chai").assert;
 const truffleAssert = require('truffle-assertions');
 
-const Exceptions = require("../src/web3/exceptions");
+const Exceptions = require("../js/exceptions.js");
 
 const PaymentSplitPusher = artifacts.require("./PaymentSplitPusher.sol");
 

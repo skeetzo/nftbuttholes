@@ -25,6 +25,9 @@
 
 # TODO
 
+- add 18+ confirm button for granting minter role
+
+
 - add paymentsplitpusher to buttholes royalties process
 
 - create single page w/ 18+ button for viewing to ensure actual image is age gated
