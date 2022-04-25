@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title Buttholes
@@ -13,19 +13,16 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  */
 contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMinterPauserAutoId {
 
-  // public image uri
-  string public buttholeFlap;
+  event PuckerUp(address addedButthole);
+  event PuckerDown(address removedButthole);
 
-  // index of uris -??? i think i need to update this when i update whos allowed to upload their butthole
+  // butthole hashes
   mapping(address => string) public buttholes;
-
+  // account quick mapping
+  mapping(address => bool)   public buttholeMap;
   // unique butthole owners
   address[] buttholeOwners;
-
-  // number of butthole pics
-  uint256 public buttholesCount;
-
-  // royalty fee - 2%
+  // royalty fee - 5%
   uint96 public constant royaltyValue = 200;
 
   /**
@@ -39,6 +36,9 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
 
   // ERC721 //
 
+  /**
+   * @dev 18+ confirm to enable minting.
+   */
   function addMinter() public {
     _setupRole(MINTER_ROLE, _msgSender());
   }
@@ -114,34 +114,37 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    *
    * Requirements:
    *
-   * - `newButthole` must not exist.
+   * - `newButthole` must not exist as a butthole.
    */
-  function addButthole(address newButthole, string memory _tokenURI) public onlyOwner {
-    // butthole owner must not already exist
-    require(!_existingButthole(newButthole), "Buttholes: URI add of preexisting account");
-    buttholes[newButthole] = _tokenURI;
-    buttholesCount+=1;
+  function addButthole(address newButthole) public onlyOwner {
+    require(!buttholeMap[_msgSender()], "Buttholes: account must not exist");
     buttholeOwners.push(newButthole);
+    buttholeMap[newButthole] = true;
+    emit PuckerUp(newButthole);
   }
 
-  function _existingButthole(address butthole) internal view virtual returns (bool) {
-    // https://ethereum.stackexchange.com/questions/11039/how-can-you-check-if-a-string-is-empty-in-solidity
-    // convert the string into a type bytes and then check its length
-    bytes memory tempEmptyStringTest = bytes(buttholes[butthole]); // Uses memory
-    if (tempEmptyStringTest.length == 0) {
-      // emptyStringTest is an empty string
-      return false;
-    } else {
-      // emptyStringTest is not an empty string
-      return true;
-    }
+  /**
+   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
+   *
+   * Requirements:
+   *
+   * - `_msgSender` must exist as a butthole.
+   */
+  function renounceButthole() public {
+    require(buttholeMap[_msgSender()], "Buttholes: account must exist");
+    // delete from array of owners
+    for (uint i=0;i<buttholeOwners.length;i++)
+      if (buttholeOwners[i] == _msgSender())
+        delete buttholeOwners[i];
+    buttholeMap[_msgSender()] = false;
+    emit PuckerDown(_msgSender());
   }
 
   /**
    * @dev Return a random uri.
    */
-  function _getButtholeOwner() internal returns (address) {
-    return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholesCount];
+  function _getButtholeOwner() internal view returns (address) {
+    return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholeOwners.length];
   }
 
   /**
@@ -152,15 +155,8 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    * - `tokenId` must exist.
    */
   function setButtholeURI(string memory _tokenURI) public {
-    require(_existingButthole(_msgSender()), "Buttholes: URI set of nonexistent account");
+    require(buttholeMap[_msgSender()], "Buttholes: URI set of nonexistent account");
     buttholes[_msgSender()] = _tokenURI;
-  }
-
-  /**
-   * @dev Feel special.
-   */
-  function VIP() public returns (uint) {
-    return 0;
   }
 
 }
