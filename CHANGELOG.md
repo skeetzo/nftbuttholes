@@ -9,32 +9,30 @@
 	- added default uri for public "viewing"
 	- PaymentSplitPusher skele
 	- tests for PaymentSplitPusher
+	- added VIP membership "utility"
+	-- [utility] write javascript code that can be used to check balance for NFT ownership
 	**0.0.2 : 4/24/2022**
 	- added "starving artists" address fund / finished PaymentSplitPusher
 	-- created modified paymentsplitter that pushes instead of waits for pulls
 	- compiled contracts
+	- added PaymentSplitPusher to Butthole's royalties process
+	**0.0.3 : 4/25/2022**
+	- test minting
+	- test "butthole" uri uploads
 
 ------------------------------------------------------------------------
 
-- test minting
-- test "butthole" uri uploads
 - test PaymentSplitPusher
 
-- add VIP membership "utility"
--- [utility] write javascript code that can be used to check balance for NFT ownership
+- test NFT "VIP" check code
 
 # TODO
 
-- add 18+ confirm button for granting minter role
-
-
-- add paymentsplitpusher to buttholes royalties process
-
-- create single page w/ 18+ button for viewing to ensure actual image is age gated
 - [writeup] steps for minting / uploading / creating an nft
-
-- accessible method for updating / uploading butthole pics
-- accessible method for minting
+- create single page w/ 18+ button for viewing to ensure actual image is age gated
+-- add 18+ confirm button for granting minter role
+-- accessible method for updating / uploading butthole pics
+-- accessible method for minting
 
 # Dev
 
