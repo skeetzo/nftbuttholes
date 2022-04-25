@@ -29,6 +29,8 @@ contract TestButtholes {
   // add test for 
     // function _existingButthole(address butthole) internal view virtual returns (bool) {
 
+  // TODO
+  // add other internal tests
 
   //////////////////////////////////////////////////////////////////////////////////////////
 

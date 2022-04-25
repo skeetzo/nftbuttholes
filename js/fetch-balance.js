@@ -1,9 +1,13 @@
 // https://docs.openzeppelin.com/contracts/4.x/api/token/erc721#IERC721Enumerable
 
-const testnet = "https://ropsten.infura.io/";
-const contractAddress = "";
+require('dotenv').config();
 
-const web3 = new Web3(new Web3.providers.HttpProvider(testnet));
+const provider = process.env.ETHEREUM_NODE;
+const contractAddress = process.env.BUTTHOLE_ADDRESS;
+
+// const abi = load from build artifact
+
+const web3 = new Web3(new Web3.providers.HttpProvider(provider));
 const buttholesContract = new web3.eth.Contract(abi);
 
 let balance = await buttholesContract.balanceOf(account)
