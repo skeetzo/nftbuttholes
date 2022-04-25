@@ -28,22 +28,20 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   // royalty fee - 2%
   uint96 public constant royaltyValue = 200;
 
-  address payable PaymentSplitPusher;
-
   /**
    * @dev Contract constructor. Sets metadata extension `name` and `symbol`.
    */
-  constructor(string memory butthole, string memory buttflap, string memory baseURI_, address payable paymentSplitPusher) ERC721PresetMinterPauserAutoId("Butthole", "BUTT", baseURI_) {
-    buttholeFlap = buttflap;
-    buttholeOwners.push(_msgSender());
-    buttholes[_msgSender()] = butthole;
-    buttholesCount += 1;
-    _setDefaultRoyalty(PaymentSplitPusher, royaltyValue);
+  constructor(string memory baseURI_, address payable paymentSplitPusher) ERC721PresetMinterPauserAutoId("Butthole", "BUTT", baseURI_) {
+    _setDefaultRoyalty(paymentSplitPusher, royaltyValue);
   }
 
   ////////////////////////////////////////////////////////////////////////////////////
 
   // ERC721 //
+
+  function addMinter() public {
+    _setupRole(MINTER_ROLE, _msgSender());
+  }
 
   /**
    * @dev Base URI for computing {tokenURI}. If set, the resulting URI for each
@@ -81,8 +79,8 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
     address _buttholeOwner = _getButtholeOwner();
     string memory _butthole = buttholes[_buttholeOwner];
     // _setTokenRoyalty(tokenId, _buttholeOwner, royaltyValue);
-    _setTokenURI(tokenId, _butthole);
     super._mint(to, tokenId);
+    _setTokenURI(tokenId, _butthole);
   }
 
   /**

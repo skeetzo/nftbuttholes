@@ -7,17 +7,20 @@ async function tryCatch(promise, message) {
     }
     catch (error) {
         assert(error, "Expected an error but did not get one");
-        assert(error.message.startsWith(PREFIX + message), "Expected an error starting with '" + PREFIX + message + "' but got '" + error.message + "' instead");
+        // assert(error.message.startsWith(PREFIX + message), "Expected an error starting with '" + PREFIX + message + "' but got '" + error.message + "' instead");
+        assert(error.message.includes(message), "Expected an error containing '" + message + "' but got '" + error.message + "' instead");
     }
 };
 
 module.exports = {
-    catchRevertPausable    : async function(promise) {await tryCatch(promise, "revert ERC721Pausable: token transfer while paused");},
-    catchRevertPause       : async function(promise) {await tryCatch(promise, "revert ERC721PresetMinterPauserAutoId: must have pauser role to pause");},
-    catchRevertUnpause     : async function(promise) {await tryCatch(promise, "revert ERC721PresetMinterPauserAutoId: must have pauser role to unpause");},
+    catchRevertPausable    : async function(promise) {await tryCatch(promise, "ERC721Pausable: token transfer while paused");},
+    catchRevertPause       : async function(promise) {await tryCatch(promise, "ERC721PresetMinterPauserAutoId: must have pauser role to pause");},
+    catchRevertUnpause     : async function(promise) {await tryCatch(promise, "ERC721PresetMinterPauserAutoId: must have pauser role to unpause");},
+    catchOwnable           : async function(promise) {await tryCatch(promise, "Ownable: caller is not the owner");},
+
     //
     catchRevert            : async function(promise) {await tryCatch(promise, "revert"             );},
-    catchOwnable           : async function(promise) {await tryCatch(promise, "revert Ownable: caller is not the owner");},
+    // catchOwnable           : async function(promise) {await tryCatch(promise, "revert Ownable: caller is not the owner");},
     catchOutOfGas          : async function(promise) {await tryCatch(promise, "out of gas"         );},
     catchInvalidJump       : async function(promise) {await tryCatch(promise, "invalid JUMP"       );},
     catchInvalidOpcode     : async function(promise) {await tryCatch(promise, "invalid opcode"     );},
