@@ -64,3 +64,33 @@ Action Against Hunger USA
 https://internationalmedicalcorps.org/get-involved/other-ways-to-give/donatebitcoin/
 International Medical Corps
 0x5F08845e53Ba171B7a782D0CdEA96Ab720426260
+
+
+
+
+
+
+# Scraps
+
+browserify buttholes.js -o bundle.js
+
+Consider making any images at a width between 320 and 1080 pixels and aspect ratio between 1.91:1 and 4:5 inclusive.
+
+350x350
+
+
+animation_url:    A URL to a multi-media attachment for the item. The file extensions GLTF, GLB, WEBM, MP4, M4V, OGV, and OGG are supported, along with the audio-only extensions MP3, WAV, and OGA.
+
+
+Date Traits
+
+OpenSea also supports a date display_type. Traits of this type will appear in the right column near "Rankings" and "Stats." Pass in a unix timestamp (seconds) as the value.
+
+    {
+      "display_type": "date", 
+      "trait_type": "birthday", 
+      "value": 1546360800
+    }
+
+
+
