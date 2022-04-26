@@ -22,6 +22,8 @@
 	- Butthole.sol tests complete
 	- tested PaymentSplitPusher
 
+- added fix for paymentsplitter royalties
+
 ------------------------------------------------------------------------
 
 
@@ -29,6 +31,7 @@
 --> figure out how metadata.json fits
 
 - ensure royalties are split to butthole artists before donors
+-- PaymentSplitPusher ? 
 
 
 
