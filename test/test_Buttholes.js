@@ -117,7 +117,7 @@ contract("Buttholes", async (accounts) => {
       let hash = await buttholes.tokenURI(tokenId);
       let notDifferent = true;
       let i = 0,
-          failLimit = 10;
+          failLimit = 100;
       while (notDifferent&&i<failLimit) {
         // console.log("minting...")
         let result = await buttholes.mint(notOwner, {'from':notOwner});

@@ -11,11 +11,11 @@ contract TestButtholes {
     Buttholes buttholes = Buttholes(DeployedAddresses.Buttholes());
   }
 
-  function testRoyaltyInfo() public {
+  // function testRoyaltyInfo() public {
 
-    Buttholes buttholes = new Buttholes("", "", "", payable(address(this)));
+    // Buttholes buttholes = new Buttholes("", payable(address(this)));
 
-    bool r;
+    // bool r;
     // We're basically calling our contract externally with a raw call, forwarding all available gas, with
     // msg.data equal to the throwing function selector that we want to be sure throws and using only the boolean
     // value associated with the message call's success
@@ -23,7 +23,7 @@ contract TestButtholes {
 
     // update with correct value for amount for royalty if it's not 1
     // Assert.isEqual(r, 1, "Buttholes#testRoyaltyInfo: should return correct amount for royalty");
-  }
+  // }
 
   // TODO
   // add test for 
