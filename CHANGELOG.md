@@ -25,6 +25,13 @@
 ------------------------------------------------------------------------
 
 
+- full implementation of ipfs & html
+--> figure out how metadata.json fits
+
+- ensure royalties are split to butthole artists before donors
+
+
+
 # TODO
 
 - write better tests for PaymentSplitPusher even though it totally already works fine
