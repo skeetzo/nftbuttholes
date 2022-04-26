@@ -1,0 +1,82 @@
+{
+    "name": "Buttholio",
+    "tokenId": 0,
+    "image": "ipfs://QmSjRzpmYG8dbgThEP2kYn5cXtwgmqZqid5JBLhBWx5Rvz",
+    "attributes": {
+    },
+    "properties": {
+        "artist": {
+            "type": "string",
+            "description": "[my ETH address]"
+        },
+        "description": {
+            "type": "string",
+            "description": "Brown Glaze"
+        },
+        "hole": {
+            "type": "string",
+            "description": "https://nft.skeetzo.com/QmSjRzpmYG8dbgThEP2kYn5cXtwgmqZqid5JBLhBWx5Rvz"
+        }
+    },
+    "background_color": "000000",
+    "animation_url": "",
+}
+
+
+
+
+
+...
+{
+"attributes": [
+    {
+      "trait_type": "Base", 
+      "value": "Starfish"
+    }, 
+    {
+      "trait_type": "Eyes", 
+      "value": "Big"
+    }, 
+    {
+      "trait_type": "Mouth", 
+      "value": "Surprised"
+    }, 
+    {
+      "trait_type": "Level", 
+      "value": 5
+    }, 
+    {
+      "trait_type": "Stamina", 
+      "value": 1.4
+    }, 
+    {
+      "trait_type": "Personality", 
+      "value": "Sad"
+    }, 
+    {
+      "display_type": "boost_number", 
+      "trait_type": "Aqua Power", 
+      "value": 40
+    }, 
+    {
+      "display_type": "boost_percentage", 
+      "trait_type": "Stamina Increase", 
+      "value": 10
+    }, 
+    {
+      "display_type": "number", 
+      "trait_type": "Generation", 
+      "value": 2
+    }
+  ]
+}
+
+// Here trait_type is the name of the trait, value is the value of the trait, and display_type is a field indicating how you would like it to be displayed. For string traits, you don't have to worry about display_type. 
+
+{
+      "display_type": "date", 
+      "trait_type": "birthday", 
+      "value": 1546360800
+    }
+
+    

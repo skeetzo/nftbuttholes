@@ -1,16 +1,20 @@
 {
+  "name": "NFTButtholes",
+  "version": "0.0.3",
+  "main": "index.html",
+  "author": "Skeetzo",
+  "license": "MIT",
+  "keywords": [
+    "nft",
+    "butthole"
+  ],
   "dependencies": {
     "@openzeppelin/contracts": "^4.5.0",
+    "browserify": "^17.0.0",
     "dotenv": "^16.0.0",
     "truffle-hdwallet-provider": "^1.0.17",
     "web3": "^1.7.3"
   },
-  "name": "NFT Buttholes",
-  "version": "0.0.3",
-  "main": "index.js",
-  "author": "Skeetzo",
-  "license": "MIT",
-  "keywords": ["nft","butthole"],
   "devDependencies": {
     "chai": "^4.3.6",
     "chai-almost": "^1.0.1",
