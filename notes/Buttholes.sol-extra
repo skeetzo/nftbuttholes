@@ -1,0 +1,17 @@
+
+  /**
+   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
+   *
+   * Requirements:
+   *
+   * - `_msgSender` must exist as a butthole.
+   */
+  function renounceButthole() public {
+    require(buttholeMap[_msgSender()], "Buttholes: account must exist");
+    // delete from array of owners
+    for (uint i=0;i<buttholeOwners.length;i++)
+      if (buttholeOwners[i] == _msgSender())
+        delete buttholeOwners[i];
+    buttholeMap[_msgSender()] = false;
+    emit PuckerDown(_msgSender());
+  }
