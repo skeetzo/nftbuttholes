@@ -3,8 +3,8 @@ const PaymentSplitPusher = artifacts.require("PaymentSplitPusher");
 
 module.exports = async function (deployer) {
   console.log("Deploying: PaymentSplitPusher")
-  let payees = [process.env.DEFAULT_OWNER];
-  let shares = [100];
+  let payees = [process.env.DEFAULT_OWNER, process.env.DONATION1_DEV, process.env.DONATION2_DEV, process.env.DONATION3_DEV];
+  let shares = [1,33,33,33];
   console.log("payees: %s\nshares: %s", payees, shares);
   await deployer.deploy(PaymentSplitPusher, payees, shares);
   const paymentSplitPusher = await PaymentSplitPusher.deployed();

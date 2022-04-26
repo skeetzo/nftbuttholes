@@ -13,13 +13,13 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol";
  */
 contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMinterPauserAutoId {
 
-  event PuckerUp(address addedButthole);
-  event PuckerDown(address removedButthole);
+  event PuckerUp(address addedButthole, string buttholeHash);
+  // event PuckerDown(address removedButthole);
 
   // butthole hashes
   mapping(address => string) public buttholes;
   // account quick mapping
-  mapping(address => bool)   public buttholeMap;
+  mapping(address => bool) public buttholeMap;
   // unique butthole owners
   address[] buttholeOwners;
   // royalty fee - 5%
@@ -76,11 +76,8 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    * @dev Set proper token data for minting.
    */
   function _mint(address to, uint256 tokenId) internal virtual override(ERC721) {
-    address _buttholeOwner = _getButtholeOwner();
-    string memory _butthole = buttholes[_buttholeOwner];
-    // _setTokenRoyalty(tokenId, _buttholeOwner, royaltyValue);
     super._mint(to, tokenId);
-    _setTokenURI(tokenId, _butthole);
+    _setTokenURI(tokenId, _getButthole());
   }
 
   /**
@@ -116,47 +113,19 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    *
    * - `newButthole` must not exist as a butthole.
    */
-  function addButthole(address newButthole) public onlyOwner {
-    require(!buttholeMap[_msgSender()], "Buttholes: account must not exist");
+  function addButthole(address newButthole, string memory _tokenURI) public onlyOwner {
+    require(!buttholeMap[newButthole], "Buttholes: account must not exist");
     buttholeOwners.push(newButthole);
     buttholeMap[newButthole] = true;
-    emit PuckerUp(newButthole);
-  }
-
-  /**
-   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
-   *
-   * Requirements:
-   *
-   * - `_msgSender` must exist as a butthole.
-   */
-  function renounceButthole() public {
-    require(buttholeMap[_msgSender()], "Buttholes: account must exist");
-    // delete from array of owners
-    for (uint i=0;i<buttholeOwners.length;i++)
-      if (buttholeOwners[i] == _msgSender())
-        delete buttholeOwners[i];
-    buttholeMap[_msgSender()] = false;
-    emit PuckerDown(_msgSender());
+    buttholes[newButthole] = _tokenURI;
+    emit PuckerUp(newButthole, _tokenURI);
   }
 
   /**
    * @dev Return a random uri.
    */
-  function _getButtholeOwner() internal view returns (address) {
-    return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholeOwners.length];
-  }
-
-  /**
-   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
-   *
-   * Requirements:
-   *
-   * - `tokenId` must exist.
-   */
-  function setButtholeURI(string memory _tokenURI) public {
-    require(buttholeMap[_msgSender()], "Buttholes: URI set of nonexistent account");
-    buttholes[_msgSender()] = _tokenURI;
+  function _getButthole() internal view returns (string memory) {
+    return buttholes[buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholeOwners.length]];
   }
 
 }

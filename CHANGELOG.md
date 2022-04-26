@@ -19,14 +19,15 @@
 	**0.0.3 : 4/25/2022**
 	- test minting
 	- test "butthole" uri uploads
+	- Butthole.sol tests complete
+	- tested PaymentSplitPusher
 
 ------------------------------------------------------------------------
 
-- test PaymentSplitPusher
-
-- test NFT "VIP" check code
 
 # TODO
+
+- write better tests for PaymentSplitPusher even though it totally already works fine
 
 - [writeup] steps for minting / uploading / creating an nft
 - create single page w/ 18+ button for viewing to ensure actual image is age gated

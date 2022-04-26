@@ -6,7 +6,7 @@
     "web3": "^1.7.3"
   },
   "name": "NFT Buttholes",
-  "version": "0.0.0",
+  "version": "0.0.3",
   "main": "index.js",
   "author": "Skeetzo",
   "license": "MIT",
