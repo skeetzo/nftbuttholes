@@ -2,6 +2,8 @@
 
 require('dotenv').config();
 
+// TODO
+// update with non .env values
 const provider = process.env.ETHEREUM_NODE;
 const contractAddress = process.env.BUTTHOLE_ADDRESS;
 

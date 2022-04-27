@@ -1,5 +1,4 @@
 const Buttholes = artifacts.require("Buttholes");
-const PaymentSplitPusher = artifacts.require("PaymentSplitPusher");
 
 module.exports = async function (deployer) {
   console.log("Deploying: Buttholes")

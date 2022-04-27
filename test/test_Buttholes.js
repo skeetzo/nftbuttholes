@@ -10,7 +10,9 @@ const Exceptions = require("../js/exceptions.js");
 const catchRevertPausable = Exceptions.catchRevertPausable,
       catchRevertPause = Exceptions.catchRevertPause,
       catchRevertUnpause = Exceptions.catchRevertUnpause,
-      catchOwnable = Exceptions.catchOwnable;
+      catchOwnable = Exceptions.catchOwnable,
+      catchRevertButthole = Exceptions.catchRevertButthole,
+      catchRevertMinter = Exceptions.catchRevertMinter;
 
 const Buttholes = artifacts.require("./Buttholes.sol");
 
@@ -18,7 +20,10 @@ contract("Buttholes", async (accounts) => {
 
   const owner             = accounts[0],
         notOwner          = accounts[1],
-        notOwner2         = accounts[2];
+        notOwner2         = accounts[2],
+        donor1            = accounts[3],
+        donor2            = accounts[4],
+        donor3            = accounts[5];
 
   web3.eth.defaultAccount = owner;
 
@@ -60,9 +65,8 @@ contract("Buttholes", async (accounts) => {
     ////////////////////////////////////////////////////////////////////////////////////
     
     it('can be minted', async () => {
-      // TODO
-      // add catch check for non minters
-      //
+      // TODO - fix
+      // await catchRevertMinter(buttholes.mint(notOwner2, {'from':notOwner2}));
       let result = await buttholes.mint(owner);
       truffleAssert.eventEmitted(result, 'Transfer', (ev) => {
         assert.equal(ev["to"].toString(), owner, "does not mint to correct address");
@@ -139,8 +143,9 @@ contract("Buttholes", async (accounts) => {
     });
 
     it('can properly create cheek spreaders', async () => {
-
-
+      let result = await buttholes.createCheekSpreader(donor1, donor2, donor3);
+      await catchRevertButthole(buttholes.createCheekSpreader(donor1, donor2, donor3, {'from':notOwner2}));
+      assert.equal(true, true);
     });
 
     ////////////////////////////////////////////////////////////////////////////////////
@@ -151,6 +156,10 @@ contract("Buttholes", async (accounts) => {
       await buttholes.burn(tokenId);
       let balanceAfter = parseInt((await buttholes.balanceOf(owner)).toString());
       assert.equal(balanceAfter, balanceBefore-1, "does not burn token");
+    });
+
+    xit('can be renounced', async () => {
+
     });
 
   });

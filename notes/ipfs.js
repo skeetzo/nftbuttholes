@@ -151,6 +151,10 @@ async getNFTMetadata(tokenId) {
 
 
 
+okay so i want to create a metadata.json file for each butthole pic and upload it for ipfs
+then the ipfs hash of the metadata.json file (which also contains the image uri and whatnot in it) is set to be the butthole hash uri in the contract
+so that whenever it is fetched, it returns the metadata.json file which provides the butthole.jpeg and buttholeflap.jpegs
+
 
 
 
