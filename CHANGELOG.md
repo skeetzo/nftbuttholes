@@ -29,6 +29,8 @@
 	- renamed PaymentSplitPusher to CheekSpreader... cause duh
 	- created single page w/ 18+ button for viewing to ensure actual images are age gated; requires confirming via adding minter role
 	- continued write up for project "explainer"
+	**0.0.5 : 4/27/2022**
+	- finished tests for Buttholes.sol (again)
 
 ------------------------------------------------------------------------
 
@@ -36,6 +38,10 @@
 - test new cheekspreader interaction w/ royalties
 
 # TODO
+
+- finish ipfs metadata functions
+
+- add test for renouncing butthole
 
 - finish `add-butthole.js` script in js/
 

@@ -13,9 +13,11 @@ async function tryCatch(promise, message) {
 };
 
 module.exports = {
+    catchRevertButthole    : async function(promise) {await tryCatch(promise, "Buttholes: caller must be a butthole");},
     catchRevertPausable    : async function(promise) {await tryCatch(promise, "ERC721Pausable: token transfer while paused");},
     catchRevertPause       : async function(promise) {await tryCatch(promise, "ERC721PresetMinterPauserAutoId: must have pauser role to pause");},
     catchRevertUnpause     : async function(promise) {await tryCatch(promise, "ERC721PresetMinterPauserAutoId: must have pauser role to unpause");},
+    catchRevertMinter      : async function(promise) {await tryCatch(promise, "ERC721PresetMinterPauserAutoId: must have minter role to mint");},
     catchOwnable           : async function(promise) {await tryCatch(promise, "Ownable: caller is not the owner");},
 
     //

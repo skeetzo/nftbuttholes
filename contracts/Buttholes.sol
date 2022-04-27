@@ -16,6 +16,7 @@ import "./CheekSpreader.sol";
 contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMinterPauserAutoId {
 
   event PuckerUp(address addedButthole, string buttholeHash);
+  event PuckerDown(address addedButthole);
 
   // butthole hashes
   mapping(address => string) public buttholes;
@@ -89,13 +90,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   /**
    * @dev See {IERC165-supportsInterface}.
    */
-  function supportsInterface(bytes4 interfaceId)
-    public
-    view
-    virtual
-    override(ERC721, ERC721Royalty, ERC721PresetMinterPauserAutoId)
-    returns (bool)
-  {
+  function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, ERC721Royalty, ERC721PresetMinterPauserAutoId) returns (bool) {
     return super.supportsInterface(interfaceId);
   }
 
@@ -152,6 +147,23 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    */
   function _getButthole() internal view returns (address) {
     return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholeOwners.length];
+  }
+
+  /**
+   * @dev Renounce ownership of your own butthole.
+   *
+   * Requirements:
+   *
+   * - `_msgSender` must exist as a butthole.
+   */
+  function renounceButthole() public {
+    require(buttholeMap[_msgSender()], "Buttholes: caller must be a butthole");
+    // delete from array of owners
+    for (uint i=0;i<buttholeOwners.length;i++)
+      if (buttholeOwners[i] == _msgSender())
+        delete buttholeOwners[i];
+    buttholeMap[_msgSender()] = false;
+    emit PuckerDown(_msgSender());
   }
 
 }
