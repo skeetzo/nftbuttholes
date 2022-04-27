@@ -18,13 +18,6 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
 
   event PuckerUp(address addedButthole, string buttholeHash);
 
-  // Ukraine Government
-  address public constant DONOR1 = address(0x165CD37b4C644C2921454429E7F9358d18A45e14);
-  // Action Against Hunger USA
-  address public constant DONOR2 = address(0xC7c3A15b7e5C1f121fE09064f6eCe9aBF87Bbd8c);
-  // International Medical Corps
-  address public constant DONOR3 = address(0x5F08845e53Ba171B7a782D0CdEA96Ab720426260);
-
   // butthole hashes
   mapping(address => string) public buttholes;
   // account quick mapping
@@ -39,9 +32,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   /**
    * @dev Contract constructor. Sets metadata extension `name` and `symbol`.
    */
-  constructor(string memory baseURI_, address payable paymentSplitPusher) ERC721PresetMinterPauserAutoId("Butthole", "BUTT", baseURI_) {
-    _setDefaultRoyalty(paymentSplitPusher, royaltyValue);
-  }
+  constructor(string memory baseURI_) ERC721PresetMinterPauserAutoId("Butthole", "BUTT", baseURI_) {}
 
   ////////////////////////////////////////////////////////////////////////////////////
 
@@ -146,11 +137,21 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   }
 
   function _createPaymentSplitPusher(address newButthole) internal returns (address) {
+
+
+
+
     address[] memory payees = new address[](4);
     payees[0] = newButthole;
     payees[1] = DONOR1;
     payees[2] = DONOR2;
     payees[3] = DONOR3;
+
+
+
+
+
+
     uint256[] memory shares = new uint256[](4);
     shares[0] = 91;
     shares[1] = 3;

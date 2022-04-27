@@ -26,13 +26,12 @@
 
 ------------------------------------------------------------------------
 
+- ensure royalties are split to butthole artists before / with donors
+-- updated PaymentSplitPusher interaction
+-- test new paymentsplitpusher interaction w/ royalties
 
 - full implementation of ipfs & html
 --> figure out how metadata.json fits
-
-- ensure royalties are split to butthole artists before donors
--- PaymentSplitPusher ? 
-
 
 
 # TODO
@@ -82,7 +81,8 @@ International Medical Corps
 
 # Scraps
 
-browserify buttholes.js -o bundle.js
+browserify main.js -o bundle.js
+
 
 Consider making any images at a width between 320 and 1080 pixels and aspect ratio between 1.91:1 and 4:5 inclusive.
 
@@ -90,7 +90,6 @@ Consider making any images at a width between 320 and 1080 pixels and aspect rat
 
 
 animation_url:    A URL to a multi-media attachment for the item. The file extensions GLTF, GLB, WEBM, MP4, M4V, OGV, and OGG are supported, along with the audio-only extensions MP3, WAV, and OGA.
-
 
 Date Traits
 
@@ -104,3 +103,10 @@ OpenSea also supports a date display_type. Traits of this type will appear in th
 
 
 
+`wget -q -O - http://url.tld | ipfs add -q` -> returns CID hash of file
+
+ipfs add /file/path
+ipfs files cp /ipfs/<ipfs-CID> /dst/path/
+
+
+	https://browserify.org/images/wizard.png

@@ -7,7 +7,7 @@ html
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Buttholes</title>
     <style>
-      #btn {
+      .button {
           position: absolute;
           top: 50%;
           left: 50%;
@@ -29,12 +29,9 @@ html
     <div>Contract Address:</div>
     <hr>
     <button id="eighteen">Confirm 18+</button>
-    
-    <!-- enable only for correct owner / address -->
-    <!-- <button id="view">Add Butthole</button> -->
-
-    <button id="mint">Mint Butthole</button>
-    <button id="view">View Buttholes</button>
+    <button hidden id="add">Add Butthole</button>
+    <button disabled id="mint">Mint Butthole</button>
+    <button disabled id="view">View Buttholes</button>
     <script src="bundle.js"></script>
   </body>
 </html>
