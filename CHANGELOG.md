@@ -21,28 +21,32 @@
 	- test "butthole" uri uploads
 	- Butthole.sol tests complete
 	- tested PaymentSplitPusher
-
-- added fix for paymentsplitter royalties
+	- began writeup for NFT steps
+	**0.0.4 : 4/26/2022**
+	- updated PaymentSplitPusher interaction to ensure royalties are split to butthole artists before / with donors
+	- added fix for paymentsplitter royalties
+	- added main.js for bundling
+	- renamed PaymentSplitPusher to CheekSpreader... cause duh
+	- created single page w/ 18+ button for viewing to ensure actual images are age gated; requires confirming via adding minter role
+	- continued write up for project "explainer"
 
 ------------------------------------------------------------------------
 
-- ensure royalties are split to butthole artists before / with donors
--- updated PaymentSplitPusher interaction
--- test new paymentsplitpusher interaction w/ royalties
+- test main.js & contract interface buttons
+- test new cheekspreader interaction w/ royalties
+
+# TODO
+
+- finish `add-butthole.js` script in js/
 
 - full implementation of ipfs & html
 --> figure out how metadata.json fits
 
-
-# TODO
-
-- write better tests for PaymentSplitPusher even though it totally already works fine
-
 - [writeup] steps for minting / uploading / creating an nft
-- create single page w/ 18+ button for viewing to ensure actual image is age gated
--- add 18+ confirm button for granting minter role
 -- accessible method for updating / uploading butthole pics
 -- accessible method for minting
+
+- write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
 
 # Dev
 
@@ -74,11 +78,6 @@ https://internationalmedicalcorps.org/get-involved/other-ways-to-give/donatebitc
 International Medical Corps
 0x5F08845e53Ba171B7a782D0CdEA96Ab720426260
 
-
-
-
-
-
 # Scraps
 
 browserify main.js -o bundle.js
@@ -101,12 +100,3 @@ OpenSea also supports a date display_type. Traits of this type will appear in th
       "value": 1546360800
     }
 
-
-
-`wget -q -O - http://url.tld | ipfs add -q` -> returns CID hash of file
-
-ipfs add /file/path
-ipfs files cp /ipfs/<ipfs-CID> /dst/path/
-
-
-	https://browserify.org/images/wizard.png

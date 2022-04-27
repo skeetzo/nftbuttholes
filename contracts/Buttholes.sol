@@ -6,8 +6,7 @@ import "@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAut
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol";
 //
-import "./PaymentSplitPusher.sol";
-
+import "./CheekSpreader.sol";
 
 /**
  * @title Buttholes
@@ -25,7 +24,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   // unique butthole owners
   address[] buttholeOwners;
   // paymentsplitters
-  mapping(address => address) paymentSplitPushers;
+  mapping(address => address) CheekSpreaders;
   // royalty fee - 5%
   uint96 public constant royaltyValue = 200;
 
@@ -84,7 +83,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
     // set token uri to be butthole uri of random owner
     _setTokenURI(tokenId, buttholes[buttholeOwner]);
     // set royalty for token id and butthole owner's splitter contract
-    _setTokenRoyalty(tokenId, paymentSplitPushers[buttholeOwner], royaltyValue);
+    _setTokenRoyalty(tokenId, CheekSpreaders[buttholeOwner], royaltyValue);
   }
 
   /**
@@ -125,8 +124,27 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
     buttholeMap[newButthole] = true;
     buttholeOwners.push(newButthole);
     buttholes[newButthole] = _tokenURI;
-    paymentSplitPushers[newButthole] = _createPaymentSplitPusher(newButthole);
+    CheekSpreaders[newButthole] = newButthole;
     emit PuckerUp(newButthole, _tokenURI);
+  }
+
+  /**
+   * @dev Create a new CheekSpreader contract for handling royalty payments..
+   */
+  function createCheekSpreader(address donor1, address donor2, address donor3) public {
+    require(buttholeMap[_msgSender()], "Buttholes: caller must be a butthole");
+    address[] memory payees = new address[](4);
+    payees[0] = _msgSender();
+    payees[1] = donor1;
+    payees[2] = donor2;
+    payees[3] = donor3;
+    uint256[] memory shares = new uint256[](4);
+    shares[0] = 91;
+    shares[1] = 3;
+    shares[2] = 3;
+    shares[3] = 3;
+    CheekSpreader c = new CheekSpreader(payees, shares);
+    CheekSpreaders[_msgSender()] = address(c);
   }
 
   /**
@@ -134,31 +152,6 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    */
   function _getButthole() internal view returns (address) {
     return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholeOwners.length];
-  }
-
-  function _createPaymentSplitPusher(address newButthole) internal returns (address) {
-
-
-
-
-    address[] memory payees = new address[](4);
-    payees[0] = newButthole;
-    payees[1] = DONOR1;
-    payees[2] = DONOR2;
-    payees[3] = DONOR3;
-
-
-
-
-
-
-    uint256[] memory shares = new uint256[](4);
-    shares[0] = 91;
-    shares[1] = 3;
-    shares[2] = 3;
-    shares[3] = 3;
-    PaymentSplitPusher p = new PaymentSplitPusher(payees, shares);
-    return address(p);
   }
 
 }

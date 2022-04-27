@@ -36,7 +36,6 @@ contract("Buttholes", async (accounts) => {
         tokenURI2 = "hashhash";
 
     before(async () => {
-      // grant mint role to notOwner
       await buttholes.addMinter({'from':notOwner});
     });
 
@@ -61,6 +60,9 @@ contract("Buttholes", async (accounts) => {
     ////////////////////////////////////////////////////////////////////////////////////
     
     it('can be minted', async () => {
+      // TODO
+      // add catch check for non minters
+      //
       let result = await buttholes.mint(owner);
       truffleAssert.eventEmitted(result, 'Transfer', (ev) => {
         assert.equal(ev["to"].toString(), owner, "does not mint to correct address");
@@ -136,7 +138,7 @@ contract("Buttholes", async (accounts) => {
       assert.equal(notDifferent, false, "does not mint random buttholes");
     });
 
-    it('can properly create payment contracts', async () => {
+    it('can properly create cheek spreaders', async () => {
 
 
     });
