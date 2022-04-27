@@ -37,14 +37,14 @@ Operation:
 ### Checklist:
 
 | Development | Staging | Production |  
-[-][][] buttholes contract for nfts  
-[-][][] paymentsplitpusher contract for "starving artists"  
-[-][][] ipfs uri format & default butthole  
-[-][][] nfts do nft stuff  
-[-][][] payments do payment stuff safely and correctly  
-[-][][] random "enough"  
-[-][][] balance checks / "VIP" benefits  
-[-][][] images behind proper age checks  
+[-][ ][ ] buttholes contract for nfts  
+[-][ ][ ] paymentsplitpusher contract for "starving artists"  
+[-][ ][ ] ipfs uri format & default butthole  
+[-][ ][ ] nfts do nft stuff  
+[-][ ][ ] payments do payment stuff safely and correctly  
+[-][ ][ ] random "enough"  
+[-][ ][ ] balance checks / "VIP" benefits  
+[-][ ][ ] images behind proper age checks  
 
 Release:  
 \[:white_large_square:\] butthole NFTs  
