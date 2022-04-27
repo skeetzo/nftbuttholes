@@ -40,6 +40,8 @@ contract("Buttholes", async (accounts) => {
       await buttholes.addMinter({'from':notOwner});
     });
 
+    ////////////////////////////////////////////////////////////////////////////////////
+
     it('can add buttholes', async () => {
       let result = await buttholes.addButthole(owner, tokenURI);
       truffleAssert.eventEmitted(result, 'PuckerUp', (ev) => {
@@ -132,6 +134,11 @@ contract("Buttholes", async (accounts) => {
         });
       }
       assert.equal(notDifferent, false, "does not mint random buttholes");
+    });
+
+    it('can properly create payment contracts', async () => {
+
+
     });
 
     ////////////////////////////////////////////////////////////////////////////////////
