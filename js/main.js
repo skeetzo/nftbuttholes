@@ -1,18 +1,23 @@
 require('dotenv').config();
 
-var ethers = require('ethers');
-var url = "127.0.0.1";
+////////////
+
+let account = null;
+const defaultURI = process.env.BASE_URI;
+
+////////////
+
+const { ethers } = require("ethers");
+// var url = "127.0.0.1";
 // var url = "skeetzo.com"
-var provider = new ethers.providers.JsonRpcProvider(url);
+// const provider = new ethers.providers.JsonRpcProvider(url);
+const provider = new ethers.providers.Web3Provider(window.ethereum)
+// const signer = provider.getSigner()
 console.debug("-- connected to Ethereum node ---");
 
 ////////////////////////////////////////////////////////////////////////////////////
 
-let account = ?
-
-////////////////////////////////////////////////////////////////////////////////////
-
-// Load Contract //
+// Contract //
 
 const ButtholesInterface = require('../build/Buttholes.json');
 const abi = ButtholesInterface.abi;
@@ -23,9 +28,19 @@ const address = ButtholesInterface.networks[chainId].address;
 console.log("Contract Address: %s", address);
 const buttholesContract = new ethers.Contract(address, abi, provider);
 
-////////////
 
-const defaultURI = process.env.BASE_URI;
+////////////////////////////////////////////////////////////////////////////////////
+
+// Ethers / Web3.0 //
+
+// request account from connect web wallet
+async function requestAccount() {
+  console.debug("requesting Ethereum account...");
+  const accounts = await ethers.request({ method: 'eth_requestAccounts' });
+  const account = accounts[0];
+  console.debug("account: "+account);
+  return account;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////
 
@@ -42,6 +57,7 @@ async function getButtholes(account) {
 	return tokens;
 }
 
+let divs = [];
 function showButthole(tokenId, tokenURI) {
 	console.log("Showing butthole: %s - %s", tokenId, tokenURI);
 	// butthole
@@ -55,33 +71,65 @@ function showButthole(tokenId, tokenURI) {
 	innerDiv.className = 'flap'
 	iDiv.src = defaultURI;
 	iDiv.appendChild(innerDiv);
+	divs.push(iDiv);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
 
-// Interface //
+// Contract Interface //
 
-// TODO
-// 18+ confirm
-//- allow user to click other buttons
-document.getElementById("eighteen").onclick = function () {
-	document.getElementById("add").enable();
-	document.getElementById("view").enable();
-	document.getElementById("mint").enable();
-	document.getElementById("eighteen").hide();
-	console.log("successfully accepted consequences!")
+//- 18+ confirm
+document.getElementById("eighteen").onclick = async function () {
+	try {
+		account = await requestAccount();
+		if (!await buttholesContract.hasRole(await buttholesContract.MINTER_ROLE(), account)) {	
+			const tx = await buttholesContract.addMinter({'from':account});
+			const receipt = await tx.wait();
+			console.log(receipt.logs);
+			const event = receipt.events.find(x => x.event === "RoleGranted");
+			console.log(event);
+			console.log(event.args.account); // account
+			//
+			console.log("successfully added minting!");
+		}
+		document.getElementById("add").enable();
+		document.getElementById("mint").enable();
+		document.getElementById("view").enable();
+		document.getElementById("eighteen").hide();
+		console.log("successfully accepted consequences!");
+	}
+	catch (err) {
+		console.error(err);
+	}
 };
 
-//- pay for / add butthole to wallet
-document.getElementById("mint").onclick = function () {
-	// TODO
-	// mint butthole
+//- mint butthole after minter role has been added
+document.getElementById("mint").onclick = async function () {
+	const tx = await buttholesContract.mint(account);
+	const receipt = await tx.wait();
+	console.log(receipt.logs);
+	const event = receipt.events.find(x => x.event === "Transfer");
+	console.log(event);
+	// console.log(event.args.account); // account
 };
 
-//- view butthole images
-document.getElementById("view").onclick = function () {
+//- view butthole images in wallet
+document.getElementById("view").onclick = async function () {
+	for (div of divs)
+		div.remove();
 	let tokens = getButtholes(account);
 	for (tokenId of tokens)
 		showButthole(tokenId, await buttholesContract.tokenURI(tokenId));
+	// document.getElementById("view").disable();
 };
 
+////////////////////////////////////////////////////////////////////////////////////
+
+//- Connects Ethereum account from enabled Wallet
+$(document).ready(() => {
+  if (typeof window.ethereum !== 'undefined') console.log('MetaMask is installed!');
+  ethereum.on('chainChanged', (chainId) => {
+    console.debug("chainId: %s", chainId);
+    if (chainId != 0) alert("Please connect your wallet to the Ethereum network!");
+  });
+});
