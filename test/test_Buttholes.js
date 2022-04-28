@@ -158,8 +158,14 @@ contract("Buttholes", async (accounts) => {
       assert.equal(balanceAfter, balanceBefore-1, "does not burn token");
     });
 
-    xit('can be renounced', async () => {
-
+    it('can be renounced', async () => {
+      let result = await buttholes.renounceButthole({'from':notOwner});
+      truffleAssert.eventEmitted(result, 'PuckerDown', (ev) => {
+        assert.equal(ev["removedButthole"].toString(), notOwner, "does not remove butthole owner");
+        return true;
+      });
+      // TODO
+      // add checks for whether the data was actually cleared
     });
 
   });

@@ -16,7 +16,7 @@ import "./CheekSpreader.sol";
 contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMinterPauserAutoId {
 
   event PuckerUp(address addedButthole, string buttholeHash);
-  event PuckerDown(address addedButthole);
+  event PuckerDown(address removedButthole);
 
   // butthole hashes
   mapping(address => string) public buttholes;
@@ -158,6 +158,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    */
   function renounceButthole() public {
     require(buttholeMap[_msgSender()], "Buttholes: caller must be a butthole");
+    delete buttholes[_msgSender()];
     // delete from array of owners
     for (uint i=0;i<buttholeOwners.length;i++)
       if (buttholeOwners[i] == _msgSender())
