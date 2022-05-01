@@ -10,7 +10,6 @@
   ],
   "dependencies": {
     "@openzeppelin/contracts": "^4.5.0",
-    "browserify": "^17.0.0",
     "dotenv": "^16.0.0",
     "minimist": "^1.2.6",
     "truffle-hdwallet-provider": "^1.0.17",

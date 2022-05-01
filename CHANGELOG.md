@@ -39,11 +39,13 @@
 
 # TODO
 
+- finish `butthole.js` script in js/
+- finish debugging web3.0 interaction in main.js
+
 - finish ipfs metadata functions
 
 - add test for renouncing butthole
 
-- finish `add-butthole.js` script in js/
 
 - full implementation of ipfs & html
 --> figure out how metadata.json fits
@@ -86,7 +88,7 @@ International Medical Corps
 
 # Scraps
 
-browserify main.js -o bundle.js
+browserify js/main.js -o js/bundle.js
 
 
 Consider making any images at a width between 320 and 1080 pixels and aspect ratio between 1.91:1 and 4:5 inclusive.
