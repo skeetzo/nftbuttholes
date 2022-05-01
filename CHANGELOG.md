@@ -31,6 +31,9 @@
 	- continued write up for project "explainer"
 	**0.0.5 : 4/27/2022**
 	- finished tests for Buttholes.sol (again)
+	**0.0.6 : 5/1/2022**
+	- more debugging main.js & butthole.js
+	- figured out how metadata.json fits
 
 ------------------------------------------------------------------------
 
@@ -46,9 +49,7 @@
 
 - add test for renouncing butthole
 
-
 - full implementation of ipfs & html
---> figure out how metadata.json fits
 
 - [writeup] steps for minting / uploading / creating an nft
 -- accessible method for updating / uploading butthole pics
