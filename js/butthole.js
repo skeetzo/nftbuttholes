@@ -39,32 +39,29 @@ const _defaultOptions = {
 
 // TODO
 // finish contract interaction
-function addButthole(options) {
-	// check if butthole already exists in metadata collection
-	// if does not exist yet:
-		// create new butthole & upload
-	// if already exists:
-		// check IPFS for existing metadata CID?
-		// output duplicate error?
-		// return existing CID?
-
-
-
-	const receipt = await tx.wait()
-	for (const event of receipt.events) {
-	if (event.event !== 'Transfer') {
-	    console.log('ignoring unknown event type ', event.event)
-	    continue
+async function addButthole(newButtholeAddress, newButtholeURI) {
+	const tx = await Buttholes.addButthole(newButtholeAddress, newButtholeURI);
+	const receipt = await tx.wait();
+	const event = receipt.events.find(x => x.event === "PuckerUp");
+	if (event) {
+		console.log(`Butthole added: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
 	}
-	return event.args.tokenId.toString()
+	console.error("Unable to add new butthole!");
 }
-
 
 // TODO
 // finish contract interaction
-function addDonors(butthole, donor1, donor2, donor3) {
+// update this to properly send from the correct account
+// add method in contract for updating for people?
+async function addDonors(donor1, donor2, donor3) {
 	// add donors for butthole
-	contract.createCheekSpreader(donor1, donor2, donor3)
+	const tx = await Buttholes.createCheekSpreader(donor1, donor2, donor3);
+	const receipt = await tx.wait();
+	const event = receipt.events.find(x => x.event === "PuckerUp");
+	if (event) {
+		console.log(`Butthole added: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
+	}
+	console.error("Unable to add new butthole!");
 }
 
 // TODO
@@ -220,6 +217,20 @@ console.log(argv);
 // 	...
 // }
 
+
+async function add() {
+	// check if butthole already exists in metadata collection
+	// if does not exist yet:
+		// create new butthole & upload
+	// if already exists:
+		// check IPFS for existing metadata CID?
+		// output duplicate error?
+		// return existing CID?
+
+	let newButtholeAddress = "",
+		newButtholeURI = "";
+	await addButthole(newButtholeAddress, newButtholeURI);
+}
 
 
 
