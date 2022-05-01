@@ -35,6 +35,10 @@ const _defaultOptions = {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Contract //
+
+// TODO
+// finish contract interaction
 function addButthole(options) {
 	// check if butthole already exists in metadata collection
 	// if does not exist yet:
@@ -46,49 +50,34 @@ function addButthole(options) {
 
 
 
-			const receipt = await tx.wait()
-		  for (const event of receipt.events) {
-		    if (event.event !== 'Transfer') {
-		        console.log('ignoring unknown event type ', event.event)
-		        continue
-		    }
-		    return event.args.tokenId.toString()
-
-
-
-
+	const receipt = await tx.wait()
+	for (const event of receipt.events) {
+	if (event.event !== 'Transfer') {
+	    console.log('ignoring unknown event type ', event.event)
+	    continue
+	}
+	return event.args.tokenId.toString()
 }
 
-function backupButthole(butthole) {
-	// save nft metadata locally
-}
 
-function deleteButthole(options) {
-	// same as above but reverse?
-}
-
-// create a butthole NFT's metadata
-function createButtholeNFT(options) {
-
-	// load default metadata.json and update default values
-	const nft = _getDefaultMetadata();
-
-	// update birthday
-	const date = new Date(options.birthday);
-	const timestampInMs = date.getTime();
-	const unixTimestamp = Math.floor(date.getTime() / 1000);
-	console.log("Birthdate: %s --> %s", dateStr, unixTimestamp);
-	nft.attributes.birthday = unixTimestamp;
-	// update image
-	nft.properties.image.value = options.buttholeHash;
-	return nft;
-}
-
+// TODO
+// finish contract interaction
 function addDonors(butthole, donor1, donor2, donor3) {
 	// add donors for butthole
 	contract.createCheekSpreader(donor1, donor2, donor3)
 }
 
+// TODO
+// decide if necessary / replace with renounce?
+// function deleteButthole(options) {}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// IPFS //
+
+// return skeleton {} metadata
+// TODO
+// finish filling in variables
 function _getDefaultMetadata() {
 
 	const nft = fs.readFileSync('../docs/metadata.json', 'utf8')
@@ -100,6 +89,7 @@ function _getDefaultMetadata() {
 	const unixTimestamp = Math.floor(date.getTime() / 1000);
 	nft.attributes.birthday = unixTimestamp;
 
+	// Attributes //
 	// Base
 	// Eye
 	// Mouth
@@ -108,6 +98,7 @@ function _getDefaultMetadata() {
 	// Stamina
 	nft.attributes.Stamina.value = 6;
 
+	// Properties //
 	// artist
 	nft.properties.artist.value = "";
 	// name
@@ -122,34 +113,85 @@ function _getDefaultMetadata() {
 	return nft;
 }
 
+// create a butthole NFT's metadata
+function createButtholeNFT(hash, options) {
+	// load default metadata.json and update default values
+	const nft = _getDefaultMetadata();
+	// update birthday
+	const date = new Date(options.birthday);
+	const timestampInMs = date.getTime();
+	const unixTimestamp = Math.floor(date.getTime() / 1000);
+	console.log("Birthdate: %s --> %s", dateStr, unixTimestamp);
+	nft.attributes.birthday = unixTimestamp;
+	// update image
+	nft.properties.image.value = hash;
+	return nft;
+}
 
-async function uploadButtholeToIPFS(butthole) {
+// check if NFT metadata exists already in IPFS
+// TODO
+// do this to prevent (local?) duplicates
+function findButthole(options) {}
+
+
+// TODO
+// finish methods for uploading content to IPFS: image & metadata.json
+async function uploadButthole(butthole) {
+	// upload a butthole image to IPFS
+	// return CID of new butthole image
+}
+async function uploadMetadata(metadata) {
+
+	const file = {
+	  path: `/nfts/buttholes/${}/${}`,
+	  // content: buttholeImage
+      // content: ipfs.types.Buffer.from(btoa(fr.result),"base64")
+	}
+
+	const result = await ipfs.add(file)
+
+	console.info(result)
+
+	/*
+	Prints:
+	{
+	  "path": "tmp",
+	  "cid": CID("QmWXdjNC362aPDtwHPUE9o2VMqPeNeCQuTBTv1NsKtwypg"),
+	  "mode": 493,
+	  "mtime": { secs: Number, nsecs: Number },
+	  "size": 67
+	}
+	*/
 
 	const node = 0;
 	// const node = await IPFS.create()
-
-	// add your data to to IPFS - this can be a string, a Buffer,
-	// a stream of Buffers, etc
-	const results = node.add(JSON.stringify(butthole))
-
+	// add your data to to IPFS - this can be a string, a Buffer, a stream of Buffers, etc
+	const results = node.add(JSON.stringify(metadata))
 	// we loop over the results because 'add' supports multiple 
 	// additions, but we only added one entry here so we only see
 	// one log line in the output
 	for await (const { cid } of results) {
-	  // CID (Content IDentifier) uniquely addresses the data
-	  // and can be used to get it again.
-	  console.log(cid.toString())
-	}
-	console.log("-- Butthole Added to IPFS --");
+		// CID (Content IDentifier) uniquely addresses the data
+		// and can be used to get it again.
+		console.log("Butthole Added to IPFS: %s", cid.toString());
+		return cid;
+	}	
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Final goal:
+// 1 function to be ran that accepts: ETH address for new butthole account + path to local butthole jpeg 
+// -> uploads image and metadata to IPFS
+// -> anyone can then mint the newly available butthole
+
 // Steps for creating an NFT w/ matching metadata.json uploaded to IPFS:
 // createButtholeNFT(options) (-> _getDefaultMetadata() ->) buttholeNFT -> uploadButtholeToIPFS(buttholeNFT) -> metadataHash -> contract.addButthole(options, metadataHash)
+// - have available: 1 Ethereum address & 1 butthole jpeg/png
+// - check if metadata.json / butthole image for butthole nft exists already
+// - upload butthole image to IPFS if not uploaded
 // - create a new metadata.json if one does not exist already
 // - update it with new data for the new butthole "artist"
-// - backup the .json file locally
 // - upload the newly created metadata.json file to IPFS
 // --
 // - call the contract to add a new butthole with the address for them + their newly created metadata.json hash
@@ -186,3 +228,25 @@ console.log(argv);
 // node buttholes.js --add
 // --cheeks -> donors -> createCheekSpreader
 // --renounce
+
+
+
+
+
+
+
+// npm install ipfs-http-client
+
+// import { create } from 'ipfs-http-client'
+
+// // connect to the default API address http://localhost:5001
+// const client = create()
+
+// // connect to a different API
+// const client = create('http://127.0.0.1:5002')
+
+// // connect using a URL
+// const client = create(new URL('http://127.0.0.1:5002'))
+
+// // call Core API methods
+// const { cid } = await client.add('Hello world!')
