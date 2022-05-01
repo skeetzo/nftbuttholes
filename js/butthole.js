@@ -43,6 +43,20 @@ function addButthole(options) {
 		// check IPFS for existing metadata CID?
 		// output duplicate error?
 		// return existing CID?
+
+
+
+			const receipt = await tx.wait()
+		  for (const event of receipt.events) {
+		    if (event.event !== 'Transfer') {
+		        console.log('ignoring unknown event type ', event.event)
+		        continue
+		    }
+		    return event.args.tokenId.toString()
+
+
+
+
 }
 
 function backupButthole(butthole) {

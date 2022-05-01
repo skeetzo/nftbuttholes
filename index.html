@@ -7,31 +7,35 @@ html
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Buttholes</title>
     <style>
-      .button {
+      #buttons {
           position: absolute;
           top: 50%;
           left: 50%;
-          margin: -100px 0 0 -150px;
-          font-size: 400%;
+          margin: -100px 0 0 -5px;
+          font-size: 300%;
           font-family: serif;
           text-decoration: underline;
-          text-decoration-style: double;
           color: #65b7ff;
           cursor: pointer;
+          display: inline-grid;
       }
       body{
           background-color: black;
       }
     </style>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js" type="application/javascript"></script>
   </head>
 
   <body>
-    <div>Contract Address:</div>
+    <div>Contract Address:<span id="address"></span></div>
     <hr>
-    <button id="eighteen">Confirm 18+</button>
-    <button hidden id="add">Add Butthole</button>
-    <button disabled id="mint">Mint Butthole</button>
-    <button disabled id="view">View Buttholes</button>
-    <script src="bundle.js"></script>
+    <div id="buttons">
+      <button id="eighteen">Confirm 18+</button>
+      <button hidden disabled id="add">Add</button>
+      <button hidden disabled id="mint">Mint</button>
+      <button hidden disabled id="view">View</button>
+    </div>
+    <script src="js/main.js"></script>
   </body>
 </html>
