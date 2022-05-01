@@ -42,6 +42,10 @@
 
 # TODO
 
+- decide on method for inputting new butthole data to butthole.js args -> {} in a file? runtime args?
+
+- possibly add extra CheekSpreader function that can be accessed only once by owner of contract for updating new buttholes
+
 - finish `butthole.js` script in js/
 - finish debugging web3.0 interaction in main.js
 
@@ -54,6 +58,7 @@
 - [writeup] steps for minting / uploading / creating an nft
 -- accessible method for updating / uploading butthole pics
 -- accessible method for minting
+-- instructions for how to send me info to add a butthole
 
 - write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
 
