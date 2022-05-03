@@ -4,7 +4,6 @@
   "title": "Butthole Pic",
   "background_color": "000000",
   "animation_url": "",
-  
   "attributes": [
     {
       "display_type": "date", 
@@ -16,8 +15,6 @@
       "trait_type": "edition", 
       "value": 1
     },
-
-    // possible joke values
     {
       "trait_type": "base", 
       "value": "Starfish"
@@ -33,15 +30,14 @@
     {
       "display_type": "number", 
       "trait_type": "level", 
-      "value": 5
+      "value": 0
     }, 
     {
       "display_type": "number", 
       "trait_type": "stamina", 
-      "value": 1.4
+      "value": 0
     } 
   ],
-
   "properties": {
     "artist": {
         "type": "string",

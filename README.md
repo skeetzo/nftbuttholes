@@ -96,6 +96,65 @@ The token's image and metadata are both stored on IPFS. Access to viewing the 18
 
 ---
 
+# Javascript
+
+**buttholes.js**
+
+### Purpose
+Single script to be ran that accepts: ETH address for new butthole account + path to local butthole jpeg + any additional metadata 
+-> uploads image and metadata to IPFS
+-> anyone can then mint the newly available butthole
+
+#### Steps for creating an NFT w/ matching metadata.json uploaded to IPFS
+- have available: 1 Ethereum address & 1 butthole jpeg/png
+- run '--add -a $ETH_ADDRESS -i path/to/image ...'
+- check if artist's butthole exists already; if so, increase edition # by 1
+- upload butthole image to IPFS
+- create a new default metadata.json
+- update default template with new artist data & butthole image CID
+- upload the newly configured metadata.json file to IPFS
+- call the contract to add a new butthole with artist address + the uploaded metadata.json CID
+--
+- run '--donors -a $ETH_ADDRESS -a $DONATION1 -a $DONATION2 -a $DONATION3'
+- call the contract to update the forwarded donations for the provided artist address
+
+#### Steps for Progressing Mint "phases"
+- increase Edition by 1 --> automatically when uploading a 2nd (or more) NFT of a same artist name
+
+#### Runtime Args
+
+**--add**
+
+Will add a new butthole based on the following provided args:
+
+a = artist ETH address
+b = artist birthday
+d = artist description
+n = artist name
+i = path/butthole.jpeg
+
+`node butthole.js --add -a "0xaddress" -i "/path/to/butthole.jpeg" -b "6/6/1990" -d "A wily one." -n "Alex D." `
+`node butthole.js --add -a "0xaddress" -i "/path/to/butthole.jpeg" -b "6/6/1990" -d "A wily one." -n "Alex D." -a "0xaddress1" -a "0xaddress2" -a "0xaddress3"`
+
+**--donors**
+
+Will update the donors for an account based on the following provided args:
+
+a = artist ETH address
+a = donor 1
+a = donor 2
+a = donor 3
+
+`node butthole.js --donors -a "0xaddress" -a "0xaddress1" -a "0xaddress2" -a "0xaddress3"`
+
+**--renounce**
+
+Will renounce the account owner's butthole.
+
+`node butthole.js --renounce`
+
+---
+
 ### VIP Benefits
 #### Instructions:
 [add instructions for implementing js code]
