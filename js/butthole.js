@@ -1,108 +1,129 @@
+/*
+	Adds a new butthole NFT.
+	
+	Requires:
+		- Ethereum account
+	 	- butthole pic (jpg, jpeg, png, etc)
+		- [OPTIONAL] 3 alternate donation addresses
+
+	1) prepare Ethereum account address
+	- save in spreadsheet or something similar
+
+	2) prepare butthole jpeg for long term storage
+	- add image to ipfs, get file hash CID
+
+	3) add new butthole
+	- send tx to Buttholes contract via addButthole(newButthole, _tokenURI)
+		newButthole --> an Ethereum address that represents a person
+		_tokenURI 	--> the newly generated ipfs CID
+
+	4) update the donors / CheekSpreader
+	- send tx to Buttholes contract via updateCheekSpreader(address, donor1, donor2, donor3)
+*/
+
 require('dotenv').config();
-var argv = require('minimist')(process.argv.slice(2));
+var argv = require('minimist')(process.argv.slice(2),{'string':['a','b','d','n','i']});
+const { create } = require('ipfs-http-client');
 const ethers = require('ethers');
 const { readFileSync } = require('fs');
 const readline = require('readline');
 const rl = readline.createInterface(process.stdin, process.stdout);
 
-// adds a new butthole account
-// requires:
-// 	- Ethereum account
-// #	- butthole pic (jpg, jpeg, png, etc)
-// 	- [OPTIONAL] 3 alternate donation addresses
-
-// 1) prepare Ethereum account address
-// - save in spreadsheet or something similar
-
-// 2) prepare butthole jpeg for long term storage
-// - add image to ipfs, get file hash CID
-
-// 3) add new butthole
-// - send tx to Buttholes contract via addButthole(newButthole, _tokenURI)
-// 	newButthole --> an Ethereum address that represents a person
-// 	_tokenURI 	--> the newly generated ipfs CID
-
-// 4) update the donors / CheekSpreader
-// - send tx to Buttholes contract via createCheekSpreader(donor1, donor2, donor3)
-// - retrieve donor1, 2, & 3 from .env
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-let account, Buttholes;
-
-async function connectToContract() {
-	var url = process.env.ETHEREUM_NODE || "127.0.0.1";
-	var web3Provider = new ethers.providers.JsonRpcProvider(url);
-	const signer = web3Provider.getSigner();
-	account = await signer.getAddress();
-	console.log("Connected Account: %s", account);
-	const ButtholesInterface = require('../build/contracts/Buttholes.json');
-	const abi = ButtholesInterface.abi;
-	const { chainId } = await web3Provider.getNetwork();
-	console.log("Chain ID: %s", chainId); // 42
-	const address = ButtholesInterface.networks[chainId].address;
-	console.log("Contract Address: %s", address);
-	Buttholes = new ethers.Contract(address, abi, signer);
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Contract //
 
-// TODO
-// test contract interaction
+let account, Buttholes; // connected ETH account & NFT contract
+
+/**
+ * @dev Connects to Butthole contract via provided Web3.0 url.
+ */
+async function connectToContract() {
+	try {
+		var url = process.env.ETHEREUM_NODE || "http://localhost:8545";
+		console.log("Connecting to Ethereum Node: %s", url)
+		var web3Provider = new ethers.providers.JsonRpcProvider(url);
+		const signer = web3Provider.getSigner();
+		account = await signer.getAddress();
+		console.debug("Connected Account: %s", account);
+		const ButtholesInterface = require('../build/contracts/Buttholes.json');
+		const abi = ButtholesInterface.abi;
+		const { chainId } = await web3Provider.getNetwork();
+		console.debug("Chain ID: %s", chainId);
+		const address = ButtholesInterface.networks[chainId].address;
+		console.debug("Contract Address: %s", address);
+		Buttholes = new ethers.Contract(address, abi, signer);
+	}
+	catch (err) {
+		console.error(err);
+		process.exit(1);
+	}
+}
+
+/**
+ * @dev Adds a newly generated butthole NFT.
+ * @param newButtholeAddress The artist's ETH address.
+ * @param newButtholeURI The CID of the token's metadata.json on IPFS.
+ */
 async function addButthole(newButtholeAddress, newButtholeURI) {
 	console.log("Adding Butthole to Contract: %s -> %s", newButtholeAddress, newButtholeURI);
 	const tx = await Buttholes.addButthole(newButtholeAddress, newButtholeURI);
 	try {
 		const receipt = await tx.wait();
-		// const event = receipt.events.find(x => x.event === "PuckerUp");
-		// if (event) {
+		const event = receipt.events.find(x => x.event === "PuckerUp");
+		if (event) {
+			console.debug(event);
 			console.log(`Successfully Added Butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
-		// }
+		}
 	}
 	catch (err) {
 		console.error("Unable to add new butthole!");
-		console.log(err);
 		console.debug(err);
 	}
 }
 
-// TODO
-// test contract interaction
-// must be run by owner of account
-async function addDonors(donor1, donor2, donor3) {
-	console.log("Adding Donors to Contract:\n-> %s\n-> %s\n-> %s]", donor1, donor2, donor3);
+/**
+ * @dev Adds donors for the provided ETH address.
+ * @param address The artist's ETH address.
+ * @param donor1 The 1st donation address.
+ * @param donor2 The 2nd donation address.
+ * @param donor3 The 3rd donation address.
+ */
+async function addDonors(address, donor1, donor2, donor3) {
+	console.log("Adding Donors to Contract for Address: %s\n-> %s\n-> %s\n-> %s", address, donor1, donor2, donor3);
 	// add donors for butthole
-	const tx = await Buttholes.createCheekSpreader(donor1, donor2, donor3);
+	const tx = await Buttholes.updateCheekSpreader(address, donor1, donor2, donor3);
 	try {
 		const receipt = await tx.wait();
-		const event = receipt.events.find(x => x.event === "PuckerUp");
-		if (event) {
+		if (receipt) {
+			console.debug(receipt);
 			console.log(`Successfully Added Donors: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
 		}
-		console.error("Unable to add new donors!");
+		else
+			console.error("Unable to add new donors!");
 	}
 	catch (err) {
 		console.error("Unable to add new donors!");
-		console.log(err);
 		console.debug(err);
 	}
 }
 
-// TODO
-// test contract interaction
-// must be run by owner of account
-function renounceButthole() {
+/**
+ * @dev Renounce your Butthole NFT. Must be called by the rouncing artist.
+ */
+async function renounceButthole() {
 	console.log("Renouncing Butthole from Contract: %s", account);
 	const tx = await Buttholes.renounceButthole();
 	try {
 		const receipt = await tx.wait();
-		console.log("Successfully Renounced Butthole: %s", account);		
+		const event = receipt.events.find(x => x.event === "PuckerDown");
+		if (event) {
+			console.debug(event);
+			console.log("Successfully Renounced Butthole: %s", account);		
+		}
 	}
 	catch (err) {
 		console.error("Unable to renounce butthole!");
-		console.log(err);
 		console.debug(err);
 	}
 }
@@ -112,28 +133,17 @@ function renounceButthole() {
 // IPFS //
 
 // return skeleton {} metadata
+/**
+ * @dev Loads and returns the default butthole metadata template.
+ */
 function _getDefaultMetadata() {
-	const nft = readFileSync('../docs/metadata.json', 'utf8')
+	const nft = require('./metadata.json', 'utf8');
 	nft.animation_url = process.env.DEFAULT_ANIMATION_URI
 	const date = new Date();
 	const timestampInMs = date.getTime();
 	const unixTimestamp = Math.floor(date.getTime() / 1000);
 	nft.attributes.birthday = unixTimestamp;
-	// Attributes //
-	// Base
-	// Eye
-	// Mouth
-	// Level
-	nft.attributes.level.value = 0;
-	// Stamina
-	nft.attributes.stamina.value = 0;
 	// Properties //
-	// artist
-	nft.properties.artist.value = "";
-	// name
-	nft.properties.name.value = "";
-	// description
-	nft.properties.description.value = "";
 	// image
 	nft.properties.image.value = process.env.DEFAULT_PLACEHOLDER_URI
 	// butthole
@@ -141,7 +151,10 @@ function _getDefaultMetadata() {
 	return nft;
 }
 
-// create a butthole NFT's metadata
+/**
+ * @dev Create's a butthole NFT's metadata from the provided butthole data.
+ * @param butthole An object containing nft metadata.
+ */
 function createButtholeMetadata(butthole) {
 	// load default metadata.json and update default values
 	const nft = _getDefaultMetadata();
@@ -158,13 +171,14 @@ function createButtholeMetadata(butthole) {
 	    return age;
 	}
 	const date = new Date(butthole.birthday);
-	const timestampInMs = date.getTime();
 	const unixTimestamp = Math.floor(date.getTime() / 1000);
-	nft.attributes.birthday = unixTimestamp;
-	nft.attributes.level = _getAge(butthole.birthday);
-	console.log(`Birthday: (${nft.attributes.level}) ${dateStr} --> ${nft.attributes.birthday}`);
-	// update values
-	nft.attributes.edition = butthole.edition; 
+	const age = _getAge(butthole.birthday);
+	console.log(`Birthday: (${age}) ${butthole.birthday} --> ${unixTimestamp}`);
+	// update attributes
+	nft.attributes.map(a => {if (a["trait_type"] == "birthday") a["value"] = unixTimestamp });
+	nft.attributes.map(a => {if (a["trait_type"] == "level") a["value"] = age });
+	nft.attributes.map(a => {if (a["trait_type"] == "edition") a["value"] = butthole.edition });
+	// update properties
 	nft.properties.artist.value = butthole.artist;
 	nft.properties.name.value = butthole.name;
 	nft.properties.description.value = butthole.description;
@@ -172,21 +186,32 @@ function createButtholeMetadata(butthole) {
 	return nft;
 }
 
-// check if artist name exists already in IPFS
+/**
+ * @dev Check if artist name exists already in IPFS.
+ * @param butthole An object containing nft metadata.
+ */
 async function findButthole(butthole) {
+	const client = create();
 	const cid = '/nft/buttholes/metadata';
-	for await (const file of ipfs.ls(cid))
+	for await (const file of client.ls(cid))
 	  if (file.name == butthole.name)
 	  	return file;
 	return false;
 }
 
-// uploads content to IPFS: image first then combined metadata.json + image hash
+/**
+ * @dev Uploads content to IPFS: image first then combined metadata.json + image hash / CID.
+ * @param butthole An object containing nft metadata.
+ */
 async function uploadButthole(butthole) {
 	butthole.properties.image = await uploadButtholeImage(butthole.image);
 	return await uploadButtholeMetadata(butthole);
 }
 
+/**
+ * @dev Upload a butthole's jpeg/png file and return the CID.
+ * @param butthole An object containing nft metadata.
+ */
 async function uploadButtholeImage(image) {
 	const file = {
 	  path: `/nfts/buttholes/images`,
@@ -198,6 +223,10 @@ async function uploadButtholeImage(image) {
 	return cid;
 }
 
+/**
+ * @dev Upload a butthole's metadata.json file and return the CID.
+ * @param butthole An object containing nft metadata.
+ */
 async function uploadButtholeMetadata(butthole) {
 	const file = {
 	  path: `/nfts/buttholes/metadata`,
@@ -212,6 +241,10 @@ async function uploadButtholeMetadata(butthole) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * @dev Create and add a new butthole NFT. Update edition number if artist already exists.
+ * @param butthole An object containing nft metadata.
+ */
 async function add(butthole) {
 	butthole = createButtholeMetadata(butthole);
 	// check if butthole already exists in metadata collection
@@ -222,7 +255,7 @@ async function add(butthole) {
         let answer = await rl.question("Add new edition? yes/[n]o: ");
 		if (answer.includes("y")) {
 			console.log ("Adding new " + butthole.name);
-			butthole.edition = parseInt(butthole.edition) + 1;
+			butthole.attributes.map(a => {if (a["trait_type"] == "edition") a["value"] = parseInt(a["value"]) + 1 });
 		}
 		else {
 			console.log ("Not adding new " + butthole.name);
@@ -234,8 +267,14 @@ async function add(butthole) {
 	}
 	buttholeCID = await uploadButthole(butthole);
 	await addButthole(butthole.artist, buttholeCID);
+	if (butthole.donorAddresses.length > 0)
+		await update(butthole);
 }
 
+/**
+ * @dev Update a butthole NFT's CheekSpreader contract data.
+ * @param butthole An object containing nft metadata.
+ */
 async function donors(butthole) {
 	console.log("Updating Donors...");
 	let defaultDonors = [process.env.DEFAULT_DONATION1, process.env.DEFAULT_DONATION2, process.env.DEFAULT_DONATION3];
@@ -254,66 +293,24 @@ async function donors(butthole) {
 		donor3 = defaultDonors.shift();
 		console.warn("Missing Donor3.");
 	}
-	await addDonors(donor1, donor2, donor3);
+	await addDonors(butthole.artist, donor1, donor2, donor3);
 }
-async function update(butthole) {
-	console.log("Updating Butthole...");
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Final goal:
-// 1 function to be ran that accepts: ETH address for new butthole account + path to local butthole jpeg 
-// -> uploads image and metadata to IPFS
-// -> anyone can then mint the newly available butthole
-
-// Steps for creating an NFT w/ matching metadata.json uploaded to IPFS:
-// createButtholeNFT(options) (-> _getDefaultMetadata() ->) buttholeNFT -> uploadButtholeToIPFS(buttholeNFT) -> metadataHash -> contract.addButthole(options, metadataHash)
-// - have available: 1 Ethereum address & 1 butthole jpeg/png
-// - check if metadata.json / butthole image for butthole nft exists already
-// - upload butthole image to IPFS if not uploaded
-// - create a new metadata.json if one does not exist already
-// - update it with new data for the new butthole "artist"
-// - upload the newly created metadata.json file to IPFS
-// --
-// - call the contract to add a new butthole with the address for them + their newly created metadata.json hash
-// - call the contract to update their donor lists
-
-
-// Steps for Progressing Mint "phases":
-// - increase Edition by 1
-
-
-// --add
-
-// a = artist ETH address
-// b = artist birthday
-// d = artist description
-// n = artist name
-// i = path/butthole.jpeg
-
-// node butthole.js --add -a "0xaddress" -i "/path/to/butthole.jpeg" -b "6/6/1990" -d "A wily one." -n "Alex D." 
-// node butthole.js --add -a "0xaddress" -i "/path/to/butthole.jpeg" -b "6/6/1990" -d "A wily one." -n "Alex D." -a "0xaddress1" -a "0xaddress2" -a "0xaddress3"
-
-
-// --donors
-
-// a = artist ETH address
-// 1 = donor 1
-// 2 = donor 2
-// 3 = donor 3
-
-// node butthole.js --donors -a "0xaddress" -a "0xaddress1" -a "0xaddress2" -a "0xaddress3"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 (async function main() {
 	console.debug(argv);
+	
+	let artistAddress,
+		donorAddresses = [];
+	if (Array.isArray(argv["a"])) {
+		artistAddress = argv["a"].shift();
+		while (argv["a"].length > 0)
+			donorAddresses.push(argv["a"].shift());
+	}
+	else
+		artistAddress = argv["a"];
 
-	const artistAddress = argv["a"].shift();
-	let donorAddresses = [];
-	while (argv["a"].length > 0)
-		donorAddresses.push(argv["a"].shift());
 	const butthole = {
 		artist : artistAddress,
 		birthday : argv["b"],
@@ -323,7 +320,7 @@ async function update(butthole) {
 		image : argv["i"]
 	};
 
-	if (!argv["add"]&&!argv["donors"]&&!argv["update"]) return console.error("Missing runtime command!");
+	if (!argv["add"]&&!argv["donors"]&&!argv["renounce"]) return console.error("Missing runtime command!");
 
 	await connectToContract();
 
@@ -333,7 +330,6 @@ async function update(butthole) {
 	// updates 3 donors
 	else if (argv["donors"])
 		await donors(butthole);
-	// updates token URI
-	else if (argv["update"]) 
-		await update(butthole);
+	else if (argv["renounce"])
+		await renounceButthole();
 })();

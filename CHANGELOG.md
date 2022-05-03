@@ -40,6 +40,9 @@
 	- finished ipfs metadata functions
 	- added extra CheekSpreader function that can be accessed only once by owner of contract for updating new buttholes -> updateCheekSpreader
 	- full(ish) implementation of ipfs & html
+	**0.0.8 : 5/3/2022**
+	- add test for updateCheekSpreader function
+	- add test for renounceButthole function
 
 ------------------------------------------------------------------------
 
@@ -52,9 +55,6 @@
 # TODO
 
 - implement Loopring counterfactual nfts & submitMintNft functionality
-
-- add test for updateCheekSpreader function
-- add test for renounceButthole function
 
 - document butthole.js & main.js
 
@@ -73,9 +73,35 @@
 
 ganache-cli -m "cloud sting village source peace dinner dance fringe slice mandate lens upon"
 
+Available Accounts
+==================
+(0) 0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f (1000 ETH)
+(1) 0xA17A41B08a536b004C3Ff379298bAeadE98171B3 (1000 ETH)
+(2) 0xc9Ff2b62CF14941d96bAAFecFEBae1a83fd82a7F (1000 ETH)
+(3) 0x3Ac74B86550a493EA3F1D8Da7685AeD17CD7a524 (1000 ETH)
+(4) 0x1ebC00C33F89162a042f44D201B94014B283d3a6 (1000 ETH)
+(5) 0xB0aEdB12bD892A0A14EC385879c143a75B2833E7 (1000 ETH)
+(6) 0xbBF637F4425366211fDF60049458A2f33dE9EDDe (1000 ETH)
+(7) 0x629fA1d7991783576EEAb84392c8e88E5318C1b0 (1000 ETH)
+(8) 0x57A971063c06a15A90eFeb2aFb190d257c124820 (1000 ETH)
+(9) 0xa70A86F03efc40Dbc926AE92eABAcDE6ff3920B8 (1000 ETH)
+
+Private Keys
+==================
+(0) 0x0a9a050b15dcb2302918c2f19dbf7af04c063763f24d16c01967bf17c660fc7e
+(1) 0x601ad8fdc86b4abba00a7e5bbb733db5d202f9dd0ebb95b766db331d3af4680b
+(2) 0x95adf4efb60f293c8ca613fa21bdfc9d0c29342e7b878927a9ced4f9ba58e1ec
+(3) 0x7bac0f2b81c428812b2661bf54f0b9a2fdfb8bc8f117bbdd506b0a0006511422
+(4) 0xc9322587c4bc46193a7ea549a60179d95ddfbf1fd07540f5a74b4eca3f1db3e8
+(5) 0x715a6bf2f0f63c33a043e6479a4160ca473ce0dd2b151a8e4b5423b9f950461d
+(6) 0x21ccf10ca1e234f8a0d8b40aa66e6975c26d33c96811e81e02bb94abc6a39c43
+(7) 0x9e14463bf918b4cdd42539d89fdd5ee1e690ea48fe4d307932b7080591322ff3
+(8) 0xe5018a7b66fe459ccc10908e0e6452518d1b0ace0ed06e98228359a8f0c5d03c
+(9) 0x32ce92be4745c2d91ebe6107cb5a4b7dd392c30e4e169d86a62ae5a4d378a650
+
 yarn add @openzeppelin/contracts
 yarn add dotenv web3 truffle-hdwallet-provider
-yarn add -D chai chai-almost mocha nodemon truffle-assertions
+yarn add -D chai chai-almost mocha truffle-assertions ipfs-http-client
 
 Image notes:
 - Consider making any images at a width between 320 and 1080 pixels and aspect ratio between 1.91:1 and 4:5 inclusive.
@@ -126,3 +152,17 @@ OpenSea also supports a date display_type. Traits of this type will appear in th
       "value": 1546360800
     }
 
+
+curl -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":67}' localhost:8545
+
+
+#### Test Commands
+
+node js/butthole.js --add -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -i "images/doughnut.jpg" -b "6/6/1990" -d "A wily one." -n "Alex D." 
+node js/butthole.js --add -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -i "images/doughnut.jpg" -b "6/6/1990" -d "A wily one." -n "Alex D." -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3" -a "0xc9Ff2b62CF14941d96bAAFecFEBae1a83fd82a7F" -a "0x3Ac74B86550a493EA3F1D8Da7685AeD17CD7a524"
+
+node js/butthole.js --donors -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3"
+node js/butthole.js --donors -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3" -a "0xc9Ff2b62CF14941d96bAAFecFEBae1a83fd82a7F"
+node js/butthole.js --donors -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3" -a "0xc9Ff2b62CF14941d96bAAFecFEBae1a83fd82a7F" -a "0x3Ac74B86550a493EA3F1D8Da7685AeD17CD7a524"
+
+node js/butthole.js --renounce

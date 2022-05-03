@@ -12,7 +12,9 @@ const catchRevertPausable = Exceptions.catchRevertPausable,
       catchRevertUnpause = Exceptions.catchRevertUnpause,
       catchOwnable = Exceptions.catchOwnable,
       catchRevertButthole = Exceptions.catchRevertButthole,
-      catchRevertMinter = Exceptions.catchRevertMinter;
+      catchRevertMinter = Exceptions.catchRevertMinter,
+      catchRevertButtholeAddress = Exceptions.catchRevertButtholeAddress,
+      catchRevertCheeksSet = Exceptions.catchRevertCheeksSet;
 
 const Buttholes = artifacts.require("./Buttholes.sol");
 
@@ -142,9 +144,17 @@ contract("Buttholes", async (accounts) => {
       assert.equal(notDifferent, false, "does not mint random buttholes");
     });
 
-    it('can properly create cheek spreaders', async () => {
+    it('can create cheek spreaders', async () => {
       let result = await buttholes.createCheekSpreader(donor1, donor2, donor3);
       await catchRevertButthole(buttholes.createCheekSpreader(donor1, donor2, donor3, {'from':notOwner2}));
+      assert.equal(true, true);
+    });
+
+    it('can update cheek spreaders', async () => {
+      let result = await buttholes.updateCheekSpreader(notOwner, donor1, donor2, donor3);
+      await catchOwnable(buttholes.updateCheekSpreader(notOwner2, donor1, donor2, donor3, {'from':notOwner2}));
+      await catchRevertButtholeAddress(buttholes.updateCheekSpreader(notOwner2, donor1, donor2, donor3));
+      await catchRevertCheeksSet(buttholes.updateCheekSpreader(notOwner, donor1, donor2, donor3));
       assert.equal(true, true);
     });
 

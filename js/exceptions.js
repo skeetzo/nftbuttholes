@@ -13,6 +13,8 @@ async function tryCatch(promise, message) {
 };
 
 module.exports = {
+    catchRevertCheeksSet    : async function(promise) {await tryCatch(promise, "Buttholes: address must not already be set");},
+    catchRevertButtholeAddress : async function(promise) {await tryCatch(promise, "Buttholes: address must be a butthole");},
     catchRevertButthole    : async function(promise) {await tryCatch(promise, "Buttholes: caller must be a butthole");},
     catchRevertPausable    : async function(promise) {await tryCatch(promise, "ERC721Pausable: token transfer while paused");},
     catchRevertPause       : async function(promise) {await tryCatch(promise, "ERC721PresetMinterPauserAutoId: must have pauser role to pause");},
