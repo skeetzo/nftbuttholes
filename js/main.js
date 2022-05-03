@@ -53,7 +53,6 @@ async function connectToContract() {
   account = await signer.getAddress();
   console.debug("address: "+account);
   //
-  Buttholes = new ethers.Contract("#{address}", !{abi}, signer);
   const ButtholesInterface = require('../build/contracts/Buttholes.json');
 	const abi = ButtholesInterface.abi;
 	// load network to find contract address

@@ -13,31 +13,31 @@
     },
     {
       "display_type": "number", 
-      "trait_type": "Edition", 
+      "trait_type": "edition", 
       "value": 1
     },
 
     // possible joke values
     {
-      "trait_type": "Base", 
+      "trait_type": "base", 
       "value": "Starfish"
     }, 
     {
-      "trait_type": "Eye", 
+      "trait_type": "eye", 
       "value": "Big"
     }, 
     {
-      "trait_type": "Mouth", 
+      "trait_type": "mouth", 
       "value": "Surprised"
     }, 
     {
       "display_type": "number", 
-      "trait_type": "Level", 
+      "trait_type": "level", 
       "value": 5
     }, 
     {
       "display_type": "number", 
-      "trait_type": "Stamina", 
+      "trait_type": "stamina", 
       "value": 1.4
     } 
   ],
@@ -57,11 +57,11 @@
     },
     "image": {
         "type": "string",
-        "description": "A URI pointing to a resource with mime type image/* representing the asset to which this token represents."
-    },
-    "placeholder": {
-        "type": "string",
         "description": "A URI pointing to a resource with mime type image/* representing the placeholder asset for this token."
+    },
+    "butthole": {
+        "type": "string",
+        "description": "A URI pointing to a resource with mime type image/* representing the artist's ass to which this token belongs."
     }
   }
 }

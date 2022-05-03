@@ -124,7 +124,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   }
 
   /**
-   * @dev Create a new CheekSpreader contract for handling royalty payments..
+   * @dev Create a new CheekSpreader contract for handling royalty payments.
    */
   function createCheekSpreader(address donor1, address donor2, address donor3) public {
     require(buttholeMap[_msgSender()], "Buttholes: caller must be a butthole");
@@ -140,6 +140,26 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
     shares[3] = 3;
     CheekSpreader c = new CheekSpreader(payees, shares);
     CheekSpreaders[_msgSender()] = address(c);
+  }
+
+  /**
+   * @dev Create a new CheekSpreader contract for handling royalty payments for an unset butthole.
+   */
+  function updateCheekSpreader(address buttholeAddress, address donor1, address donor2, address donor3) public onlyOwner {
+    require(buttholeMap[buttholeAddress], "Buttholes: address must be a butthole");
+    require(CheekSpreaders[buttholeAddress] == buttholeAddress, "Buttholes: address must not already be set");
+    address[] memory payees = new address[](4);
+    payees[0] = buttholeAddress;
+    payees[1] = donor1;
+    payees[2] = donor2;
+    payees[3] = donor3;
+    uint256[] memory shares = new uint256[](4);
+    shares[0] = 91;
+    shares[1] = 3;
+    shares[2] = 3;
+    shares[3] = 3;
+    CheekSpreader c = new CheekSpreader(payees, shares);
+    CheekSpreaders[buttholeAddress] = address(c);
   }
 
   /**
