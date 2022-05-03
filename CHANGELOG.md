@@ -34,41 +34,53 @@
 	**0.0.6 : 5/1/2022**
 	- more debugging main.js & butthole.js
 	- figured out how metadata.json fits
+	**0.0.7 : 5/2/2022**
+	- finished `butthole.js` script in js/
+	- decided on method for inputting new butthole data to butthole.js args -> {} in a file? runtime args? ----> solution: runtime args
+	- finished ipfs metadata functions
+	- added extra CheekSpreader function that can be accessed only once by owner of contract for updating new buttholes -> updateCheekSpreader
+	- full(ish) implementation of ipfs & html
 
 ------------------------------------------------------------------------
 
-- test main.js & contract interface buttons
+- test main.js
+- test butthole.js
+- test contract web interface buttons
 - test new cheekspreader interaction w/ royalties
+- finish debugging web3.0 interaction in main.js
 
 # TODO
 
-- decide on method for inputting new butthole data to butthole.js args -> {} in a file? runtime args?
+- implement Loopring counterfactual nfts & submitMintNft functionality
 
-- possibly add extra CheekSpreader function that can be accessed only once by owner of contract for updating new buttholes
+- add test for updateCheekSpreader function
+- add test for renounceButthole function
 
-- finish `butthole.js` script in js/
-- finish debugging web3.0 interaction in main.js
-
-- finish ipfs metadata functions
-
-- add test for renouncing butthole
-
-- full implementation of ipfs & html
+- document butthole.js & main.js
 
 - [writeup] steps for minting / uploading / creating an nft
 -- accessible method for updating / uploading butthole pics
 -- accessible method for minting
--- instructions for how to send me info to add a butthole
+-- instructions for how to send me info to add a butthole & how I do so
 
 - write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
 
+- [much later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
+
+- add final address of contract on mainnet to etherscan link in readme
+
 # Dev
+
+ganache-cli -m "cloud sting village source peace dinner dance fringe slice mandate lens upon"
 
 yarn add @openzeppelin/contracts
 yarn add dotenv web3 truffle-hdwallet-provider
 yarn add -D chai chai-almost mocha nodemon truffle-assertions
 
-ganache-cli -m "cloud sting village source peace dinner dance fringe slice mandate lens upon"
+Image notes:
+- Consider making any images at a width between 320 and 1080 pixels and aspect ratio between 1.91:1 and 4:5 inclusive.
+- 350x350
+- animation_url: A URL to a multi-media attachment for the item. The file extensions GLTF, GLB, WEBM, MP4, M4V, OGV, and OGG are supported, along with the audio-only extensions MP3, WAV, and OGA.
 
 # Links
 
@@ -78,6 +90,15 @@ https://www.quicknode.com/guides/web3-sdks/how-to-integrate-ipfs-with-ethereum
 
 http://docs.ipfs.io.ipns.localhost:8080/how-to/mint-nfts-with-ipfs/#minty
 https://github.com/yusefnapora/minty
+
+https://docs.ethers.io/v5/api/providers/types/#providers-TransactionResponse
+https://github.com/ipfs-examples/js-ipfs-examples/tree/master/examples
+https://www.npmjs.com/package/ipfs-http-client#createoptions
+https://github.com/ipfs/js-ipfs/blob/master/docs/core-api/FILES.md#ipfscatipfspath-options
+
+https://medium.loopring.io/loopring-now-supports-nfts-on-l2-29174a343d0d
+https://docs.loopring.io/en/integrations/counter_factual_nft.html
+https://docs.loopring.io/en/dex_apis/submitMintNft.html
 
 # Addresses
 
@@ -96,16 +117,7 @@ International Medical Corps
 
 browserify js/main.js -o js/bundle.js
 
-
-Consider making any images at a width between 320 and 1080 pixels and aspect ratio between 1.91:1 and 4:5 inclusive.
-
-350x350
-
-
-animation_url:    A URL to a multi-media attachment for the item. The file extensions GLTF, GLB, WEBM, MP4, M4V, OGV, and OGG are supported, along with the audio-only extensions MP3, WAV, and OGA.
-
 Date Traits
-
 OpenSea also supports a date display_type. Traits of this type will appear in the right column near "Rankings" and "Stats." Pass in a unix timestamp (seconds) as the value.
 
     {

@@ -1,6 +1,6 @@
 # NFT Buttholes
 
-This is a recreation project of another, shittier attempt at a relatively simple idea that shouldn't have been such a vain and confusing cashgrab. To quote le bel morons:
+This is a recreation project of another, shittier attempt at a relatively simple idea that shouldn't have been such a vain and confusing cashgrab. To quote le bel morons (which I will not link to purely out of spite):
 
 "The +1 is the Masterpiece “La Fusion des Anus” that will be sold in auction after the public mint of the other 2000 NFT's. The owner of the masterpiece will get 1 % of the next collections resales for life. Holders will have 15% of its auction sale and 5% for life on every resale."
 
@@ -10,43 +10,118 @@ Which translates to:
 15% -> auction -> holders
 5% -> resale -> holders
 
-??? serve zero fucking purpose
+Which ultimately serve zero fucking purpose or longterm utility other than acting as cash grabs for early holders / bots. Who the fuck cares about repeated auctions of "totally randomized" (re: trust us bro) butthole pics? Who is participating in "trading" these, or more specifically, how do fans truly benefit from owning a token without being negatively affected by the bogus trading "incentives" & price manipulation behaviors that lack any long term utility? Funds for a Metaverse gallery? Whaaaaat? To display buttholes? Like, yeah, sure, on Solana? LULSUREBROS. Just no. No. You had a chance to do it right, you didn't care. If anything you've only caused damage to your own cummunity and possibly mine. So now I've had to fucking spend weeks of my life (and onward) on Butthole NFTs because your sketchy ass project *annoyed* me and, since I literally have met some of the women that have been roped into this project and may again, I have a literal fucking obligation to tell you to go fuck yourselves now in advance should you have found your way here yourselves.
+
+**To all Bel Anus's and holders**: *you are :chef's kiss: stupid*   
 
 ------
 
-Goal:
-	NFT buttholes project that makes their NFT buttholes project look stupid
+### Goal
+My own NFT buttholes project that makes their NFT buttholes project look like the stupid and pointless scam that it is (seriously, Solana?? fucking clowns...)
 
-Requirements:
-- EVM compatible smart contract
+#### Requirements:
+General:
+- anyone 18+ can participate
+- easy to use, not convoluted; no hidden information
+- fair
 - NFTs (of buttholes)
-- "utility" & "trading"
-
-Utility:
-- VIP membership for sites, events
-
-Trading:
-- tradeable / resellable
 
 Operation:
-- no batch minting
-- random (enough) uri upon minting, like a gumball machine... but for buttholes
+- EVM compatible smart contract
+- can be upgraded
+- fair distribution
+- no batch minting; no cumulative benefits
+- QoL scripts
+
+Trading:
+- auctionable
+- percentage of royalties forwarded to chosen charities / services 
+- tradeable
+
+Utility:
+- ongoing VIP membership benefits for sites, events
 
 ---
 
-### Checklist:
+### Release Checklist
 
-| Development | Staging | Production |  
-[-][-][ ] buttholes contract for nfts  
-[-][-][ ] paymentsplitpusher contract for "starving artists"  
-[-][-][ ] ipfs data format & default butthole  
-[-][-][ ] nfts do nft stuff  
-[-][ ][ ] payments do payment stuff safely and correctly  
-[-][ ][ ] random "enough"  
-[-][ ][ ] balance checks / "VIP" benefits  
-[-][-][ ] images behind "proper" age checks  
+| Feature | D.evelopment | Staging | Production |
+|:-------:|:-----------:|:-------:|:----------:|
+| EVM smart contract | :ballot_box_with_check: | :ballot_box_with_check: | :white_large_square: |
+| Funds for "starving artists" (dafuq?) | :ballot_box_with_check: | :ballot_box_with_check: | :white_large_square: |
+| IPFS Metadata | :ballot_box_with_check: | :ballot_box_with_check: | :white_large_square: |
+| Butthole NFTs | :ballot_box_with_check: | :ballot_box_with_check: | :white_large_square: |
+| Fair Distribution | :ballot_box_with_check: | :white_large_square: | :white_large_square: |
+| "VIP" Benefits | :ballot_box_with_check: | :white_large_square: | :white_large_square: |
+| 18+ Age Check | :ballot_box_with_check: | :ballot_box_with_check: | :white_large_square: |
+| A pic of my Butthole | :ballot_box_with_check: | :white_large_square: | :white_large_square: |
+| Loopring L2 | :white_large_square: | :white_large_square: | :white_large_square: |
+| ...? | :white_large_square: | :white_large_square: | :white_large_square: |
 
-Release:  
-\[:white_large_square:\] butthole NFTs  
-\[:ballot_box_with_check:\] innate & flexible value  
-\[:white_large_square:\] reproduceable "VIP" benefits  
+---
+
+### "Starving Artists"
+Each NFT corresponds with a reconfigured [PaymentSplitter.sol](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/finance/PaymentSplitter.sol) contract named "CheekSpreader.sol". The purpose of the reconfiguration changes the methodology of how the funds are dispersed from a pull to a push. Wherein, normally the funds must be manually withdrawn and thus known about. We do not wish to have to inform every "starving artist" (again whatever the fuck that means) that they have money that they need to get. So, instead, when the artist who owns / created a butthole NFT and receives the primary royalty for it chooses to withdraw their accounts balance, they simultaneously forward the balances of their chosen "donor" accounts directly to them.
+
+For example, my (somewhat) randomly chosen default donation addresses are thus:
+
+**Ukraine Government** : 0x165CD37b4C644C2921454429E7F9358d18A45e14
+https://etherscan.io/address/0x165CD37b4C644C2921454429E7F9358d18A45e14
+
+**Action Against Hunger USA** : 0xC7c3A15b7e5C1f121fE09064f6eCe9aBF87Bbd8c
+https://www.actionagainsthunger.org/story/donate-crypto
+
+**International Medical Corps** : 0x5F08845e53Ba171B7a782D0CdEA96Ab720426260
+https://internationalmedicalcorps.org/get-involved/other-ways-to-give/donatebitcoin/
+
+When I withdraw the balance generated by my NFT, all above 3 addresses will also receive their balances. This process is *optional*. A butthole NFT artist may choose their own donations addresses, use one of mine, or choose to receive the entirety of their royalties. I do not fucking care. It's your butthole.
+
+---
+
+### QoL Scripts
+
+I have attempted to provide both:
+- an accessible and easy to use web interface for you
+- me to use javascript to run via CLI
+
+If you have any issues accessing or operating the web interface please access the contract directly via [Etherscan](https://etherscan.io/) . From there, you will be able to call all of the necessary functions directly. There's only 3 of them (currently) that need to be used. "addMinter", "addButthole" and "createCheekSpreader".
+
+**addMinter** : anyone and everyone must call this to confirm they are 18+
+**addButthole**(address newButthole, string memory _tokenURI) : only the contract owner may call this function to add a new artist
+**createCheekSpreader**(address donor1, address donor2, address donor3) : the artist calls this function themselves (anytime) to update their list of donors. The contract owner may run this function if it the artist has not yet done so (for them if they ask or need me to). When a donor list is updated it does not unset any previously minted token's settings-- they continue to payout as the balance owner withdraws.
+
+The javascript allows me to easily call the addButthole and createCheekSpreader functions which when combined complete the creation and upload of a single NFT w/ metadata to IPFS. I require from a participating "Butthole artist" only their: ETH address, a butthole pic, and their chosen donors (if any). And also their birthday, just cause. :)
+
+The token's image and metadata are both stored on IPFS. Access to viewing the 18+ butthole image is done so simply by accessing the "butthole" metadata property which contains the CID or path to the file on IPFS. For example, if the CID of a butthole NFT is "QmSjRzpmYG8dbgThEP2kYn5cXtwgmqZqid5JBLhBWx5Rvz" then the IPFS url would be "ipfs://QmSjRzpmYG8dbgThEP2kYn5cXtwgmqZqid5JBLhBWx5Rvz". Viewing or accessing the web interface is best done so with an IPFS compatible browser such as Brave or by installing an IPFS browser extension (completely safe*).
+
+---
+
+### VIP Benefits
+#### Instructions:
+[add instructions for implementing js code]
+
+#### Participating Sites:
+**Mine**:
+[none yet]
+**Others**:
+[none yet]
+
+---
+
+### Metaverse "Gallery" of Buttholes
+Yeah, sure, pay me *cough* fund me an assload of moolah and I will make this thing a real thing whether I need to do it all myself or distribute labor in such a way that it is done right and is actually fucking "useful" over a prolonged period of time and not some fucking joke project riddled with bullshit delays or distraction issues along the way to grift as much as possible.
+
+Address for Metaverse Gallery of Buttholes: [address]
+
+Should I receive X amount of "donations" to the above address, then I will begin operations on such a stupid, stupid but hilarious idea. I would like to make the whole manner of metaverse operation to be a DAO related structure to ideally best benefit everybody and allow for mutual trust between fans and "artists", so, I will provide an address for donations only when I have both received enough interest for the idea and completed a smart contract to act in such a manner.
+
+---
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<div align="right">
+Alex D.
+
