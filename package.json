@@ -1,6 +1,6 @@
 {
   "name": "NFTButtholes",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "main": "index.html",
   "author": "Skeetzo",
   "license": "MIT",
@@ -11,6 +11,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^4.5.0",
     "dotenv": "^16.0.0",
+    "ipfs-http-client": "^56.0.3",
     "minimist": "^1.2.6",
     "truffle-hdwallet-provider": "^1.0.17",
     "web3": "^1.7.3"
