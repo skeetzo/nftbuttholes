@@ -122,8 +122,9 @@ document.getElementById("eighteen").onclick = async function () {
 	try {
 		await connectToContract();
 		await getContract();
-		if (!await Buttholes.hasRole(await Buttholes.MINTER_ROLE(), account)) {	
-			const tx = await Buttholes.addMinter({'from':account});
+		if (!await Buttholes.hasRole(await Buttholes.MINTER_ROLE(), account)) {
+			const gasLimit = await Buttholes.estimateGas.addMinter();
+			const tx = await Buttholes.addMinter({'gasLimit':gasLimit});
 			const receipt = await tx.wait();
 			console.log(receipt.logs);
 			const event = receipt.events.find(x => x.event === "RoleGranted");
@@ -148,8 +149,27 @@ document.getElementById("eighteen").onclick = async function () {
 };
 
 //- mint butthole after minter role has been added
+document.getElementById("donors").onclick = async function () {
+	// TODO
+	// add method for inputting 3 donor addresses
+	let donor1, donor2, donor3;
+	//
+	const gasLimit = await Buttholes.estimateGas.createCheekSpreader(donor1, donor2, donor3);
+	const tx = await Buttholes.createCheekSpreader(donor1, donor2, donor3, {'gasLimit':gasLimit});
+	const receipt = await tx.wait();
+	console.log(receipt.logs);
+	const event = receipt.events.find(x => x.event === "Transfer");
+	if (event) {
+		console.log(event);
+		console.log(event.args.account); // account
+		console.log(event.args.tokenId.toString());
+	}
+};
+
+//- mint butthole after minter role has been added
 document.getElementById("mint").onclick = async function () {
-	const tx = await Buttholes.mint(account);
+	const gasLimit = await Buttholes.estimateGas.mint(account);
+	const tx = await Buttholes.mint(account, {'gasLimit':gasLimit});
 	const receipt = await tx.wait();
 	console.log(receipt.logs);
 	const event = receipt.events.find(x => x.event === "Transfer");
