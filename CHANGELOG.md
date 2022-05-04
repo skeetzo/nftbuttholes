@@ -44,12 +44,15 @@
 	- add test for updateCheekSpreader function
 	- add test for renounceButthole function
 	- test butthole.js
-
 	- documented butthole.js
+	**0.0.9 : 5/4/2022**
+	- finished testing butthole.js
 
 ------------------------------------------------------------------------
 
 # TODO
+
+- fix IPFS interaction in butthole.js
 
 - continue debugging butthole.js
 
@@ -126,6 +129,9 @@ https://github.com/ipfs/js-ipfs/blob/master/docs/core-api/FILES.md#ipfscatipfspa
 https://medium.loopring.io/loopring-now-supports-nfts-on-l2-29174a343d0d
 https://docs.loopring.io/en/integrations/counter_factual_nft.html
 https://docs.loopring.io/en/dex_apis/submitMintNft.html
+
+gas / fee estimates
+https://github.com/ethers-io/ethers.js/discussions/2439
 
 # Addresses
 

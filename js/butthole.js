@@ -26,6 +26,7 @@ var argv = require('minimist')(process.argv.slice(2),{'string':['a','b','d','n',
 const { create } = require('ipfs-http-client');
 const ethers = require('ethers');
 const { readFileSync } = require('fs');
+const path = require('path');
 
 // https://stackoverflow.com/questions/18193953/waiting-for-user-to-enter-input-in-node-js
 const readline = require('readline');
@@ -126,7 +127,8 @@ async function addDonors(address, donor1, donor2, donor3) {
  */
 async function renounceButthole() {
 	console.log("Renouncing Butthole from Contract: %s", account);
-	const tx = await Buttholes.renounceButthole();
+	const gasLimit = await Buttholes.estimateGas.renounceButthole();
+	const tx = await Buttholes.renounceButthole({'gasLimit':gasLimit});
 	try {
 		const receipt = await tx.wait();
 		const event = receipt.events.find(x => x.event === "PuckerDown");
@@ -208,13 +210,20 @@ function createButtholeMetadata(butthole) {
  */
 async function findButthole(butthole) {
 	const client = create();
+	console.log(await client.files.stat('/nft/buttholes'));
+	console.log(await client.files.stat('/nft/buttholes/images'));
+	console.log(await client.files.stat('/nft/buttholes/metadata'));
+
 	// TODO
 	// fix this
-	return false;
-	const cid = '/ipfs/nft/buttholes/metadata';
-	for await (const file of client.ls(cid))
-	  if (file.name == butthole.name)
-	  	return file;
+	// return false;
+	const cid = 'QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn';
+	// for await (const file of client.ls(cid)) {
+	for await (const file of client.files.stat('/nft/buttholes')) {
+		console.log(file)
+		if (file.name == butthole.properties.name.value)
+			return file;
+	}
 	return false;
 }
 
@@ -223,7 +232,7 @@ async function findButthole(butthole) {
  * @param butthole An object containing nft metadata.
  */
 async function uploadButthole(butthole) {
-	butthole.properties.image = await uploadButtholeImage(butthole.image);
+	butthole.properties.butthole.value = await uploadButtholeImage(butthole);
 	return await uploadButtholeMetadata(butthole);
 }
 
@@ -231,12 +240,16 @@ async function uploadButthole(butthole) {
  * @dev Upload a butthole's jpeg/png file and return the CID.
  * @param butthole An object containing nft metadata.
  */
-async function uploadButtholeImage(image) {
-	const file = {
-	  path: `/nfts/buttholes/images`,
-	  content: image
-	}
+async function uploadButtholeImage(butthole) {
+	let image = path.resolve(__dirname, "../", butthole.properties.butthole.value);
 	const client = create();
+	console.debug("uploading butthole image: %s", butthole.properties.butthole.value);
+	const file = {
+	  path: `/nft/buttholes/images`,
+	  // path: "QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn",
+	  content: new Uint8Array(readFileSync(image))
+	}
+	// const { cid } = await client.files.write(`/nft/buttholes/images/${butthole.properties.name.value}`, new Uint8Array(readFileSync(image)));
 	const { cid } = await client.add(file);
 	console.log("Butthole Image Added to IPFS: %s", cid.toString());
 	return cid;
@@ -248,7 +261,9 @@ async function uploadButtholeImage(image) {
  */
 async function uploadButtholeMetadata(butthole) {
 	const file = {
-	  path: `http://ipfs/nfts/buttholes/metadata`,
+	  name: butthole.properties.artist.value+".json",
+	  path: "QmWp5mcQWmdEnS2gyJ9egxShinUuTwSJa4ZmEqDV1gVKb8",
+	  // path: `http://ipfs/nft/buttholes/metadata`,
 	  content: JSON.stringify(butthole),
       // content: ipfs.types.Buffer.from(btoa(fr.result),"base64")
 	}
