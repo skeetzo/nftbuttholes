@@ -83,8 +83,10 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
     address buttholeOwner = _getButthole();
     // set token uri to be butthole uri of random owner
     _setTokenURI(tokenId, buttholes[buttholeOwner]);
-    // set royalty for token id and butthole owner's splitter contract
-    _setTokenRoyalty(tokenId, CheekSpreaders[buttholeOwner], royaltyValue);
+    // set royalty for token id and butthole owner's splitter contract (if exists)
+    if (CheekSpreaders[buttholeOwner]!=address(0x0))
+      buttholeOwner = CheekSpreaders[buttholeOwner];
+    _setTokenRoyalty(tokenId, buttholeOwner, royaltyValue);
   }
 
   /**
@@ -119,7 +121,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
     buttholeMap[newButthole] = true;
     buttholeOwners.push(newButthole);
     buttholes[newButthole] = _tokenURI;
-    CheekSpreaders[newButthole] = newButthole;
+    // CheekSpreaders[newButthole] = newButthole;
     emit PuckerUp(newButthole, _tokenURI);
   }
 
@@ -147,7 +149,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    */
   function updateCheekSpreader(address buttholeAddress, address donor1, address donor2, address donor3) public onlyOwner {
     require(buttholeMap[buttholeAddress], "Buttholes: address must be a butthole");
-    require(CheekSpreaders[buttholeAddress] == buttholeAddress, "Buttholes: address must not already be set");
+    require(CheekSpreaders[buttholeAddress] == address(0x0), "Buttholes: address must not already be set");
     address[] memory payees = new address[](4);
     payees[0] = buttholeAddress;
     payees[1] = donor1;
@@ -179,11 +181,12 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   function renounceButthole() public {
     require(buttholeMap[_msgSender()], "Buttholes: caller must be a butthole");
     delete buttholes[_msgSender()];
+    delete CheekSpreaders[_msgSender()];
+    buttholeMap[_msgSender()] = false;
     // delete from array of owners
     for (uint i=0;i<buttholeOwners.length;i++)
       if (buttholeOwners[i] == _msgSender())
         delete buttholeOwners[i];
-    buttholeMap[_msgSender()] = false;
     emit PuckerDown(_msgSender());
   }
 

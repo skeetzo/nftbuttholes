@@ -79,18 +79,22 @@ async function connectToContract() {
  */
 async function addButthole(newButtholeAddress, newButtholeURI) {
 	console.log("Adding Butthole to Contract: %s -> %s", newButtholeAddress, newButtholeURI);
-	const tx = await Buttholes.addButthole(newButtholeAddress, newButtholeURI.toString());
 	try {
+		const gasLimit = await Buttholes.estimateGas.addButthole(newButtholeAddress.toString(), newButtholeURI.toString());
+		const tx = await Buttholes.addButthole(newButtholeAddress.toString(), newButtholeURI.toString(), {'gasLimit':gasLimit});
 		const receipt = await tx.wait();
 		const event = receipt.events.find(x => x.event === "PuckerUp");
 		if (event) {
-			console.debug(event);
+			// console.debug(event);
 			console.log(`Successfully Added Butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
 		}
+		else
+			console.warn("Failed to add new butthole!");
 	}
 	catch (err) {
-		console.error("Unable to add new butthole!");
-		console.debug(err);
+		// console.error(err);
+		console.warn("Unable to add new butthole!");
+		console.error(JSON.parse(err.body).error.data.reason);
 	}
 }
 
@@ -103,20 +107,17 @@ async function addButthole(newButtholeAddress, newButtholeURI) {
  */
 async function addDonors(address, donor1, donor2, donor3) {
 	console.log("Adding Donors to Contract for Address: %s\n-> %s\n-> %s\n-> %s", address, donor1, donor2, donor3);
-	// add donors for butthole
-	const tx = await Buttholes.updateCheekSpreader(address, donor1, donor2, donor3);
 	try {
+		const gasLimit = await Buttholes.estimateGas.updateCheekSpreader(address.toString(), donor1.toString(), donor2.toString(), donor3.toString());
+		const tx = await Buttholes.updateCheekSpreader(address, donor1, donor2, donor3, {'gasLimit':gasLimit});
 		const receipt = await tx.wait();
-		if (receipt) {
-			console.debug(receipt);
-			console.log(`Successfully Added Donors: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
-		}
-		else
-			console.error("Unable to add new donors!");
+		// console.debug(receipt);
+		console.log("Successfully Added Donors!");
 	}
 	catch (err) {
-		console.error("Unable to add new donors!");
-		console.debug(err);
+		// console.error(err);
+		console.warn("Unable to add new donors!");
+		console.error(JSON.parse(err.body).error.data.reason);
 	}
 }
 
@@ -130,13 +131,16 @@ async function renounceButthole() {
 		const receipt = await tx.wait();
 		const event = receipt.events.find(x => x.event === "PuckerDown");
 		if (event) {
-			console.debug(event);
+			// console.debug(event);
 			console.log("Successfully Renounced Butthole: %s", account);		
 		}
+		else
+			console.warn("Failed to renounce butthole!");
 	}
 	catch (err) {
-		console.error("Unable to renounce butthole!");
-		console.debug(err);
+		// console.error(err);
+		console.warn("Unable to renounce butthole!");
+		console.error(JSON.parse(err.body).error.data.reason);
 	}
 }
 
@@ -310,7 +314,7 @@ async function donors(butthole) {
 		donor3 = defaultDonors.shift();
 		console.warn("Missing Donor3.");
 	}
-	await addDonors(butthole.properties.artist.value, donor1, donor2, donor3);
+	await addDonors(butthole.properties ? butthole.properties.artist.value : butthole.artist, donor1, donor2, donor3);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
