@@ -26,8 +26,20 @@ var argv = require('minimist')(process.argv.slice(2),{'string':['a','b','d','n',
 const { create } = require('ipfs-http-client');
 const ethers = require('ethers');
 const { readFileSync } = require('fs');
+
+// https://stackoverflow.com/questions/18193953/waiting-for-user-to-enter-input-in-node-js
 const readline = require('readline');
-const rl = readline.createInterface(process.stdin, process.stdout);
+function askQuestion(query) {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+
+    return new Promise(resolve => rl.question(query, ans => {
+        rl.close();
+        resolve(ans);
+    }))
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -67,7 +79,7 @@ async function connectToContract() {
  */
 async function addButthole(newButtholeAddress, newButtholeURI) {
 	console.log("Adding Butthole to Contract: %s -> %s", newButtholeAddress, newButtholeURI);
-	const tx = await Buttholes.addButthole(newButtholeAddress, newButtholeURI);
+	const tx = await Buttholes.addButthole(newButtholeAddress, newButtholeURI.toString());
 	try {
 		const receipt = await tx.wait();
 		const event = receipt.events.find(x => x.event === "PuckerUp");
@@ -192,7 +204,10 @@ function createButtholeMetadata(butthole) {
  */
 async function findButthole(butthole) {
 	const client = create();
-	const cid = '/nft/buttholes/metadata';
+	// TODO
+	// fix this
+	return false;
+	const cid = '/ipfs/nft/buttholes/metadata';
 	for await (const file of client.ls(cid))
 	  if (file.name == butthole.name)
 	  	return file;
@@ -229,7 +244,7 @@ async function uploadButtholeImage(image) {
  */
 async function uploadButtholeMetadata(butthole) {
 	const file = {
-	  path: `/nfts/buttholes/metadata`,
+	  path: `http://ipfs/nfts/buttholes/metadata`,
 	  content: JSON.stringify(butthole),
       // content: ipfs.types.Buffer.from(btoa(fr.result),"base64")
 	}
@@ -246,29 +261,31 @@ async function uploadButtholeMetadata(butthole) {
  * @param butthole An object containing nft metadata.
  */
 async function add(butthole) {
+	const d = butthole.donors; 
 	butthole = createButtholeMetadata(butthole);
+	butthole.donors = d;
 	// check if butthole already exists in metadata collection
 	let buttholeCID = await findButthole(butthole);
 	if (buttholeCID) {
 		// console.log(`Found existing Butthole Artist: ${butthole.name} - ${butthole.artist}`);
-        console.error(`Butthole Artist ${butthole.name} already exists.`);
-        let answer = await rl.question("Add new edition? yes/[n]o: ");
+        console.error(`Butthole Artist ${butthole.properties.name.value} already exists.`);
+		const answer = await askQuestion("Add new edition? yes/[n]o: ");
 		if (answer.includes("y")) {
-			console.log ("Adding new " + butthole.name);
+			console.log ("Adding new " + butthole.properties.name.value);
 			butthole.attributes.map(a => {if (a["trait_type"] == "edition") a["value"] = parseInt(a["value"]) + 1 });
 		}
 		else {
-			console.log ("Not adding new " + butthole.name);
+			console.log ("Not adding new " + butthole.properties.name.value);
 			return;
 		}
 	}
 	else {
-		console.log(`Adding new Butthole Artist: ${butthole.name} - ${butthole.artist}`);
+		console.log(`Adding new Butthole Artist: ${butthole.properties.name.value} - ${butthole.properties.artist.value}`);
 	}
 	buttholeCID = await uploadButthole(butthole);
-	await addButthole(butthole.artist, buttholeCID);
-	if (butthole.donorAddresses.length > 0)
-		await update(butthole);
+	await addButthole(butthole.properties.artist.value, buttholeCID);
+	if (butthole.donors.length > 0)
+		await donors(butthole);
 }
 
 /**
@@ -293,7 +310,7 @@ async function donors(butthole) {
 		donor3 = defaultDonors.shift();
 		console.warn("Missing Donor3.");
 	}
-	await addDonors(butthole.artist, donor1, donor2, donor3);
+	await addDonors(butthole.properties.artist.value, donor1, donor2, donor3);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

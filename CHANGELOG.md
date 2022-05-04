@@ -43,31 +43,32 @@
 	**0.0.8 : 5/3/2022**
 	- add test for updateCheekSpreader function
 	- add test for renounceButthole function
+	- test butthole.js
+
+	- documented butthole.js
 
 ------------------------------------------------------------------------
 
-- test main.js
-- test butthole.js
-- test contract web interface buttons
-- test new cheekspreader interaction w/ royalties
-- finish debugging web3.0 interaction in main.js
-
 # TODO
 
-- implement Loopring counterfactual nfts & submitMintNft functionality
+- continue debugging butthole.js
 
-- document butthole.js & main.js
+- document main.js
+- test main.js
+- finish debugging web3.0 interaction in main.js
+- test contract web interface buttons
+- actually test new cheekspreader interaction w/ royalties
+- write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
+
+- implement Loopring counterfactual nfts & submitMintNft functionality
 
 - [writeup] steps for minting / uploading / creating an nft
 -- accessible method for updating / uploading butthole pics
 -- accessible method for minting
 -- instructions for how to send me info to add a butthole & how I do so
 
-- write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
-
 - [much later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
-
-- add final address of contract on mainnet to etherscan link in readme
+- [after release] add final address of contract on mainnet to etherscan link in readme
 
 # Dev
 
