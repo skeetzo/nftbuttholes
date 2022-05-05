@@ -46,15 +46,20 @@
 	- test butthole.js
 	- documented butthole.js
 	**0.0.9 : 5/4/2022**
-	- finished testing butthole.js
+	- finished testing butthole.js contract interactions
+	- continued debugging butthole.js ipfs stuff
+	- added ipfs directory setups / checks
+	- data writes to ipfs successfully -> requires updating the naming scheme to prevent overwriting issues
 
 ------------------------------------------------------------------------
 
+	- almost fixed IPFS interaction in butthole.js
+
 # TODO
 
-- fix IPFS interaction in butthole.js
-
-- continue debugging butthole.js
+- restructure naming scheme and folder layout: artistName/images, artistName/editions
+-- so basically change metadata to edition #?
+-- and organize within artistName folders to allow multiple same named files in places
 
 - document main.js
 - test main.js
