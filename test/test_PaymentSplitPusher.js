@@ -5,32 +5,32 @@ chai.use(chaiAlmost());
 const assert = require("chai").assert;
 const truffleAssert = require('truffle-assertions');
 
-const PaymentSplitPusher = artifacts.require("./PaymentSplitPusher.sol");
+const CheekSpreader = artifacts.require("./CheekSpreader.sol");
 
 const DONATION1 = process.env.DONATION1_DEV,
       ONE_ETH = web3.utils.toWei("1", "ether");
 
-contract("PaymentSplitPusher", async (accounts) => {
+contract("CheekSpreader", async (accounts) => {
   const owner             = accounts[0],
         notOwner          = accounts[1];
   web3.eth.defaultAccount = owner;
 
-  let paymentSplitPusher;
+  let cheekSpreader;
 
   before(async function () {
-    paymentSplitPusher              = await PaymentSplitPusher.deployed();
-    PaymentSplitPusher.numberFormat = 'BN';
+    // cheekSpreader              = await CheekSpreader.deployed();
+    // cheekSpreader.numberFormat = 'BN';
   });
 
   describe('ERC721', async function () {
     
     before(async function () {
-      await paymentSplitPusher.send(ONE_ETH);
+      // await cheekSpreader.send(ONE_ETH);
     });
     
-    it('can release all funds', async function () {
+    xit('can release all funds', async function () {
       let balanceBefore = parseInt((await web3.eth.getBalance(DONATION1)).toString());
-      let result = await paymentSplitPusher.releaseAll({'from':notOwner});
+      let result = await cheekSpreader.releaseAll({'from':notOwner});
       truffleAssert.eventEmitted(result, 'PaymentReleased', (ev) => {
         // assert.equal(ev["to"].toString(), DONATION1, "does not release to correct donor");
         // assert.equal(ev["amount"].toString(), 330000000000000000, "does not release correct amount");

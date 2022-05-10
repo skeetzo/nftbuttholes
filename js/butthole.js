@@ -1,28 +1,11 @@
-/*
-	Adds a new butthole NFT.
-	
-	Requires:
-		- Ethereum account
-	 	- butthole pic (jpg, jpeg, png, etc)
-		- [OPTIONAL] 3 alternate donation addresses
-
-	1) prepare Ethereum account address
-	- save in spreadsheet or something similar
-
-	2) prepare butthole jpeg for long term storage
-	- add image to ipfs, get file hash CID
-
-	3) add new butthole
-	- send tx to Buttholes contract via addButthole(newButthole, _tokenURI)
-		newButthole --> an Ethereum address that represents a person
-		_tokenURI 	--> the newly generated ipfs CID
-
-	4) update the donors / CheekSpreader
-	- send tx to Buttholes contract via updateCheekSpreader(address, donor1, donor2, donor3)
-*/
+#!/usr/bin/env node
+// Add, update, or renounce a butthole NFT.
 
 require('dotenv').config();
-var argv = require('minimist')(process.argv.slice(2),{'string':['a','b','d','n','i']});
+// const { Command } = require('commander');
+const commander = require('commander'),
+	  Command = commander.Command;
+// var argv = require('minimist')(process.argv.slice(2),{'string':['a','b','d','n','i']});
 const ethers = require('ethers');
 const { readFileSync } = require('fs');
 const path = require('path');
@@ -48,7 +31,7 @@ const IPFS = create();
 
 // Contract //
 
-let account, Buttholes; // connected ETH account & NFT contract
+let Buttholes; // connected ETH account & NFT contract
 
 /**
  * @dev Connects to Butthole contract via provided Web3.0 url.
@@ -56,11 +39,11 @@ let account, Buttholes; // connected ETH account & NFT contract
 async function connectToContract() {
 	try {
 		var url = process.env.ETHEREUM_NODE || "http://localhost:8545";
-		console.log("Connecting to Ethereum Node: %s", url)
+		console.log("Connecting to Ethereum node @ %s", url)
 		var web3Provider = new ethers.providers.JsonRpcProvider(url);
 		const signer = web3Provider.getSigner();
-		account = await signer.getAddress();
-		console.debug("Connected Account: %s", account);
+		// account = await signer.getAddress();
+		// console.debug("Connected Account: %s", account);
 		const ButtholesInterface = require('../build/contracts/Buttholes.json');
 		const abi = ButtholesInterface.abi;
 		const { chainId } = await web3Provider.getNetwork();
@@ -81,7 +64,8 @@ async function connectToContract() {
  * @param newButtholeURI The CID of the token's metadata.json on IPFS.
  */
 async function addButthole(newButtholeAddress, newButtholeURI) {
-	console.log("Adding Butthole to Contract: %s -> %s", newButtholeAddress, newButtholeURI);
+	if (!Buttholes) Buttholes = await connectToContract();
+	console.log("Adding butthole to contract: %s -> %s", newButtholeAddress, newButtholeURI);
 	try {
 		const gasLimit = await Buttholes.estimateGas.addButthole(newButtholeAddress.toString(), newButtholeURI.toString());
 		const tx = await Buttholes.addButthole(newButtholeAddress.toString(), newButtholeURI.toString(), {'gasLimit':gasLimit});
@@ -89,7 +73,7 @@ async function addButthole(newButtholeAddress, newButtholeURI) {
 		const event = receipt.events.find(x => x.event === "PuckerUp");
 		if (event) {
 			// console.debug(event);
-			console.log(`Successfully Added Butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
+			console.log(`Successfully added butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
 		}
 		else
 			console.warn("Failed to add new butthole!");
@@ -102,24 +86,25 @@ async function addButthole(newButtholeAddress, newButtholeURI) {
 }
 
 /**
- * @dev Adds donors for the provided ETH address.
+ * @dev Adds starving artists for the provided ETH address.
  * @param address The artist's ETH address.
  * @param donor1 The 1st donation address.
  * @param donor2 The 2nd donation address.
  * @param donor3 The 3rd donation address.
  */
-async function addDonors(address, donor1, donor2, donor3) {
-	console.log("Adding Donors to Contract for Address: %s\n-> %s\n-> %s\n-> %s", address, donor1, donor2, donor3);
+async function addStarvingArtists(address, donor1, donor2, donor3) {
+	if (!Buttholes) Buttholes = await connectToContract();
+	console.log("Adding starving artists to contract for address: %s\n-> %s\n-> %s\n-> %s", address, donor1, donor2, donor3);
 	try {
 		const gasLimit = await Buttholes.estimateGas.updateCheekSpreader(address.toString(), donor1.toString(), donor2.toString(), donor3.toString());
 		const tx = await Buttholes.updateCheekSpreader(address, donor1, donor2, donor3, {'gasLimit':gasLimit});
 		const receipt = await tx.wait();
 		// console.debug(receipt);
-		console.log("Successfully Added Donors!");
+		console.log("Successfully added starving artists!");
 	}
 	catch (err) {
 		// console.error(err);
-		console.warn("Unable to add new donors!");
+		console.warn("Unable to add new starving artists!");
 		console.error(JSON.parse(err.body).error.data.reason);
 	}
 }
@@ -128,7 +113,8 @@ async function addDonors(address, donor1, donor2, donor3) {
  * @dev Renounce your Butthole NFT. Must be called by the rouncing artist.
  */
 async function renounceButthole() {
-	console.log("Renouncing Butthole from Contract: %s", account);
+	if (!Buttholes) Buttholes = await connectToContract();
+	console.log("Renouncing butthole from contract...");
 	const gasLimit = await Buttholes.estimateGas.renounceButthole();
 	const tx = await Buttholes.renounceButthole({'gasLimit':gasLimit});
 	try {
@@ -136,7 +122,7 @@ async function renounceButthole() {
 		const event = receipt.events.find(x => x.event === "PuckerDown");
 		if (event) {
 			// console.debug(event);
-			console.log("Successfully Renounced Butthole: %s", account);		
+			console.log("Successfully renounced butthole!");		
 		}
 		else
 			console.warn("Failed to renounce butthole!");
@@ -224,7 +210,7 @@ async function createIPFS() {
 }
 
 function _ipfsError(err) {
-	console.warn("check IPFS daemon!");
+	console.warn("Check IPFS daemon!");
 	console.error(err.message);
 	process.exit(1);
 }
@@ -281,9 +267,9 @@ async function uploadButtholeImage(butthole) {
 	}
 	try {
 		const { cid } = await IPFS.add(file);
-		console.log("Butthole Image Added to IPFS: %s", cid.toString());
+		console.log("Successfully added butthole image to IPFS: %s", cid.toString());
 		await IPFS.files.write(`${IPFS_IMAGES}/${butthole.properties.name.value}`, image, {'create':true});
-		console.log("Butthole Image Written to IPFS: %s", butthole.properties.name.value);
+		console.log("Successfully wrote butthole image to IPFS: %s", butthole.properties.name.value);
 		return cid.toString();
 	}
 	catch (err) {_ipfsError(err);}
@@ -302,9 +288,9 @@ async function uploadButtholeMetadata(butthole) {
 	}
 	try {
 		const { cid } = await IPFS.add(file);
-		console.log("Butthole Metadata Added to IPFS: %s", cid.toString());
+		console.log("Successfully added butthole metadata to IPFS: %s", cid.toString());
 		await IPFS.files.write(`${IPFS_METADATA}/${butthole.properties.name.value}`, JSON.stringify(butthole), {'create':true});
-		console.log("Butthole Metadata Written to IPFS: %s", butthole.properties.name.value);
+		console.log("Successfully wrote butthole metadata to IPFS: %s", butthole.properties.name.value);
 		return cid.toString();
 	}
 	catch (err) {_ipfsError(err);}
@@ -317,9 +303,9 @@ async function uploadButtholeMetadata(butthole) {
  * @param butthole An object containing nft metadata.
  */
 async function add(butthole) {
-	const d = butthole.donors; 
+	const d = butthole.starvingArtists; 
 	butthole = createButtholeMetadata(butthole);
-	butthole.donors = d;
+	butthole.starvingArtists = d;
 
 	
 	// check if butthole already exists in metadata collection
@@ -367,69 +353,138 @@ async function add(butthole) {
 	process.exit(0);
 
 	await addButthole(butthole.properties.artist.value, buttholeCID);
-	if (butthole.donors.length > 0)
-		await donors(butthole);
+	if (butthole.starvingArtists.length > 0)
+		await starvingArtists(butthole);
 }
 
 /**
  * @dev Update a butthole NFT's CheekSpreader contract data.
  * @param butthole An object containing nft metadata.
  */
-async function donors(butthole) {
-	console.log("Updating Donors...");
-	let defaultDonors = [process.env.DEFAULT_DONATION1, process.env.DEFAULT_DONATION2, process.env.DEFAULT_DONATION3];
-	let donor1 = butthole.donors[0],
-		donor2 = butthole.donors[1],
-		donor3 = butthole.donors[2];
-	if (!donor1) {
-		donor1 = defaultDonors.shift();
+async function starvingArtists(butthole) {
+	console.log("Updating starving artists...");
+	let defaultStarvingArtists = [process.env.DEFAULT_DONATION1, process.env.DEFAULT_DONATION2, process.env.DEFAULT_DONATION3];
+	let artist1 = butthole.starvingArtists[0],
+		artist2 = butthole.starvingArtists[1],
+		artist3 = butthole.starvingArtists[2];
+	if (!artist1) {
+		artist1 = defaultStarvingArtists.shift();
 		console.warn("Missing Donor1.");
 	}
-	if (!donor2) {
-		donor2 = defaultDonors.shift();
+	if (!artist2) {
+		artist2 = defaultStarvingArtists.shift();
 		console.warn("Missing Donor2.");
 	}
-	if (!donor3) {
-		donor3 = defaultDonors.shift();
+	if (!artist3) {
+		artist3 = defaultStarvingArtists.shift();
 		console.warn("Missing Donor3.");
 	}
-	await addDonors(butthole.properties ? butthole.properties.artist.value : butthole.artist, donor1, donor2, donor3);
+	await addStarvingArtists(butthole.properties ? butthole.properties.artist.value : butthole.artist, artist1, artist2, artist3);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// ensure value is an 0x address
+function parseAddress(value) {
+	if (!ethers.utils.isAddress(value))
+	    throw new commander.InvalidArgumentError('Not an ETH address.');
+	return value;
+}
+
+// ensure value is a date value that equates to a unix timestamp
+function parseDate(value) {
+	if (!isValidDate(value))
+	    throw new commander.InvalidArgumentError('Not a date.');
+	return value;
+}
+
+// https://stackoverflow.com/questions/6177975/how-to-validate-date-with-format-mm-dd-yyyy-in-javascript
+function isValidDate(dateString) {
+    // First check for the pattern
+    if(!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString))
+        return false;
+
+    // Parse the date parts to integers
+    var parts = dateString.split("/");
+    var day = parseInt(parts[1], 10);
+    var month = parseInt(parts[0], 10);
+    var year = parseInt(parts[2], 10);
+
+    // Check the ranges of month and year
+    if(year < 1000 || year > 3000 || month == 0 || month > 12)
+        return false;
+
+    var monthLength = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 ];
+
+    // Adjust for leap years
+    if(year % 400 == 0 || (year % 100 != 0 && year % 4 == 0))
+        monthLength[1] = 29;
+
+    // Check the range of the day
+    return day > 0 && day <= monthLength[month - 1];
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @dev Add, update, or renounce a butthole NFT.
+ */
 (async function main() {
-	console.debug(argv);
-	
-	let artistAddress,
-		donorAddresses = [];
-	if (Array.isArray(argv["a"])) {
-		artistAddress = argv["a"].shift();
-		while (argv["a"].length > 0)
-			donorAddresses.push(argv["a"].shift());
-	}
-	else
-		artistAddress = argv["a"];
+
+	const program = new Command();
 
 	const butthole = {
-		artist : artistAddress,
-		birthday : argv["b"],
-		description : argv["d"],
-		donors : donorAddresses,
-		name : argv["n"],
-		image : argv["i"]
+		artist : "",
+		image : "",
+		name : "",
+		description : "",
+		birthday : "",
+		starvingArtists : []
 	};
 
-	if (!argv["add"]&&!argv["donors"]&&!argv["renounce"]) return console.error("Missing runtime command!");
+	program
+	  .name('buttholes')
+	  .description('CLI to some Butthole NFT utilities')
+	  .version('0.0.10');
 
-	await connectToContract();
+	program.command('add')
+	  .description('Add a butthole.')
+	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
+	  .argument('<image>', 'The local path to the butthole image')
+	  .option('-n, --name <string>', 'The artist\'s name')
+	  .option('-d, --description <string>', 'The artist\'s description')
+	  .option('-b, --birthday <date>', 'The artist\'s birthday (MM/DD/YYYY)', parseDate)
+	  .option('-s, --starve [addresses...]', 'Up to 3 starving artist ETH addresses', 'specify at least 1 starving artist')
+	  .addHelpText('after', `
+Example call:
+ $ butthole add 0x00.. /path/to/image.jpg -n "My Name" -d "A description." -b "06/06/1990 -s 0x01.. 0x02.. 0x03..`)
+	  .action(async (artist, image, options) => {
+	  	butthole.artist = artist;
+	  	butthole.image = image;
+	  	butthole.name = options.name;
+	  	butthole.description = options.description;
+	  	butthole.birthday = options.birthday;
+	  	butthole.starvingArtists = options.starve;
+	  	await add(butthole);
+	  });
 
-	// adds new butthole
-	if (argv["add"])
-		await add(butthole);
-	// updates 3 donors
-	else if (argv["donors"])
-		await donors(butthole);
-	else if (argv["renounce"])
-		await renounceButthole();
+	program.command('update')
+	  .description('Update your starving artist(s).')
+	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
+	  .requiredOption('-s, --starve [addresses...]', 'Up to 3 starving artist ETH addresses', 'specify at least 1 starving artist')
+	  .addHelpText('after', `
+Example call:
+ $ butthole update 0x00.. -s 0x01.. 0x02.. 0x03..`)
+	  .action(async (artist, options) => {
+	  	butthole.artist = artist;
+	  	butthole.starvingArtists = options.starve;
+	  	await starvingArtists(butthole);
+	  });
+
+	program.command('renounce')
+	  .description('Renounce your butthole.')
+	  .action(renounceButthole);
+
+	await program.parseAsync(process.argv);
+
 })();
