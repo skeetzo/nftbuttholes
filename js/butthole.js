@@ -228,7 +228,7 @@ async function findButthole(butthole, i=0) {
 		for await (const file of IPFS.files.ls(IPFS_METADATA)) {
 		  console.log(`${file.name} vs ${butthole.properties.name.value}`);
 		  console.debug(file);
-		  if (file.name == butthole.properties.name.value)
+		  if (file.name == butthole.properties.name.value+".json")
 		  	existingButtholes.push(file);
 		}
 	  	console.debug("preexisting butthole nfts found: %s", existingButtholes.length);
@@ -266,7 +266,7 @@ async function uploadButtholeImage(butthole) {
 	  content: image
 	}
 	try {
-		const { cid } = await IPFS.add(file);
+		const { cid: metadataCid } = await IPFS.add(file);
 		console.log("Successfully added butthole image to IPFS: %s", cid.toString());
 		await IPFS.files.write(`${IPFS_IMAGES}/${butthole.properties.name.value}`, image, {'create':true});
 		console.log("Successfully wrote butthole image to IPFS: %s", butthole.properties.name.value);
@@ -287,9 +287,9 @@ async function uploadButtholeMetadata(butthole) {
 	  content: JSON.stringify(butthole),
 	}
 	try {
-		const { cid } = await IPFS.add(file);
+		const { cid: metadataCid } = await IPFS.add(file);
 		console.log("Successfully added butthole metadata to IPFS: %s", cid.toString());
-		await IPFS.files.write(`${IPFS_METADATA}/${butthole.properties.name.value}`, JSON.stringify(butthole), {'create':true});
+		await IPFS.files.write(`${IPFS_METADATA}/${butthole.properties.name.value}.json`, JSON.stringify(butthole), {'create':true});
 		console.log("Successfully wrote butthole metadata to IPFS: %s", butthole.properties.name.value);
 		return cid.toString();
 	}

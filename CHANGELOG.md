@@ -52,7 +52,9 @@
 	- data writes to ipfs successfully -> requires updating the naming scheme to prevent overwriting issues
 	**0.0.10 : 5/9/2022**
 	- updated butthole.js w/ command line help menu; restructured args & options
+	**0.0.11 : 5/10/2022**
 
+	- documented main.js
 
 ------------------------------------------------------------------------
 	- [writeup] steps for minting / uploading / creating an nft
@@ -73,9 +75,8 @@
 -- and organize within artistName folders to allow multiple same named files in places
 
 
-- document main.js
 - test main.js
-- finish debugging web3.0 interaction in main.js
+- finish debugging web3.0 interactions in main.js
 - test contract web interface buttons
 
 - actually test new cheekspreader interaction w/ royalties
@@ -94,7 +95,7 @@
 
 # Dev
 
-ganache-cli -m "cloud sting village source peace dinner dance fringe slice mandate lens upon"
+ganache-cli -m "cloud sting village source peace dinner dance fringe slice mandate lens upon" -i 1337
 
 Available Accounts
 ==================
@@ -151,6 +152,10 @@ https://docs.loopring.io/en/dex_apis/submitMintNft.html
 
 gas / fee estimates
 https://github.com/ethers-io/ethers.js/discussions/2439
+
+
+https://www.npmjs.com/package/http-server
+
 
 # Addresses
 

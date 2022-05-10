@@ -23,22 +23,20 @@ html
           background-color: black;
       }
     </style>
-    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
-    <script src="https://cdn.ethers.io/lib/ethers-5.2.umd.min.js" type="application/javascript"></script>
   </head>
 
   <body>
     <div>Contract Address:<span id="address"></span></div>
     <hr>
     <div id="buttons">
-      <button id="eighteen">Confirm 18+</button>
+      <button id="connect">Connect</button>
+      <button hidden id="eighteen">Confirm 18+</button>
       <button hidden disabled id="add">Add</button>
       <button hidden disabled id="mint">Mint</button>
       <button hidden disabled id="view">View</button>
+      
+      <button hidden disabled id="update">Update</button>
     </div>
-    <script src="js/main.js"></script>
+    <script src="js/bundle.js"></script>
   </body>
 </html>
-
-
-<!-- <img src="https://ipfs.infura.io:5001/api/v0/cat/QmQuTjzy8aZyYqYRyH7UdE5qcDXTxLFYEE9GKNhPY6D6K1"> -->

@@ -14,6 +14,7 @@
     "dotenv": "^16.0.0",
     "ethers": "^5.6.5",
     "ipfs-http-client": "^56.0.3",
+    "jquery": "^3.6.0",
     "minimist": "^1.2.6",
     "truffle-hdwallet-provider": "^1.0.17",
     "web3": "^1.7.3"
@@ -23,5 +24,16 @@
     "chai-almost": "^1.0.1",
     "mocha": "^9.2.2",
     "truffle-assertions": "^0.9.2"
+  },
+  "scripts": {
+    "start:ganache": "npx ganache-cli -i 1337 -m \"cloud sting village source peace dinner dance fringe slice mandate lens upon\" ${ARGS} &",
+    "stop:ganache": "kill -9 $(lsof -t -i:8545)",
+    "reset:ganache": "yarn stop:ganache && yarn start:ganache",
+    "pretest": "yarn start:ganache",
+    "test": "npx truffle test",
+    "posttest": "yarn stop:ganache",
+    "fulltest": "yarn pretest && npx truffle test && yarn posttest",
+    "start:server": "npx http-server",
+    "start": "yarn start:ganache && yarn start:server"
   }
 }
