@@ -28230,12 +28230,12 @@ module.exports={
     "1337": {
       "events": {},
       "links": {},
-      "address": "0xCCbBcfD7d46E477e040B3694eBBA34821D40fF36",
-      "transactionHash": "0xca363c33bc564b986d5ac6acd5222cec9d3101fe5578488c195d7186f391ba92"
+      "address": "0x1de1E1Ee724DA2D7fF707F55411661278cB32AA3",
+      "transactionHash": "0xf853ea68294c4971b0a23ff23ddf8d4fd0bdee3c2057eec74c30e560ac5ccb45"
     }
   },
   "schemaVersion": "3.4.7",
-  "updatedAt": "2022-05-10T20:57:21.621Z",
+  "updatedAt": "2022-05-10T22:37:11.689Z",
   "networkType": "ethereum",
   "devdoc": {
     "author": "Skeetzo",
@@ -28531,6 +28531,18 @@ function showButthole(butthole) {
 
 // Interface //
 
+document.getElementById("add").onclick = async function () {
+	try {
+		// TODO
+		// add popup / enter field for entering ETH address and metadata CID AND/OR entering local path to image for total IPFS upload
+		alert("Finish me!");
+	}
+	catch (err) {
+		console.warn("failed to ...!");
+		console.error(err);
+	}
+}
+
 document.getElementById("connect").onclick = async function () {
 	try {
 		window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -28550,9 +28562,7 @@ document.getElementById("connect").onclick = async function () {
  */
 document.getElementById("eighteen").onclick = async function () {
 	try {
-		let role = await Buttholes.MINTER_ROLE();
-		console.log(role);
-		if (!await Buttholes.hasRole(await Buttholes.MINTER_ROLE, account)) {
+		if (!await Buttholes.hasRole(await Buttholes.MINTER_ROLE(), account)) {
 			const gasLimit = await Buttholes.estimateGas.addMinter();
 			const tx = await Buttholes.addMinter({'gasLimit':gasLimit});
 			const receipt = await tx.wait();
@@ -28562,13 +28572,14 @@ document.getElementById("eighteen").onclick = async function () {
 			console.log(event.args.account); // account
 			//
 			console.log("successfully added minting!");		    
-			$("#mint").enable();
+			document.getElementById("#mint").removeAttribute("disabled");
 		}
 		if (await Buttholes.hasRole(await Buttholes.DEFAULT_ADMIN_ROLE(), account)) {	
 			$("#add").show();
-			$("#add").enable();
+			document.getElementById("add").removeAttribute("disabled");
 		}
 		$("#mint").show();
+		document.getElementById("mint").removeAttribute("disabled");
 		$("view").show();
 		$("#eighteen").hide();
 		console.log("successfully accepted consequences!");
@@ -28579,38 +28590,54 @@ document.getElementById("eighteen").onclick = async function () {
 };
 
 /**
- * @dev Updates starving artists.
+ * @dev Mint butthole. Requires minter role.
  */
-document.getElementById("update").onclick = async function () {
-	// TODO
-	// add method for inputting 3 donor addresses
-	let donor1, donor2, donor3;
-	//
-	const gasLimit = await Buttholes.estimateGas.createCheekSpreader(donor1, donor2, donor3);
-	const tx = await Buttholes.createCheekSpreader(donor1, donor2, donor3, {'gasLimit':gasLimit});
-	const receipt = await tx.wait();
-	console.log(receipt.logs);
-	const event = receipt.events.find(x => x.event === "Transfer");
-	if (event) {
-		console.log(event);
-		console.log(event.args.account); // account
-		console.log(event.args.tokenId.toString());
+document.getElementById("mint").onclick = async function () {
+	try {
+		// console.debug(0)
+		// console.log(account)
+		// const gasLimit = await Buttholes.estimateGas.mint(account.toString());
+		// console.debug(1)
+		// const tx = await Buttholes.mint(account.toString(), {'gasLimit':gasLimit});
+		const tx = await Buttholes.mint(account.toString());
+		console.debug(2)
+		const receipt = await tx.wait();
+		console.log(receipt)
+		console.log(receipt.logs);
+		const event = receipt.events.find(x => x.event === "Transfer");
+		if (event) {
+			console.log(event);
+			// console.log(event.args.account); // account
+			// console.log(event.args.tokenId.toString());
+		}
+	}
+	catch (err) {
+		console.error(err);
 	}
 };
 
 /**
- * @dev Mint butthole. Requires minter role.
+ * @dev Updates starving artists.
  */
-document.getElementById("mint").onclick = async function () {
-	const gasLimit = await Buttholes.estimateGas.mint(account);
-	const tx = await Buttholes.mint(account, {'gasLimit':gasLimit});
-	const receipt = await tx.wait();
-	console.log(receipt.logs);
-	const event = receipt.events.find(x => x.event === "Transfer");
-	if (event) {
-		console.log(event);
-		console.log(event.args.account); // account
-		console.log(event.args.tokenId.toString());
+document.getElementById("update").onclick = async function () {
+	try {
+		// TODO
+		// add method for inputting 3 donor addresses
+		let donor1, donor2, donor3;
+		//
+		const gasLimit = await Buttholes.estimateGas.createCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString());
+		const tx = await Buttholes.createCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString(), {'gasLimit':gasLimit});
+		const receipt = await tx.wait();
+		console.log(receipt.logs);
+		const event = receipt.events.find(x => x.event === "Transfer");
+		if (event) {
+			console.log(event);
+			console.log(event.args.account); // account
+			console.log(event.args.tokenId.toString());
+		}
+	}
+	catch (err) {
+		console.error(err);
 	}
 };
 
