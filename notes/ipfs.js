@@ -150,13 +150,35 @@ async getNFTMetadata(tokenId) {
 
 
 
+/**
+ * Get the contents of the IPFS object identified by the given CID or URI, and parse it as JSON, returning the parsed object.
+ *  
+ * @param {string} cidOrURI - IPFS CID string or `ipfs://<cid>` style URI
+ * @returns {Promise<string>} - contents of the IPFS object, as a javascript object (or array, etc depending on what was stored). Fails if the content isn't valid JSON.
+ */
+async getIPFSJSON(cidOrURI) {
+    const str = await this.getIPFSString(cidOrURI)
+    return JSON.parse(str)
+}
 
-okay so i want to create a metadata.json file for each butthole pic and upload it for ipfs
-then the ipfs hash of the metadata.json file (which also contains the image uri and whatnot in it) is set to be the butthole hash uri in the contract
-so that whenever it is fetched, it returns the metadata.json file which provides the butthole.jpeg and buttholeflap.jpegs
+/**
+ * Get the contents of the IPFS object identified by the given CID or URI, and return it as a string.
+ * 
+ * @param {string} cidOrURI - IPFS CID string or `ipfs://<cid>` style URI
+ * @returns {Promise<string>} - the contents of the IPFS object as a string
+ */
+async getIPFSString(cidOrURI) {
+    const bytes = await this.getIPFS(cidOrURI)
+    return uint8ArrayToString(bytes)
+}
 
-
-
-
-
-
+/**
+ * Get the full contents of the IPFS object identified by the given CID or URI.
+ * 
+ * @param {string} cidOrURI - IPFS CID string or `ipfs://<cid>` style URI
+ * @returns {Promise<Uint8Array>} - contents of the IPFS object
+ */
+async getIPFS(cidOrURI) {
+    const cid = stripIpfsUriPrefix(cidOrURI)
+    return uint8ArrayConcat(await all(this.ipfs.cat(cid)))
+}
