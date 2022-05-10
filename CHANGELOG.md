@@ -52,19 +52,22 @@
 	- data writes to ipfs successfully -> requires updating the naming scheme to prevent overwriting issues
 	**0.0.10 : 5/9/2022**
 	- updated butthole.js w/ command line help menu; restructured args & options
-	**0.0.11 : 5/10/2022**
-
-	- documented main.js
-
-------------------------------------------------------------------------
 	- [writeup] steps for minting / uploading / creating an nft
 	-- accessible method for updating / uploading butthole pics
 	-- accessible method for minting
 	-- instructions for how to send me info to add a butthole & how I do so
+	**0.0.11 : 5/10/2022**
+	- documented main.js
+	- finished debugging web3.0 interactions in main.js; connects to web3.0 & contract
+	- tested main.js
+	- tested contract web interface buttons
+	- updates to index.html
 
+------------------------------------------------------------------------
 
-	- almost fixed IPFS interaction in butthole.js
-
+	- finish testing main.js
+	- finish testing contract web interface buttons
+	- finish IPFS interaction in butthole.js that requires updated naming scheme
 
 # TODO
 
@@ -73,11 +76,6 @@
 - restructure naming scheme and folder layout: artistName/images, artistName/editions
 -- so basically change metadata to edition #?
 -- and organize within artistName folders to allow multiple same named files in places
-
-
-- test main.js
-- finish debugging web3.0 interactions in main.js
-- test contract web interface buttons
 
 - actually test new cheekspreader interaction w/ royalties
 - write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
@@ -89,11 +87,13 @@
 - implement Loopring counterfactual nfts & submitMintNft functionality
 - add tests for Loopring interactions
 
-
+- update instructions for performers / butthole artists 
 - [later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
 - [after release] add final address of contract on mainnet to etherscan links in docs
 
 # Dev
+
+http-server
 
 ganache-cli -m "cloud sting village source peace dinner dance fringe slice mandate lens upon" -i 1337
 

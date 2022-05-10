@@ -23,9 +23,9 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   // account quick mapping
   mapping(address => bool) public buttholeMap;
   // unique butthole owners
-  address[] buttholeOwners;
+  address[] private buttholeOwners;
   // paymentsplitters
-  mapping(address => address) CheekSpreaders;
+  mapping(address => address) private CheekSpreaders;
   // royalty fee - 5%
   uint96 public constant royaltyValue = 200;
 
