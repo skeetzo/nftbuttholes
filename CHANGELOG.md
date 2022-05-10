@@ -50,33 +50,47 @@
 	- continued debugging butthole.js ipfs stuff
 	- added ipfs directory setups / checks
 	- data writes to ipfs successfully -> requires updating the naming scheme to prevent overwriting issues
+	**0.0.10 : 5/9/2022**
+	- updated butthole.js w/ command line help menu; restructured args & options
+
 
 ------------------------------------------------------------------------
+	- [writeup] steps for minting / uploading / creating an nft
+	-- accessible method for updating / uploading butthole pics
+	-- accessible method for minting
+	-- instructions for how to send me info to add a butthole & how I do so
+
 
 	- almost fixed IPFS interaction in butthole.js
 
+
 # TODO
+
+- add ETH cost to minting
 
 - restructure naming scheme and folder layout: artistName/images, artistName/editions
 -- so basically change metadata to edition #?
 -- and organize within artistName folders to allow multiple same named files in places
 
+
 - document main.js
 - test main.js
 - finish debugging web3.0 interaction in main.js
 - test contract web interface buttons
+
 - actually test new cheekspreader interaction w/ royalties
 - write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
 
+- add test file for js/butthole.js
+-- add tests for birthday date string
+- add test file for js/main.js
+
 - implement Loopring counterfactual nfts & submitMintNft functionality
+- add tests for Loopring interactions
 
-- [writeup] steps for minting / uploading / creating an nft
--- accessible method for updating / uploading butthole pics
--- accessible method for minting
--- instructions for how to send me info to add a butthole & how I do so
 
-- [much later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
-- [after release] add final address of contract on mainnet to etherscan link in readme
+- [later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
+- [after release] add final address of contract on mainnet to etherscan links in docs
 
 # Dev
 
@@ -167,14 +181,3 @@ OpenSea also supports a date display_type. Traits of this type will appear in th
 
 curl -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":67}' localhost:8545
 
-
-#### Test Commands
-
-node js/butthole.js --add -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -i "images/doughnut.jpg" -b "6/6/1990" -d "A wily one." -n "Alex D." 
-node js/butthole.js --add -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -i "images/doughnut.jpg" -b "6/6/1990" -d "A wily one." -n "Alex D." -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3" -a "0xc9Ff2b62CF14941d96bAAFecFEBae1a83fd82a7F" -a "0x3Ac74B86550a493EA3F1D8Da7685AeD17CD7a524"
-
-node js/butthole.js --donors -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3"
-node js/butthole.js --donors -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3" -a "0xc9Ff2b62CF14941d96bAAFecFEBae1a83fd82a7F"
-node js/butthole.js --donors -a "0xbC6bC940487C13208FDD7f02d5eF9d9FC886700f" -a "0xA17A41B08a536b004C3Ff379298bAeadE98171B3" -a "0xc9Ff2b62CF14941d96bAAFecFEBae1a83fd82a7F" -a "0x3Ac74B86550a493EA3F1D8Da7685AeD17CD7a524"
-
-node js/butthole.js --renounce
