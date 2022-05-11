@@ -1,6 +1,2601 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
 
 },{}],2:[function(require,module,exports){
+'use strict'
+
+exports.byteLength = byteLength
+exports.toByteArray = toByteArray
+exports.fromByteArray = fromByteArray
+
+var lookup = []
+var revLookup = []
+var Arr = typeof Uint8Array !== 'undefined' ? Uint8Array : Array
+
+var code = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+for (var i = 0, len = code.length; i < len; ++i) {
+  lookup[i] = code[i]
+  revLookup[code.charCodeAt(i)] = i
+}
+
+// Support decoding URL-safe base64 strings, as Node.js does.
+// See: https://en.wikipedia.org/wiki/Base64#URL_applications
+revLookup['-'.charCodeAt(0)] = 62
+revLookup['_'.charCodeAt(0)] = 63
+
+function getLens (b64) {
+  var len = b64.length
+
+  if (len % 4 > 0) {
+    throw new Error('Invalid string. Length must be a multiple of 4')
+  }
+
+  // Trim off extra bytes after placeholder bytes are found
+  // See: https://github.com/beatgammit/base64-js/issues/42
+  var validLen = b64.indexOf('=')
+  if (validLen === -1) validLen = len
+
+  var placeHoldersLen = validLen === len
+    ? 0
+    : 4 - (validLen % 4)
+
+  return [validLen, placeHoldersLen]
+}
+
+// base64 is 4/3 + up to two characters of the original data
+function byteLength (b64) {
+  var lens = getLens(b64)
+  var validLen = lens[0]
+  var placeHoldersLen = lens[1]
+  return ((validLen + placeHoldersLen) * 3 / 4) - placeHoldersLen
+}
+
+function _byteLength (b64, validLen, placeHoldersLen) {
+  return ((validLen + placeHoldersLen) * 3 / 4) - placeHoldersLen
+}
+
+function toByteArray (b64) {
+  var tmp
+  var lens = getLens(b64)
+  var validLen = lens[0]
+  var placeHoldersLen = lens[1]
+
+  var arr = new Arr(_byteLength(b64, validLen, placeHoldersLen))
+
+  var curByte = 0
+
+  // if there are placeholders, only get up to the last complete 4 chars
+  var len = placeHoldersLen > 0
+    ? validLen - 4
+    : validLen
+
+  var i
+  for (i = 0; i < len; i += 4) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] << 18) |
+      (revLookup[b64.charCodeAt(i + 1)] << 12) |
+      (revLookup[b64.charCodeAt(i + 2)] << 6) |
+      revLookup[b64.charCodeAt(i + 3)]
+    arr[curByte++] = (tmp >> 16) & 0xFF
+    arr[curByte++] = (tmp >> 8) & 0xFF
+    arr[curByte++] = tmp & 0xFF
+  }
+
+  if (placeHoldersLen === 2) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] << 2) |
+      (revLookup[b64.charCodeAt(i + 1)] >> 4)
+    arr[curByte++] = tmp & 0xFF
+  }
+
+  if (placeHoldersLen === 1) {
+    tmp =
+      (revLookup[b64.charCodeAt(i)] << 10) |
+      (revLookup[b64.charCodeAt(i + 1)] << 4) |
+      (revLookup[b64.charCodeAt(i + 2)] >> 2)
+    arr[curByte++] = (tmp >> 8) & 0xFF
+    arr[curByte++] = tmp & 0xFF
+  }
+
+  return arr
+}
+
+function tripletToBase64 (num) {
+  return lookup[num >> 18 & 0x3F] +
+    lookup[num >> 12 & 0x3F] +
+    lookup[num >> 6 & 0x3F] +
+    lookup[num & 0x3F]
+}
+
+function encodeChunk (uint8, start, end) {
+  var tmp
+  var output = []
+  for (var i = start; i < end; i += 3) {
+    tmp =
+      ((uint8[i] << 16) & 0xFF0000) +
+      ((uint8[i + 1] << 8) & 0xFF00) +
+      (uint8[i + 2] & 0xFF)
+    output.push(tripletToBase64(tmp))
+  }
+  return output.join('')
+}
+
+function fromByteArray (uint8) {
+  var tmp
+  var len = uint8.length
+  var extraBytes = len % 3 // if we have 1 byte left, pad 2 bytes
+  var parts = []
+  var maxChunkLength = 16383 // must be multiple of 3
+
+  // go through the array every three bytes, we'll deal with trailing stuff later
+  for (var i = 0, len2 = len - extraBytes; i < len2; i += maxChunkLength) {
+    parts.push(encodeChunk(uint8, i, (i + maxChunkLength) > len2 ? len2 : (i + maxChunkLength)))
+  }
+
+  // pad the end with zeros, but make sure to not forget the extra bytes
+  if (extraBytes === 1) {
+    tmp = uint8[len - 1]
+    parts.push(
+      lookup[tmp >> 2] +
+      lookup[(tmp << 4) & 0x3F] +
+      '=='
+    )
+  } else if (extraBytes === 2) {
+    tmp = (uint8[len - 2] << 8) + uint8[len - 1]
+    parts.push(
+      lookup[tmp >> 10] +
+      lookup[(tmp >> 4) & 0x3F] +
+      lookup[(tmp << 2) & 0x3F] +
+      '='
+    )
+  }
+
+  return parts.join('')
+}
+
+},{}],3:[function(require,module,exports){
+arguments[4][1][0].apply(exports,arguments)
+},{"dup":1}],4:[function(require,module,exports){
+(function (Buffer){(function (){
+/*!
+ * The buffer module from node.js, for the browser.
+ *
+ * @author   Feross Aboukhadijeh <https://feross.org>
+ * @license  MIT
+ */
+/* eslint-disable no-proto */
+
+'use strict'
+
+var base64 = require('base64-js')
+var ieee754 = require('ieee754')
+
+exports.Buffer = Buffer
+exports.SlowBuffer = SlowBuffer
+exports.INSPECT_MAX_BYTES = 50
+
+var K_MAX_LENGTH = 0x7fffffff
+exports.kMaxLength = K_MAX_LENGTH
+
+/**
+ * If `Buffer.TYPED_ARRAY_SUPPORT`:
+ *   === true    Use Uint8Array implementation (fastest)
+ *   === false   Print warning and recommend using `buffer` v4.x which has an Object
+ *               implementation (most compatible, even IE6)
+ *
+ * Browsers that support typed arrays are IE 10+, Firefox 4+, Chrome 7+, Safari 5.1+,
+ * Opera 11.6+, iOS 4.2+.
+ *
+ * We report that the browser does not support typed arrays if the are not subclassable
+ * using __proto__. Firefox 4-29 lacks support for adding new properties to `Uint8Array`
+ * (See: https://bugzilla.mozilla.org/show_bug.cgi?id=695438). IE 10 lacks support
+ * for __proto__ and has a buggy typed array implementation.
+ */
+Buffer.TYPED_ARRAY_SUPPORT = typedArraySupport()
+
+if (!Buffer.TYPED_ARRAY_SUPPORT && typeof console !== 'undefined' &&
+    typeof console.error === 'function') {
+  console.error(
+    'This browser lacks typed array (Uint8Array) support which is required by ' +
+    '`buffer` v5.x. Use `buffer` v4.x if you require old browser support.'
+  )
+}
+
+function typedArraySupport () {
+  // Can typed array instances can be augmented?
+  try {
+    var arr = new Uint8Array(1)
+    arr.__proto__ = { __proto__: Uint8Array.prototype, foo: function () { return 42 } }
+    return arr.foo() === 42
+  } catch (e) {
+    return false
+  }
+}
+
+Object.defineProperty(Buffer.prototype, 'parent', {
+  enumerable: true,
+  get: function () {
+    if (!Buffer.isBuffer(this)) return undefined
+    return this.buffer
+  }
+})
+
+Object.defineProperty(Buffer.prototype, 'offset', {
+  enumerable: true,
+  get: function () {
+    if (!Buffer.isBuffer(this)) return undefined
+    return this.byteOffset
+  }
+})
+
+function createBuffer (length) {
+  if (length > K_MAX_LENGTH) {
+    throw new RangeError('The value "' + length + '" is invalid for option "size"')
+  }
+  // Return an augmented `Uint8Array` instance
+  var buf = new Uint8Array(length)
+  buf.__proto__ = Buffer.prototype
+  return buf
+}
+
+/**
+ * The Buffer constructor returns instances of `Uint8Array` that have their
+ * prototype changed to `Buffer.prototype`. Furthermore, `Buffer` is a subclass of
+ * `Uint8Array`, so the returned instances will have all the node `Buffer` methods
+ * and the `Uint8Array` methods. Square bracket notation works as expected -- it
+ * returns a single octet.
+ *
+ * The `Uint8Array` prototype remains unmodified.
+ */
+
+function Buffer (arg, encodingOrOffset, length) {
+  // Common case.
+  if (typeof arg === 'number') {
+    if (typeof encodingOrOffset === 'string') {
+      throw new TypeError(
+        'The "string" argument must be of type string. Received type number'
+      )
+    }
+    return allocUnsafe(arg)
+  }
+  return from(arg, encodingOrOffset, length)
+}
+
+// Fix subarray() in ES2016. See: https://github.com/feross/buffer/pull/97
+if (typeof Symbol !== 'undefined' && Symbol.species != null &&
+    Buffer[Symbol.species] === Buffer) {
+  Object.defineProperty(Buffer, Symbol.species, {
+    value: null,
+    configurable: true,
+    enumerable: false,
+    writable: false
+  })
+}
+
+Buffer.poolSize = 8192 // not used by this implementation
+
+function from (value, encodingOrOffset, length) {
+  if (typeof value === 'string') {
+    return fromString(value, encodingOrOffset)
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return fromArrayLike(value)
+  }
+
+  if (value == null) {
+    throw TypeError(
+      'The first argument must be one of type string, Buffer, ArrayBuffer, Array, ' +
+      'or Array-like Object. Received type ' + (typeof value)
+    )
+  }
+
+  if (isInstance(value, ArrayBuffer) ||
+      (value && isInstance(value.buffer, ArrayBuffer))) {
+    return fromArrayBuffer(value, encodingOrOffset, length)
+  }
+
+  if (typeof value === 'number') {
+    throw new TypeError(
+      'The "value" argument must not be of type number. Received type number'
+    )
+  }
+
+  var valueOf = value.valueOf && value.valueOf()
+  if (valueOf != null && valueOf !== value) {
+    return Buffer.from(valueOf, encodingOrOffset, length)
+  }
+
+  var b = fromObject(value)
+  if (b) return b
+
+  if (typeof Symbol !== 'undefined' && Symbol.toPrimitive != null &&
+      typeof value[Symbol.toPrimitive] === 'function') {
+    return Buffer.from(
+      value[Symbol.toPrimitive]('string'), encodingOrOffset, length
+    )
+  }
+
+  throw new TypeError(
+    'The first argument must be one of type string, Buffer, ArrayBuffer, Array, ' +
+    'or Array-like Object. Received type ' + (typeof value)
+  )
+}
+
+/**
+ * Functionally equivalent to Buffer(arg, encoding) but throws a TypeError
+ * if value is a number.
+ * Buffer.from(str[, encoding])
+ * Buffer.from(array)
+ * Buffer.from(buffer)
+ * Buffer.from(arrayBuffer[, byteOffset[, length]])
+ **/
+Buffer.from = function (value, encodingOrOffset, length) {
+  return from(value, encodingOrOffset, length)
+}
+
+// Note: Change prototype *after* Buffer.from is defined to workaround Chrome bug:
+// https://github.com/feross/buffer/pull/148
+Buffer.prototype.__proto__ = Uint8Array.prototype
+Buffer.__proto__ = Uint8Array
+
+function assertSize (size) {
+  if (typeof size !== 'number') {
+    throw new TypeError('"size" argument must be of type number')
+  } else if (size < 0) {
+    throw new RangeError('The value "' + size + '" is invalid for option "size"')
+  }
+}
+
+function alloc (size, fill, encoding) {
+  assertSize(size)
+  if (size <= 0) {
+    return createBuffer(size)
+  }
+  if (fill !== undefined) {
+    // Only pay attention to encoding if it's a string. This
+    // prevents accidentally sending in a number that would
+    // be interpretted as a start offset.
+    return typeof encoding === 'string'
+      ? createBuffer(size).fill(fill, encoding)
+      : createBuffer(size).fill(fill)
+  }
+  return createBuffer(size)
+}
+
+/**
+ * Creates a new filled Buffer instance.
+ * alloc(size[, fill[, encoding]])
+ **/
+Buffer.alloc = function (size, fill, encoding) {
+  return alloc(size, fill, encoding)
+}
+
+function allocUnsafe (size) {
+  assertSize(size)
+  return createBuffer(size < 0 ? 0 : checked(size) | 0)
+}
+
+/**
+ * Equivalent to Buffer(num), by default creates a non-zero-filled Buffer instance.
+ * */
+Buffer.allocUnsafe = function (size) {
+  return allocUnsafe(size)
+}
+/**
+ * Equivalent to SlowBuffer(num), by default creates a non-zero-filled Buffer instance.
+ */
+Buffer.allocUnsafeSlow = function (size) {
+  return allocUnsafe(size)
+}
+
+function fromString (string, encoding) {
+  if (typeof encoding !== 'string' || encoding === '') {
+    encoding = 'utf8'
+  }
+
+  if (!Buffer.isEncoding(encoding)) {
+    throw new TypeError('Unknown encoding: ' + encoding)
+  }
+
+  var length = byteLength(string, encoding) | 0
+  var buf = createBuffer(length)
+
+  var actual = buf.write(string, encoding)
+
+  if (actual !== length) {
+    // Writing a hex string, for example, that contains invalid characters will
+    // cause everything after the first invalid character to be ignored. (e.g.
+    // 'abxxcd' will be treated as 'ab')
+    buf = buf.slice(0, actual)
+  }
+
+  return buf
+}
+
+function fromArrayLike (array) {
+  var length = array.length < 0 ? 0 : checked(array.length) | 0
+  var buf = createBuffer(length)
+  for (var i = 0; i < length; i += 1) {
+    buf[i] = array[i] & 255
+  }
+  return buf
+}
+
+function fromArrayBuffer (array, byteOffset, length) {
+  if (byteOffset < 0 || array.byteLength < byteOffset) {
+    throw new RangeError('"offset" is outside of buffer bounds')
+  }
+
+  if (array.byteLength < byteOffset + (length || 0)) {
+    throw new RangeError('"length" is outside of buffer bounds')
+  }
+
+  var buf
+  if (byteOffset === undefined && length === undefined) {
+    buf = new Uint8Array(array)
+  } else if (length === undefined) {
+    buf = new Uint8Array(array, byteOffset)
+  } else {
+    buf = new Uint8Array(array, byteOffset, length)
+  }
+
+  // Return an augmented `Uint8Array` instance
+  buf.__proto__ = Buffer.prototype
+  return buf
+}
+
+function fromObject (obj) {
+  if (Buffer.isBuffer(obj)) {
+    var len = checked(obj.length) | 0
+    var buf = createBuffer(len)
+
+    if (buf.length === 0) {
+      return buf
+    }
+
+    obj.copy(buf, 0, 0, len)
+    return buf
+  }
+
+  if (obj.length !== undefined) {
+    if (typeof obj.length !== 'number' || numberIsNaN(obj.length)) {
+      return createBuffer(0)
+    }
+    return fromArrayLike(obj)
+  }
+
+  if (obj.type === 'Buffer' && Array.isArray(obj.data)) {
+    return fromArrayLike(obj.data)
+  }
+}
+
+function checked (length) {
+  // Note: cannot use `length < K_MAX_LENGTH` here because that fails when
+  // length is NaN (which is otherwise coerced to zero.)
+  if (length >= K_MAX_LENGTH) {
+    throw new RangeError('Attempt to allocate Buffer larger than maximum ' +
+                         'size: 0x' + K_MAX_LENGTH.toString(16) + ' bytes')
+  }
+  return length | 0
+}
+
+function SlowBuffer (length) {
+  if (+length != length) { // eslint-disable-line eqeqeq
+    length = 0
+  }
+  return Buffer.alloc(+length)
+}
+
+Buffer.isBuffer = function isBuffer (b) {
+  return b != null && b._isBuffer === true &&
+    b !== Buffer.prototype // so Buffer.isBuffer(Buffer.prototype) will be false
+}
+
+Buffer.compare = function compare (a, b) {
+  if (isInstance(a, Uint8Array)) a = Buffer.from(a, a.offset, a.byteLength)
+  if (isInstance(b, Uint8Array)) b = Buffer.from(b, b.offset, b.byteLength)
+  if (!Buffer.isBuffer(a) || !Buffer.isBuffer(b)) {
+    throw new TypeError(
+      'The "buf1", "buf2" arguments must be one of type Buffer or Uint8Array'
+    )
+  }
+
+  if (a === b) return 0
+
+  var x = a.length
+  var y = b.length
+
+  for (var i = 0, len = Math.min(x, y); i < len; ++i) {
+    if (a[i] !== b[i]) {
+      x = a[i]
+      y = b[i]
+      break
+    }
+  }
+
+  if (x < y) return -1
+  if (y < x) return 1
+  return 0
+}
+
+Buffer.isEncoding = function isEncoding (encoding) {
+  switch (String(encoding).toLowerCase()) {
+    case 'hex':
+    case 'utf8':
+    case 'utf-8':
+    case 'ascii':
+    case 'latin1':
+    case 'binary':
+    case 'base64':
+    case 'ucs2':
+    case 'ucs-2':
+    case 'utf16le':
+    case 'utf-16le':
+      return true
+    default:
+      return false
+  }
+}
+
+Buffer.concat = function concat (list, length) {
+  if (!Array.isArray(list)) {
+    throw new TypeError('"list" argument must be an Array of Buffers')
+  }
+
+  if (list.length === 0) {
+    return Buffer.alloc(0)
+  }
+
+  var i
+  if (length === undefined) {
+    length = 0
+    for (i = 0; i < list.length; ++i) {
+      length += list[i].length
+    }
+  }
+
+  var buffer = Buffer.allocUnsafe(length)
+  var pos = 0
+  for (i = 0; i < list.length; ++i) {
+    var buf = list[i]
+    if (isInstance(buf, Uint8Array)) {
+      buf = Buffer.from(buf)
+    }
+    if (!Buffer.isBuffer(buf)) {
+      throw new TypeError('"list" argument must be an Array of Buffers')
+    }
+    buf.copy(buffer, pos)
+    pos += buf.length
+  }
+  return buffer
+}
+
+function byteLength (string, encoding) {
+  if (Buffer.isBuffer(string)) {
+    return string.length
+  }
+  if (ArrayBuffer.isView(string) || isInstance(string, ArrayBuffer)) {
+    return string.byteLength
+  }
+  if (typeof string !== 'string') {
+    throw new TypeError(
+      'The "string" argument must be one of type string, Buffer, or ArrayBuffer. ' +
+      'Received type ' + typeof string
+    )
+  }
+
+  var len = string.length
+  var mustMatch = (arguments.length > 2 && arguments[2] === true)
+  if (!mustMatch && len === 0) return 0
+
+  // Use a for loop to avoid recursion
+  var loweredCase = false
+  for (;;) {
+    switch (encoding) {
+      case 'ascii':
+      case 'latin1':
+      case 'binary':
+        return len
+      case 'utf8':
+      case 'utf-8':
+        return utf8ToBytes(string).length
+      case 'ucs2':
+      case 'ucs-2':
+      case 'utf16le':
+      case 'utf-16le':
+        return len * 2
+      case 'hex':
+        return len >>> 1
+      case 'base64':
+        return base64ToBytes(string).length
+      default:
+        if (loweredCase) {
+          return mustMatch ? -1 : utf8ToBytes(string).length // assume utf8
+        }
+        encoding = ('' + encoding).toLowerCase()
+        loweredCase = true
+    }
+  }
+}
+Buffer.byteLength = byteLength
+
+function slowToString (encoding, start, end) {
+  var loweredCase = false
+
+  // No need to verify that "this.length <= MAX_UINT32" since it's a read-only
+  // property of a typed array.
+
+  // This behaves neither like String nor Uint8Array in that we set start/end
+  // to their upper/lower bounds if the value passed is out of range.
+  // undefined is handled specially as per ECMA-262 6th Edition,
+  // Section 13.3.3.7 Runtime Semantics: KeyedBindingInitialization.
+  if (start === undefined || start < 0) {
+    start = 0
+  }
+  // Return early if start > this.length. Done here to prevent potential uint32
+  // coercion fail below.
+  if (start > this.length) {
+    return ''
+  }
+
+  if (end === undefined || end > this.length) {
+    end = this.length
+  }
+
+  if (end <= 0) {
+    return ''
+  }
+
+  // Force coersion to uint32. This will also coerce falsey/NaN values to 0.
+  end >>>= 0
+  start >>>= 0
+
+  if (end <= start) {
+    return ''
+  }
+
+  if (!encoding) encoding = 'utf8'
+
+  while (true) {
+    switch (encoding) {
+      case 'hex':
+        return hexSlice(this, start, end)
+
+      case 'utf8':
+      case 'utf-8':
+        return utf8Slice(this, start, end)
+
+      case 'ascii':
+        return asciiSlice(this, start, end)
+
+      case 'latin1':
+      case 'binary':
+        return latin1Slice(this, start, end)
+
+      case 'base64':
+        return base64Slice(this, start, end)
+
+      case 'ucs2':
+      case 'ucs-2':
+      case 'utf16le':
+      case 'utf-16le':
+        return utf16leSlice(this, start, end)
+
+      default:
+        if (loweredCase) throw new TypeError('Unknown encoding: ' + encoding)
+        encoding = (encoding + '').toLowerCase()
+        loweredCase = true
+    }
+  }
+}
+
+// This property is used by `Buffer.isBuffer` (and the `is-buffer` npm package)
+// to detect a Buffer instance. It's not possible to use `instanceof Buffer`
+// reliably in a browserify context because there could be multiple different
+// copies of the 'buffer' package in use. This method works even for Buffer
+// instances that were created from another copy of the `buffer` package.
+// See: https://github.com/feross/buffer/issues/154
+Buffer.prototype._isBuffer = true
+
+function swap (b, n, m) {
+  var i = b[n]
+  b[n] = b[m]
+  b[m] = i
+}
+
+Buffer.prototype.swap16 = function swap16 () {
+  var len = this.length
+  if (len % 2 !== 0) {
+    throw new RangeError('Buffer size must be a multiple of 16-bits')
+  }
+  for (var i = 0; i < len; i += 2) {
+    swap(this, i, i + 1)
+  }
+  return this
+}
+
+Buffer.prototype.swap32 = function swap32 () {
+  var len = this.length
+  if (len % 4 !== 0) {
+    throw new RangeError('Buffer size must be a multiple of 32-bits')
+  }
+  for (var i = 0; i < len; i += 4) {
+    swap(this, i, i + 3)
+    swap(this, i + 1, i + 2)
+  }
+  return this
+}
+
+Buffer.prototype.swap64 = function swap64 () {
+  var len = this.length
+  if (len % 8 !== 0) {
+    throw new RangeError('Buffer size must be a multiple of 64-bits')
+  }
+  for (var i = 0; i < len; i += 8) {
+    swap(this, i, i + 7)
+    swap(this, i + 1, i + 6)
+    swap(this, i + 2, i + 5)
+    swap(this, i + 3, i + 4)
+  }
+  return this
+}
+
+Buffer.prototype.toString = function toString () {
+  var length = this.length
+  if (length === 0) return ''
+  if (arguments.length === 0) return utf8Slice(this, 0, length)
+  return slowToString.apply(this, arguments)
+}
+
+Buffer.prototype.toLocaleString = Buffer.prototype.toString
+
+Buffer.prototype.equals = function equals (b) {
+  if (!Buffer.isBuffer(b)) throw new TypeError('Argument must be a Buffer')
+  if (this === b) return true
+  return Buffer.compare(this, b) === 0
+}
+
+Buffer.prototype.inspect = function inspect () {
+  var str = ''
+  var max = exports.INSPECT_MAX_BYTES
+  str = this.toString('hex', 0, max).replace(/(.{2})/g, '$1 ').trim()
+  if (this.length > max) str += ' ... '
+  return '<Buffer ' + str + '>'
+}
+
+Buffer.prototype.compare = function compare (target, start, end, thisStart, thisEnd) {
+  if (isInstance(target, Uint8Array)) {
+    target = Buffer.from(target, target.offset, target.byteLength)
+  }
+  if (!Buffer.isBuffer(target)) {
+    throw new TypeError(
+      'The "target" argument must be one of type Buffer or Uint8Array. ' +
+      'Received type ' + (typeof target)
+    )
+  }
+
+  if (start === undefined) {
+    start = 0
+  }
+  if (end === undefined) {
+    end = target ? target.length : 0
+  }
+  if (thisStart === undefined) {
+    thisStart = 0
+  }
+  if (thisEnd === undefined) {
+    thisEnd = this.length
+  }
+
+  if (start < 0 || end > target.length || thisStart < 0 || thisEnd > this.length) {
+    throw new RangeError('out of range index')
+  }
+
+  if (thisStart >= thisEnd && start >= end) {
+    return 0
+  }
+  if (thisStart >= thisEnd) {
+    return -1
+  }
+  if (start >= end) {
+    return 1
+  }
+
+  start >>>= 0
+  end >>>= 0
+  thisStart >>>= 0
+  thisEnd >>>= 0
+
+  if (this === target) return 0
+
+  var x = thisEnd - thisStart
+  var y = end - start
+  var len = Math.min(x, y)
+
+  var thisCopy = this.slice(thisStart, thisEnd)
+  var targetCopy = target.slice(start, end)
+
+  for (var i = 0; i < len; ++i) {
+    if (thisCopy[i] !== targetCopy[i]) {
+      x = thisCopy[i]
+      y = targetCopy[i]
+      break
+    }
+  }
+
+  if (x < y) return -1
+  if (y < x) return 1
+  return 0
+}
+
+// Finds either the first index of `val` in `buffer` at offset >= `byteOffset`,
+// OR the last index of `val` in `buffer` at offset <= `byteOffset`.
+//
+// Arguments:
+// - buffer - a Buffer to search
+// - val - a string, Buffer, or number
+// - byteOffset - an index into `buffer`; will be clamped to an int32
+// - encoding - an optional encoding, relevant is val is a string
+// - dir - true for indexOf, false for lastIndexOf
+function bidirectionalIndexOf (buffer, val, byteOffset, encoding, dir) {
+  // Empty buffer means no match
+  if (buffer.length === 0) return -1
+
+  // Normalize byteOffset
+  if (typeof byteOffset === 'string') {
+    encoding = byteOffset
+    byteOffset = 0
+  } else if (byteOffset > 0x7fffffff) {
+    byteOffset = 0x7fffffff
+  } else if (byteOffset < -0x80000000) {
+    byteOffset = -0x80000000
+  }
+  byteOffset = +byteOffset // Coerce to Number.
+  if (numberIsNaN(byteOffset)) {
+    // byteOffset: it it's undefined, null, NaN, "foo", etc, search whole buffer
+    byteOffset = dir ? 0 : (buffer.length - 1)
+  }
+
+  // Normalize byteOffset: negative offsets start from the end of the buffer
+  if (byteOffset < 0) byteOffset = buffer.length + byteOffset
+  if (byteOffset >= buffer.length) {
+    if (dir) return -1
+    else byteOffset = buffer.length - 1
+  } else if (byteOffset < 0) {
+    if (dir) byteOffset = 0
+    else return -1
+  }
+
+  // Normalize val
+  if (typeof val === 'string') {
+    val = Buffer.from(val, encoding)
+  }
+
+  // Finally, search either indexOf (if dir is true) or lastIndexOf
+  if (Buffer.isBuffer(val)) {
+    // Special case: looking for empty string/buffer always fails
+    if (val.length === 0) {
+      return -1
+    }
+    return arrayIndexOf(buffer, val, byteOffset, encoding, dir)
+  } else if (typeof val === 'number') {
+    val = val & 0xFF // Search for a byte value [0-255]
+    if (typeof Uint8Array.prototype.indexOf === 'function') {
+      if (dir) {
+        return Uint8Array.prototype.indexOf.call(buffer, val, byteOffset)
+      } else {
+        return Uint8Array.prototype.lastIndexOf.call(buffer, val, byteOffset)
+      }
+    }
+    return arrayIndexOf(buffer, [ val ], byteOffset, encoding, dir)
+  }
+
+  throw new TypeError('val must be string, number or Buffer')
+}
+
+function arrayIndexOf (arr, val, byteOffset, encoding, dir) {
+  var indexSize = 1
+  var arrLength = arr.length
+  var valLength = val.length
+
+  if (encoding !== undefined) {
+    encoding = String(encoding).toLowerCase()
+    if (encoding === 'ucs2' || encoding === 'ucs-2' ||
+        encoding === 'utf16le' || encoding === 'utf-16le') {
+      if (arr.length < 2 || val.length < 2) {
+        return -1
+      }
+      indexSize = 2
+      arrLength /= 2
+      valLength /= 2
+      byteOffset /= 2
+    }
+  }
+
+  function read (buf, i) {
+    if (indexSize === 1) {
+      return buf[i]
+    } else {
+      return buf.readUInt16BE(i * indexSize)
+    }
+  }
+
+  var i
+  if (dir) {
+    var foundIndex = -1
+    for (i = byteOffset; i < arrLength; i++) {
+      if (read(arr, i) === read(val, foundIndex === -1 ? 0 : i - foundIndex)) {
+        if (foundIndex === -1) foundIndex = i
+        if (i - foundIndex + 1 === valLength) return foundIndex * indexSize
+      } else {
+        if (foundIndex !== -1) i -= i - foundIndex
+        foundIndex = -1
+      }
+    }
+  } else {
+    if (byteOffset + valLength > arrLength) byteOffset = arrLength - valLength
+    for (i = byteOffset; i >= 0; i--) {
+      var found = true
+      for (var j = 0; j < valLength; j++) {
+        if (read(arr, i + j) !== read(val, j)) {
+          found = false
+          break
+        }
+      }
+      if (found) return i
+    }
+  }
+
+  return -1
+}
+
+Buffer.prototype.includes = function includes (val, byteOffset, encoding) {
+  return this.indexOf(val, byteOffset, encoding) !== -1
+}
+
+Buffer.prototype.indexOf = function indexOf (val, byteOffset, encoding) {
+  return bidirectionalIndexOf(this, val, byteOffset, encoding, true)
+}
+
+Buffer.prototype.lastIndexOf = function lastIndexOf (val, byteOffset, encoding) {
+  return bidirectionalIndexOf(this, val, byteOffset, encoding, false)
+}
+
+function hexWrite (buf, string, offset, length) {
+  offset = Number(offset) || 0
+  var remaining = buf.length - offset
+  if (!length) {
+    length = remaining
+  } else {
+    length = Number(length)
+    if (length > remaining) {
+      length = remaining
+    }
+  }
+
+  var strLen = string.length
+
+  if (length > strLen / 2) {
+    length = strLen / 2
+  }
+  for (var i = 0; i < length; ++i) {
+    var parsed = parseInt(string.substr(i * 2, 2), 16)
+    if (numberIsNaN(parsed)) return i
+    buf[offset + i] = parsed
+  }
+  return i
+}
+
+function utf8Write (buf, string, offset, length) {
+  return blitBuffer(utf8ToBytes(string, buf.length - offset), buf, offset, length)
+}
+
+function asciiWrite (buf, string, offset, length) {
+  return blitBuffer(asciiToBytes(string), buf, offset, length)
+}
+
+function latin1Write (buf, string, offset, length) {
+  return asciiWrite(buf, string, offset, length)
+}
+
+function base64Write (buf, string, offset, length) {
+  return blitBuffer(base64ToBytes(string), buf, offset, length)
+}
+
+function ucs2Write (buf, string, offset, length) {
+  return blitBuffer(utf16leToBytes(string, buf.length - offset), buf, offset, length)
+}
+
+Buffer.prototype.write = function write (string, offset, length, encoding) {
+  // Buffer#write(string)
+  if (offset === undefined) {
+    encoding = 'utf8'
+    length = this.length
+    offset = 0
+  // Buffer#write(string, encoding)
+  } else if (length === undefined && typeof offset === 'string') {
+    encoding = offset
+    length = this.length
+    offset = 0
+  // Buffer#write(string, offset[, length][, encoding])
+  } else if (isFinite(offset)) {
+    offset = offset >>> 0
+    if (isFinite(length)) {
+      length = length >>> 0
+      if (encoding === undefined) encoding = 'utf8'
+    } else {
+      encoding = length
+      length = undefined
+    }
+  } else {
+    throw new Error(
+      'Buffer.write(string, encoding, offset[, length]) is no longer supported'
+    )
+  }
+
+  var remaining = this.length - offset
+  if (length === undefined || length > remaining) length = remaining
+
+  if ((string.length > 0 && (length < 0 || offset < 0)) || offset > this.length) {
+    throw new RangeError('Attempt to write outside buffer bounds')
+  }
+
+  if (!encoding) encoding = 'utf8'
+
+  var loweredCase = false
+  for (;;) {
+    switch (encoding) {
+      case 'hex':
+        return hexWrite(this, string, offset, length)
+
+      case 'utf8':
+      case 'utf-8':
+        return utf8Write(this, string, offset, length)
+
+      case 'ascii':
+        return asciiWrite(this, string, offset, length)
+
+      case 'latin1':
+      case 'binary':
+        return latin1Write(this, string, offset, length)
+
+      case 'base64':
+        // Warning: maxLength not taken into account in base64Write
+        return base64Write(this, string, offset, length)
+
+      case 'ucs2':
+      case 'ucs-2':
+      case 'utf16le':
+      case 'utf-16le':
+        return ucs2Write(this, string, offset, length)
+
+      default:
+        if (loweredCase) throw new TypeError('Unknown encoding: ' + encoding)
+        encoding = ('' + encoding).toLowerCase()
+        loweredCase = true
+    }
+  }
+}
+
+Buffer.prototype.toJSON = function toJSON () {
+  return {
+    type: 'Buffer',
+    data: Array.prototype.slice.call(this._arr || this, 0)
+  }
+}
+
+function base64Slice (buf, start, end) {
+  if (start === 0 && end === buf.length) {
+    return base64.fromByteArray(buf)
+  } else {
+    return base64.fromByteArray(buf.slice(start, end))
+  }
+}
+
+function utf8Slice (buf, start, end) {
+  end = Math.min(buf.length, end)
+  var res = []
+
+  var i = start
+  while (i < end) {
+    var firstByte = buf[i]
+    var codePoint = null
+    var bytesPerSequence = (firstByte > 0xEF) ? 4
+      : (firstByte > 0xDF) ? 3
+        : (firstByte > 0xBF) ? 2
+          : 1
+
+    if (i + bytesPerSequence <= end) {
+      var secondByte, thirdByte, fourthByte, tempCodePoint
+
+      switch (bytesPerSequence) {
+        case 1:
+          if (firstByte < 0x80) {
+            codePoint = firstByte
+          }
+          break
+        case 2:
+          secondByte = buf[i + 1]
+          if ((secondByte & 0xC0) === 0x80) {
+            tempCodePoint = (firstByte & 0x1F) << 0x6 | (secondByte & 0x3F)
+            if (tempCodePoint > 0x7F) {
+              codePoint = tempCodePoint
+            }
+          }
+          break
+        case 3:
+          secondByte = buf[i + 1]
+          thirdByte = buf[i + 2]
+          if ((secondByte & 0xC0) === 0x80 && (thirdByte & 0xC0) === 0x80) {
+            tempCodePoint = (firstByte & 0xF) << 0xC | (secondByte & 0x3F) << 0x6 | (thirdByte & 0x3F)
+            if (tempCodePoint > 0x7FF && (tempCodePoint < 0xD800 || tempCodePoint > 0xDFFF)) {
+              codePoint = tempCodePoint
+            }
+          }
+          break
+        case 4:
+          secondByte = buf[i + 1]
+          thirdByte = buf[i + 2]
+          fourthByte = buf[i + 3]
+          if ((secondByte & 0xC0) === 0x80 && (thirdByte & 0xC0) === 0x80 && (fourthByte & 0xC0) === 0x80) {
+            tempCodePoint = (firstByte & 0xF) << 0x12 | (secondByte & 0x3F) << 0xC | (thirdByte & 0x3F) << 0x6 | (fourthByte & 0x3F)
+            if (tempCodePoint > 0xFFFF && tempCodePoint < 0x110000) {
+              codePoint = tempCodePoint
+            }
+          }
+      }
+    }
+
+    if (codePoint === null) {
+      // we did not generate a valid codePoint so insert a
+      // replacement char (U+FFFD) and advance only 1 byte
+      codePoint = 0xFFFD
+      bytesPerSequence = 1
+    } else if (codePoint > 0xFFFF) {
+      // encode to utf16 (surrogate pair dance)
+      codePoint -= 0x10000
+      res.push(codePoint >>> 10 & 0x3FF | 0xD800)
+      codePoint = 0xDC00 | codePoint & 0x3FF
+    }
+
+    res.push(codePoint)
+    i += bytesPerSequence
+  }
+
+  return decodeCodePointsArray(res)
+}
+
+// Based on http://stackoverflow.com/a/22747272/680742, the browser with
+// the lowest limit is Chrome, with 0x10000 args.
+// We go 1 magnitude less, for safety
+var MAX_ARGUMENTS_LENGTH = 0x1000
+
+function decodeCodePointsArray (codePoints) {
+  var len = codePoints.length
+  if (len <= MAX_ARGUMENTS_LENGTH) {
+    return String.fromCharCode.apply(String, codePoints) // avoid extra slice()
+  }
+
+  // Decode in chunks to avoid "call stack size exceeded".
+  var res = ''
+  var i = 0
+  while (i < len) {
+    res += String.fromCharCode.apply(
+      String,
+      codePoints.slice(i, i += MAX_ARGUMENTS_LENGTH)
+    )
+  }
+  return res
+}
+
+function asciiSlice (buf, start, end) {
+  var ret = ''
+  end = Math.min(buf.length, end)
+
+  for (var i = start; i < end; ++i) {
+    ret += String.fromCharCode(buf[i] & 0x7F)
+  }
+  return ret
+}
+
+function latin1Slice (buf, start, end) {
+  var ret = ''
+  end = Math.min(buf.length, end)
+
+  for (var i = start; i < end; ++i) {
+    ret += String.fromCharCode(buf[i])
+  }
+  return ret
+}
+
+function hexSlice (buf, start, end) {
+  var len = buf.length
+
+  if (!start || start < 0) start = 0
+  if (!end || end < 0 || end > len) end = len
+
+  var out = ''
+  for (var i = start; i < end; ++i) {
+    out += toHex(buf[i])
+  }
+  return out
+}
+
+function utf16leSlice (buf, start, end) {
+  var bytes = buf.slice(start, end)
+  var res = ''
+  for (var i = 0; i < bytes.length; i += 2) {
+    res += String.fromCharCode(bytes[i] + (bytes[i + 1] * 256))
+  }
+  return res
+}
+
+Buffer.prototype.slice = function slice (start, end) {
+  var len = this.length
+  start = ~~start
+  end = end === undefined ? len : ~~end
+
+  if (start < 0) {
+    start += len
+    if (start < 0) start = 0
+  } else if (start > len) {
+    start = len
+  }
+
+  if (end < 0) {
+    end += len
+    if (end < 0) end = 0
+  } else if (end > len) {
+    end = len
+  }
+
+  if (end < start) end = start
+
+  var newBuf = this.subarray(start, end)
+  // Return an augmented `Uint8Array` instance
+  newBuf.__proto__ = Buffer.prototype
+  return newBuf
+}
+
+/*
+ * Need to make sure that buffer isn't trying to write out of bounds.
+ */
+function checkOffset (offset, ext, length) {
+  if ((offset % 1) !== 0 || offset < 0) throw new RangeError('offset is not uint')
+  if (offset + ext > length) throw new RangeError('Trying to access beyond buffer length')
+}
+
+Buffer.prototype.readUIntLE = function readUIntLE (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert) checkOffset(offset, byteLength, this.length)
+
+  var val = this[offset]
+  var mul = 1
+  var i = 0
+  while (++i < byteLength && (mul *= 0x100)) {
+    val += this[offset + i] * mul
+  }
+
+  return val
+}
+
+Buffer.prototype.readUIntBE = function readUIntBE (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert) {
+    checkOffset(offset, byteLength, this.length)
+  }
+
+  var val = this[offset + --byteLength]
+  var mul = 1
+  while (byteLength > 0 && (mul *= 0x100)) {
+    val += this[offset + --byteLength] * mul
+  }
+
+  return val
+}
+
+Buffer.prototype.readUInt8 = function readUInt8 (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 1, this.length)
+  return this[offset]
+}
+
+Buffer.prototype.readUInt16LE = function readUInt16LE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 2, this.length)
+  return this[offset] | (this[offset + 1] << 8)
+}
+
+Buffer.prototype.readUInt16BE = function readUInt16BE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 2, this.length)
+  return (this[offset] << 8) | this[offset + 1]
+}
+
+Buffer.prototype.readUInt32LE = function readUInt32LE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 4, this.length)
+
+  return ((this[offset]) |
+      (this[offset + 1] << 8) |
+      (this[offset + 2] << 16)) +
+      (this[offset + 3] * 0x1000000)
+}
+
+Buffer.prototype.readUInt32BE = function readUInt32BE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 4, this.length)
+
+  return (this[offset] * 0x1000000) +
+    ((this[offset + 1] << 16) |
+    (this[offset + 2] << 8) |
+    this[offset + 3])
+}
+
+Buffer.prototype.readIntLE = function readIntLE (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert) checkOffset(offset, byteLength, this.length)
+
+  var val = this[offset]
+  var mul = 1
+  var i = 0
+  while (++i < byteLength && (mul *= 0x100)) {
+    val += this[offset + i] * mul
+  }
+  mul *= 0x80
+
+  if (val >= mul) val -= Math.pow(2, 8 * byteLength)
+
+  return val
+}
+
+Buffer.prototype.readIntBE = function readIntBE (offset, byteLength, noAssert) {
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert) checkOffset(offset, byteLength, this.length)
+
+  var i = byteLength
+  var mul = 1
+  var val = this[offset + --i]
+  while (i > 0 && (mul *= 0x100)) {
+    val += this[offset + --i] * mul
+  }
+  mul *= 0x80
+
+  if (val >= mul) val -= Math.pow(2, 8 * byteLength)
+
+  return val
+}
+
+Buffer.prototype.readInt8 = function readInt8 (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 1, this.length)
+  if (!(this[offset] & 0x80)) return (this[offset])
+  return ((0xff - this[offset] + 1) * -1)
+}
+
+Buffer.prototype.readInt16LE = function readInt16LE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 2, this.length)
+  var val = this[offset] | (this[offset + 1] << 8)
+  return (val & 0x8000) ? val | 0xFFFF0000 : val
+}
+
+Buffer.prototype.readInt16BE = function readInt16BE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 2, this.length)
+  var val = this[offset + 1] | (this[offset] << 8)
+  return (val & 0x8000) ? val | 0xFFFF0000 : val
+}
+
+Buffer.prototype.readInt32LE = function readInt32LE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 4, this.length)
+
+  return (this[offset]) |
+    (this[offset + 1] << 8) |
+    (this[offset + 2] << 16) |
+    (this[offset + 3] << 24)
+}
+
+Buffer.prototype.readInt32BE = function readInt32BE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 4, this.length)
+
+  return (this[offset] << 24) |
+    (this[offset + 1] << 16) |
+    (this[offset + 2] << 8) |
+    (this[offset + 3])
+}
+
+Buffer.prototype.readFloatLE = function readFloatLE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 4, this.length)
+  return ieee754.read(this, offset, true, 23, 4)
+}
+
+Buffer.prototype.readFloatBE = function readFloatBE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 4, this.length)
+  return ieee754.read(this, offset, false, 23, 4)
+}
+
+Buffer.prototype.readDoubleLE = function readDoubleLE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 8, this.length)
+  return ieee754.read(this, offset, true, 52, 8)
+}
+
+Buffer.prototype.readDoubleBE = function readDoubleBE (offset, noAssert) {
+  offset = offset >>> 0
+  if (!noAssert) checkOffset(offset, 8, this.length)
+  return ieee754.read(this, offset, false, 52, 8)
+}
+
+function checkInt (buf, value, offset, ext, max, min) {
+  if (!Buffer.isBuffer(buf)) throw new TypeError('"buffer" argument must be a Buffer instance')
+  if (value > max || value < min) throw new RangeError('"value" argument is out of bounds')
+  if (offset + ext > buf.length) throw new RangeError('Index out of range')
+}
+
+Buffer.prototype.writeUIntLE = function writeUIntLE (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert) {
+    var maxBytes = Math.pow(2, 8 * byteLength) - 1
+    checkInt(this, value, offset, byteLength, maxBytes, 0)
+  }
+
+  var mul = 1
+  var i = 0
+  this[offset] = value & 0xFF
+  while (++i < byteLength && (mul *= 0x100)) {
+    this[offset + i] = (value / mul) & 0xFF
+  }
+
+  return offset + byteLength
+}
+
+Buffer.prototype.writeUIntBE = function writeUIntBE (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  byteLength = byteLength >>> 0
+  if (!noAssert) {
+    var maxBytes = Math.pow(2, 8 * byteLength) - 1
+    checkInt(this, value, offset, byteLength, maxBytes, 0)
+  }
+
+  var i = byteLength - 1
+  var mul = 1
+  this[offset + i] = value & 0xFF
+  while (--i >= 0 && (mul *= 0x100)) {
+    this[offset + i] = (value / mul) & 0xFF
+  }
+
+  return offset + byteLength
+}
+
+Buffer.prototype.writeUInt8 = function writeUInt8 (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 1, 0xff, 0)
+  this[offset] = (value & 0xff)
+  return offset + 1
+}
+
+Buffer.prototype.writeUInt16LE = function writeUInt16LE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 2, 0xffff, 0)
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
+  return offset + 2
+}
+
+Buffer.prototype.writeUInt16BE = function writeUInt16BE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 2, 0xffff, 0)
+  this[offset] = (value >>> 8)
+  this[offset + 1] = (value & 0xff)
+  return offset + 2
+}
+
+Buffer.prototype.writeUInt32LE = function writeUInt32LE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 4, 0xffffffff, 0)
+  this[offset + 3] = (value >>> 24)
+  this[offset + 2] = (value >>> 16)
+  this[offset + 1] = (value >>> 8)
+  this[offset] = (value & 0xff)
+  return offset + 4
+}
+
+Buffer.prototype.writeUInt32BE = function writeUInt32BE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 4, 0xffffffff, 0)
+  this[offset] = (value >>> 24)
+  this[offset + 1] = (value >>> 16)
+  this[offset + 2] = (value >>> 8)
+  this[offset + 3] = (value & 0xff)
+  return offset + 4
+}
+
+Buffer.prototype.writeIntLE = function writeIntLE (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) {
+    var limit = Math.pow(2, (8 * byteLength) - 1)
+
+    checkInt(this, value, offset, byteLength, limit - 1, -limit)
+  }
+
+  var i = 0
+  var mul = 1
+  var sub = 0
+  this[offset] = value & 0xFF
+  while (++i < byteLength && (mul *= 0x100)) {
+    if (value < 0 && sub === 0 && this[offset + i - 1] !== 0) {
+      sub = 1
+    }
+    this[offset + i] = ((value / mul) >> 0) - sub & 0xFF
+  }
+
+  return offset + byteLength
+}
+
+Buffer.prototype.writeIntBE = function writeIntBE (value, offset, byteLength, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) {
+    var limit = Math.pow(2, (8 * byteLength) - 1)
+
+    checkInt(this, value, offset, byteLength, limit - 1, -limit)
+  }
+
+  var i = byteLength - 1
+  var mul = 1
+  var sub = 0
+  this[offset + i] = value & 0xFF
+  while (--i >= 0 && (mul *= 0x100)) {
+    if (value < 0 && sub === 0 && this[offset + i + 1] !== 0) {
+      sub = 1
+    }
+    this[offset + i] = ((value / mul) >> 0) - sub & 0xFF
+  }
+
+  return offset + byteLength
+}
+
+Buffer.prototype.writeInt8 = function writeInt8 (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 1, 0x7f, -0x80)
+  if (value < 0) value = 0xff + value + 1
+  this[offset] = (value & 0xff)
+  return offset + 1
+}
+
+Buffer.prototype.writeInt16LE = function writeInt16LE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 2, 0x7fff, -0x8000)
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
+  return offset + 2
+}
+
+Buffer.prototype.writeInt16BE = function writeInt16BE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 2, 0x7fff, -0x8000)
+  this[offset] = (value >>> 8)
+  this[offset + 1] = (value & 0xff)
+  return offset + 2
+}
+
+Buffer.prototype.writeInt32LE = function writeInt32LE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 4, 0x7fffffff, -0x80000000)
+  this[offset] = (value & 0xff)
+  this[offset + 1] = (value >>> 8)
+  this[offset + 2] = (value >>> 16)
+  this[offset + 3] = (value >>> 24)
+  return offset + 4
+}
+
+Buffer.prototype.writeInt32BE = function writeInt32BE (value, offset, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) checkInt(this, value, offset, 4, 0x7fffffff, -0x80000000)
+  if (value < 0) value = 0xffffffff + value + 1
+  this[offset] = (value >>> 24)
+  this[offset + 1] = (value >>> 16)
+  this[offset + 2] = (value >>> 8)
+  this[offset + 3] = (value & 0xff)
+  return offset + 4
+}
+
+function checkIEEE754 (buf, value, offset, ext, max, min) {
+  if (offset + ext > buf.length) throw new RangeError('Index out of range')
+  if (offset < 0) throw new RangeError('Index out of range')
+}
+
+function writeFloat (buf, value, offset, littleEndian, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) {
+    checkIEEE754(buf, value, offset, 4, 3.4028234663852886e+38, -3.4028234663852886e+38)
+  }
+  ieee754.write(buf, value, offset, littleEndian, 23, 4)
+  return offset + 4
+}
+
+Buffer.prototype.writeFloatLE = function writeFloatLE (value, offset, noAssert) {
+  return writeFloat(this, value, offset, true, noAssert)
+}
+
+Buffer.prototype.writeFloatBE = function writeFloatBE (value, offset, noAssert) {
+  return writeFloat(this, value, offset, false, noAssert)
+}
+
+function writeDouble (buf, value, offset, littleEndian, noAssert) {
+  value = +value
+  offset = offset >>> 0
+  if (!noAssert) {
+    checkIEEE754(buf, value, offset, 8, 1.7976931348623157E+308, -1.7976931348623157E+308)
+  }
+  ieee754.write(buf, value, offset, littleEndian, 52, 8)
+  return offset + 8
+}
+
+Buffer.prototype.writeDoubleLE = function writeDoubleLE (value, offset, noAssert) {
+  return writeDouble(this, value, offset, true, noAssert)
+}
+
+Buffer.prototype.writeDoubleBE = function writeDoubleBE (value, offset, noAssert) {
+  return writeDouble(this, value, offset, false, noAssert)
+}
+
+// copy(targetBuffer, targetStart=0, sourceStart=0, sourceEnd=buffer.length)
+Buffer.prototype.copy = function copy (target, targetStart, start, end) {
+  if (!Buffer.isBuffer(target)) throw new TypeError('argument should be a Buffer')
+  if (!start) start = 0
+  if (!end && end !== 0) end = this.length
+  if (targetStart >= target.length) targetStart = target.length
+  if (!targetStart) targetStart = 0
+  if (end > 0 && end < start) end = start
+
+  // Copy 0 bytes; we're done
+  if (end === start) return 0
+  if (target.length === 0 || this.length === 0) return 0
+
+  // Fatal error conditions
+  if (targetStart < 0) {
+    throw new RangeError('targetStart out of bounds')
+  }
+  if (start < 0 || start >= this.length) throw new RangeError('Index out of range')
+  if (end < 0) throw new RangeError('sourceEnd out of bounds')
+
+  // Are we oob?
+  if (end > this.length) end = this.length
+  if (target.length - targetStart < end - start) {
+    end = target.length - targetStart + start
+  }
+
+  var len = end - start
+
+  if (this === target && typeof Uint8Array.prototype.copyWithin === 'function') {
+    // Use built-in when available, missing from IE11
+    this.copyWithin(targetStart, start, end)
+  } else if (this === target && start < targetStart && targetStart < end) {
+    // descending copy from end
+    for (var i = len - 1; i >= 0; --i) {
+      target[i + targetStart] = this[i + start]
+    }
+  } else {
+    Uint8Array.prototype.set.call(
+      target,
+      this.subarray(start, end),
+      targetStart
+    )
+  }
+
+  return len
+}
+
+// Usage:
+//    buffer.fill(number[, offset[, end]])
+//    buffer.fill(buffer[, offset[, end]])
+//    buffer.fill(string[, offset[, end]][, encoding])
+Buffer.prototype.fill = function fill (val, start, end, encoding) {
+  // Handle string cases:
+  if (typeof val === 'string') {
+    if (typeof start === 'string') {
+      encoding = start
+      start = 0
+      end = this.length
+    } else if (typeof end === 'string') {
+      encoding = end
+      end = this.length
+    }
+    if (encoding !== undefined && typeof encoding !== 'string') {
+      throw new TypeError('encoding must be a string')
+    }
+    if (typeof encoding === 'string' && !Buffer.isEncoding(encoding)) {
+      throw new TypeError('Unknown encoding: ' + encoding)
+    }
+    if (val.length === 1) {
+      var code = val.charCodeAt(0)
+      if ((encoding === 'utf8' && code < 128) ||
+          encoding === 'latin1') {
+        // Fast path: If `val` fits into a single byte, use that numeric value.
+        val = code
+      }
+    }
+  } else if (typeof val === 'number') {
+    val = val & 255
+  }
+
+  // Invalid ranges are not set to a default, so can range check early.
+  if (start < 0 || this.length < start || this.length < end) {
+    throw new RangeError('Out of range index')
+  }
+
+  if (end <= start) {
+    return this
+  }
+
+  start = start >>> 0
+  end = end === undefined ? this.length : end >>> 0
+
+  if (!val) val = 0
+
+  var i
+  if (typeof val === 'number') {
+    for (i = start; i < end; ++i) {
+      this[i] = val
+    }
+  } else {
+    var bytes = Buffer.isBuffer(val)
+      ? val
+      : Buffer.from(val, encoding)
+    var len = bytes.length
+    if (len === 0) {
+      throw new TypeError('The value "' + val +
+        '" is invalid for argument "value"')
+    }
+    for (i = 0; i < end - start; ++i) {
+      this[i + start] = bytes[i % len]
+    }
+  }
+
+  return this
+}
+
+// HELPER FUNCTIONS
+// ================
+
+var INVALID_BASE64_RE = /[^+/0-9A-Za-z-_]/g
+
+function base64clean (str) {
+  // Node takes equal signs as end of the Base64 encoding
+  str = str.split('=')[0]
+  // Node strips out invalid characters like \n and \t from the string, base64-js does not
+  str = str.trim().replace(INVALID_BASE64_RE, '')
+  // Node converts strings with length < 2 to ''
+  if (str.length < 2) return ''
+  // Node allows for non-padded base64 strings (missing trailing ===), base64-js does not
+  while (str.length % 4 !== 0) {
+    str = str + '='
+  }
+  return str
+}
+
+function toHex (n) {
+  if (n < 16) return '0' + n.toString(16)
+  return n.toString(16)
+}
+
+function utf8ToBytes (string, units) {
+  units = units || Infinity
+  var codePoint
+  var length = string.length
+  var leadSurrogate = null
+  var bytes = []
+
+  for (var i = 0; i < length; ++i) {
+    codePoint = string.charCodeAt(i)
+
+    // is surrogate component
+    if (codePoint > 0xD7FF && codePoint < 0xE000) {
+      // last char was a lead
+      if (!leadSurrogate) {
+        // no lead yet
+        if (codePoint > 0xDBFF) {
+          // unexpected trail
+          if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+          continue
+        } else if (i + 1 === length) {
+          // unpaired lead
+          if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+          continue
+        }
+
+        // valid lead
+        leadSurrogate = codePoint
+
+        continue
+      }
+
+      // 2 leads in a row
+      if (codePoint < 0xDC00) {
+        if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+        leadSurrogate = codePoint
+        continue
+      }
+
+      // valid surrogate pair
+      codePoint = (leadSurrogate - 0xD800 << 10 | codePoint - 0xDC00) + 0x10000
+    } else if (leadSurrogate) {
+      // valid bmp char, but last char was a lead
+      if ((units -= 3) > -1) bytes.push(0xEF, 0xBF, 0xBD)
+    }
+
+    leadSurrogate = null
+
+    // encode utf8
+    if (codePoint < 0x80) {
+      if ((units -= 1) < 0) break
+      bytes.push(codePoint)
+    } else if (codePoint < 0x800) {
+      if ((units -= 2) < 0) break
+      bytes.push(
+        codePoint >> 0x6 | 0xC0,
+        codePoint & 0x3F | 0x80
+      )
+    } else if (codePoint < 0x10000) {
+      if ((units -= 3) < 0) break
+      bytes.push(
+        codePoint >> 0xC | 0xE0,
+        codePoint >> 0x6 & 0x3F | 0x80,
+        codePoint & 0x3F | 0x80
+      )
+    } else if (codePoint < 0x110000) {
+      if ((units -= 4) < 0) break
+      bytes.push(
+        codePoint >> 0x12 | 0xF0,
+        codePoint >> 0xC & 0x3F | 0x80,
+        codePoint >> 0x6 & 0x3F | 0x80,
+        codePoint & 0x3F | 0x80
+      )
+    } else {
+      throw new Error('Invalid code point')
+    }
+  }
+
+  return bytes
+}
+
+function asciiToBytes (str) {
+  var byteArray = []
+  for (var i = 0; i < str.length; ++i) {
+    // Node's code seems to be doing this and not & 0x7F..
+    byteArray.push(str.charCodeAt(i) & 0xFF)
+  }
+  return byteArray
+}
+
+function utf16leToBytes (str, units) {
+  var c, hi, lo
+  var byteArray = []
+  for (var i = 0; i < str.length; ++i) {
+    if ((units -= 2) < 0) break
+
+    c = str.charCodeAt(i)
+    hi = c >> 8
+    lo = c % 256
+    byteArray.push(lo)
+    byteArray.push(hi)
+  }
+
+  return byteArray
+}
+
+function base64ToBytes (str) {
+  return base64.toByteArray(base64clean(str))
+}
+
+function blitBuffer (src, dst, offset, length) {
+  for (var i = 0; i < length; ++i) {
+    if ((i + offset >= dst.length) || (i >= src.length)) break
+    dst[i + offset] = src[i]
+  }
+  return i
+}
+
+// ArrayBuffer or Uint8Array objects from other contexts (i.e. iframes) do not pass
+// the `instanceof` check but they should be treated as of that type.
+// See: https://github.com/feross/buffer/issues/166
+function isInstance (obj, type) {
+  return obj instanceof type ||
+    (obj != null && obj.constructor != null && obj.constructor.name != null &&
+      obj.constructor.name === type.name)
+}
+function numberIsNaN (obj) {
+  // For IE11 support
+  return obj !== obj // eslint-disable-line no-self-compare
+}
+
+}).call(this)}).call(this,require("buffer").Buffer)
+},{"base64-js":2,"buffer":4,"ieee754":6}],5:[function(require,module,exports){
+// Copyright Joyent, Inc. and other Node contributors.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this software and associated documentation files (the
+// "Software"), to deal in the Software without restriction, including
+// without limitation the rights to use, copy, modify, merge, publish,
+// distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the
+// following conditions:
+//
+// The above copyright notice and this permission notice shall be included
+// in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+// USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+'use strict';
+
+var R = typeof Reflect === 'object' ? Reflect : null
+var ReflectApply = R && typeof R.apply === 'function'
+  ? R.apply
+  : function ReflectApply(target, receiver, args) {
+    return Function.prototype.apply.call(target, receiver, args);
+  }
+
+var ReflectOwnKeys
+if (R && typeof R.ownKeys === 'function') {
+  ReflectOwnKeys = R.ownKeys
+} else if (Object.getOwnPropertySymbols) {
+  ReflectOwnKeys = function ReflectOwnKeys(target) {
+    return Object.getOwnPropertyNames(target)
+      .concat(Object.getOwnPropertySymbols(target));
+  };
+} else {
+  ReflectOwnKeys = function ReflectOwnKeys(target) {
+    return Object.getOwnPropertyNames(target);
+  };
+}
+
+function ProcessEmitWarning(warning) {
+  if (console && console.warn) console.warn(warning);
+}
+
+var NumberIsNaN = Number.isNaN || function NumberIsNaN(value) {
+  return value !== value;
+}
+
+function EventEmitter() {
+  EventEmitter.init.call(this);
+}
+module.exports = EventEmitter;
+module.exports.once = once;
+
+// Backwards-compat with node 0.10.x
+EventEmitter.EventEmitter = EventEmitter;
+
+EventEmitter.prototype._events = undefined;
+EventEmitter.prototype._eventsCount = 0;
+EventEmitter.prototype._maxListeners = undefined;
+
+// By default EventEmitters will print a warning if more than 10 listeners are
+// added to it. This is a useful default which helps finding memory leaks.
+var defaultMaxListeners = 10;
+
+function checkListener(listener) {
+  if (typeof listener !== 'function') {
+    throw new TypeError('The "listener" argument must be of type Function. Received type ' + typeof listener);
+  }
+}
+
+Object.defineProperty(EventEmitter, 'defaultMaxListeners', {
+  enumerable: true,
+  get: function() {
+    return defaultMaxListeners;
+  },
+  set: function(arg) {
+    if (typeof arg !== 'number' || arg < 0 || NumberIsNaN(arg)) {
+      throw new RangeError('The value of "defaultMaxListeners" is out of range. It must be a non-negative number. Received ' + arg + '.');
+    }
+    defaultMaxListeners = arg;
+  }
+});
+
+EventEmitter.init = function() {
+
+  if (this._events === undefined ||
+      this._events === Object.getPrototypeOf(this)._events) {
+    this._events = Object.create(null);
+    this._eventsCount = 0;
+  }
+
+  this._maxListeners = this._maxListeners || undefined;
+};
+
+// Obviously not all Emitters should be limited to 10. This function allows
+// that to be increased. Set to zero for unlimited.
+EventEmitter.prototype.setMaxListeners = function setMaxListeners(n) {
+  if (typeof n !== 'number' || n < 0 || NumberIsNaN(n)) {
+    throw new RangeError('The value of "n" is out of range. It must be a non-negative number. Received ' + n + '.');
+  }
+  this._maxListeners = n;
+  return this;
+};
+
+function _getMaxListeners(that) {
+  if (that._maxListeners === undefined)
+    return EventEmitter.defaultMaxListeners;
+  return that._maxListeners;
+}
+
+EventEmitter.prototype.getMaxListeners = function getMaxListeners() {
+  return _getMaxListeners(this);
+};
+
+EventEmitter.prototype.emit = function emit(type) {
+  var args = [];
+  for (var i = 1; i < arguments.length; i++) args.push(arguments[i]);
+  var doError = (type === 'error');
+
+  var events = this._events;
+  if (events !== undefined)
+    doError = (doError && events.error === undefined);
+  else if (!doError)
+    return false;
+
+  // If there is no 'error' event listener then throw.
+  if (doError) {
+    var er;
+    if (args.length > 0)
+      er = args[0];
+    if (er instanceof Error) {
+      // Note: The comments on the `throw` lines are intentional, they show
+      // up in Node's output if this results in an unhandled exception.
+      throw er; // Unhandled 'error' event
+    }
+    // At least give some kind of context to the user
+    var err = new Error('Unhandled error.' + (er ? ' (' + er.message + ')' : ''));
+    err.context = er;
+    throw err; // Unhandled 'error' event
+  }
+
+  var handler = events[type];
+
+  if (handler === undefined)
+    return false;
+
+  if (typeof handler === 'function') {
+    ReflectApply(handler, this, args);
+  } else {
+    var len = handler.length;
+    var listeners = arrayClone(handler, len);
+    for (var i = 0; i < len; ++i)
+      ReflectApply(listeners[i], this, args);
+  }
+
+  return true;
+};
+
+function _addListener(target, type, listener, prepend) {
+  var m;
+  var events;
+  var existing;
+
+  checkListener(listener);
+
+  events = target._events;
+  if (events === undefined) {
+    events = target._events = Object.create(null);
+    target._eventsCount = 0;
+  } else {
+    // To avoid recursion in the case that type === "newListener"! Before
+    // adding it to the listeners, first emit "newListener".
+    if (events.newListener !== undefined) {
+      target.emit('newListener', type,
+                  listener.listener ? listener.listener : listener);
+
+      // Re-assign `events` because a newListener handler could have caused the
+      // this._events to be assigned to a new object
+      events = target._events;
+    }
+    existing = events[type];
+  }
+
+  if (existing === undefined) {
+    // Optimize the case of one listener. Don't need the extra array object.
+    existing = events[type] = listener;
+    ++target._eventsCount;
+  } else {
+    if (typeof existing === 'function') {
+      // Adding the second element, need to change to array.
+      existing = events[type] =
+        prepend ? [listener, existing] : [existing, listener];
+      // If we've already got an array, just append.
+    } else if (prepend) {
+      existing.unshift(listener);
+    } else {
+      existing.push(listener);
+    }
+
+    // Check for listener leak
+    m = _getMaxListeners(target);
+    if (m > 0 && existing.length > m && !existing.warned) {
+      existing.warned = true;
+      // No error code for this since it is a Warning
+      // eslint-disable-next-line no-restricted-syntax
+      var w = new Error('Possible EventEmitter memory leak detected. ' +
+                          existing.length + ' ' + String(type) + ' listeners ' +
+                          'added. Use emitter.setMaxListeners() to ' +
+                          'increase limit');
+      w.name = 'MaxListenersExceededWarning';
+      w.emitter = target;
+      w.type = type;
+      w.count = existing.length;
+      ProcessEmitWarning(w);
+    }
+  }
+
+  return target;
+}
+
+EventEmitter.prototype.addListener = function addListener(type, listener) {
+  return _addListener(this, type, listener, false);
+};
+
+EventEmitter.prototype.on = EventEmitter.prototype.addListener;
+
+EventEmitter.prototype.prependListener =
+    function prependListener(type, listener) {
+      return _addListener(this, type, listener, true);
+    };
+
+function onceWrapper() {
+  if (!this.fired) {
+    this.target.removeListener(this.type, this.wrapFn);
+    this.fired = true;
+    if (arguments.length === 0)
+      return this.listener.call(this.target);
+    return this.listener.apply(this.target, arguments);
+  }
+}
+
+function _onceWrap(target, type, listener) {
+  var state = { fired: false, wrapFn: undefined, target: target, type: type, listener: listener };
+  var wrapped = onceWrapper.bind(state);
+  wrapped.listener = listener;
+  state.wrapFn = wrapped;
+  return wrapped;
+}
+
+EventEmitter.prototype.once = function once(type, listener) {
+  checkListener(listener);
+  this.on(type, _onceWrap(this, type, listener));
+  return this;
+};
+
+EventEmitter.prototype.prependOnceListener =
+    function prependOnceListener(type, listener) {
+      checkListener(listener);
+      this.prependListener(type, _onceWrap(this, type, listener));
+      return this;
+    };
+
+// Emits a 'removeListener' event if and only if the listener was removed.
+EventEmitter.prototype.removeListener =
+    function removeListener(type, listener) {
+      var list, events, position, i, originalListener;
+
+      checkListener(listener);
+
+      events = this._events;
+      if (events === undefined)
+        return this;
+
+      list = events[type];
+      if (list === undefined)
+        return this;
+
+      if (list === listener || list.listener === listener) {
+        if (--this._eventsCount === 0)
+          this._events = Object.create(null);
+        else {
+          delete events[type];
+          if (events.removeListener)
+            this.emit('removeListener', type, list.listener || listener);
+        }
+      } else if (typeof list !== 'function') {
+        position = -1;
+
+        for (i = list.length - 1; i >= 0; i--) {
+          if (list[i] === listener || list[i].listener === listener) {
+            originalListener = list[i].listener;
+            position = i;
+            break;
+          }
+        }
+
+        if (position < 0)
+          return this;
+
+        if (position === 0)
+          list.shift();
+        else {
+          spliceOne(list, position);
+        }
+
+        if (list.length === 1)
+          events[type] = list[0];
+
+        if (events.removeListener !== undefined)
+          this.emit('removeListener', type, originalListener || listener);
+      }
+
+      return this;
+    };
+
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+
+EventEmitter.prototype.removeAllListeners =
+    function removeAllListeners(type) {
+      var listeners, events, i;
+
+      events = this._events;
+      if (events === undefined)
+        return this;
+
+      // not listening for removeListener, no need to emit
+      if (events.removeListener === undefined) {
+        if (arguments.length === 0) {
+          this._events = Object.create(null);
+          this._eventsCount = 0;
+        } else if (events[type] !== undefined) {
+          if (--this._eventsCount === 0)
+            this._events = Object.create(null);
+          else
+            delete events[type];
+        }
+        return this;
+      }
+
+      // emit removeListener for all listeners on all events
+      if (arguments.length === 0) {
+        var keys = Object.keys(events);
+        var key;
+        for (i = 0; i < keys.length; ++i) {
+          key = keys[i];
+          if (key === 'removeListener') continue;
+          this.removeAllListeners(key);
+        }
+        this.removeAllListeners('removeListener');
+        this._events = Object.create(null);
+        this._eventsCount = 0;
+        return this;
+      }
+
+      listeners = events[type];
+
+      if (typeof listeners === 'function') {
+        this.removeListener(type, listeners);
+      } else if (listeners !== undefined) {
+        // LIFO order
+        for (i = listeners.length - 1; i >= 0; i--) {
+          this.removeListener(type, listeners[i]);
+        }
+      }
+
+      return this;
+    };
+
+function _listeners(target, type, unwrap) {
+  var events = target._events;
+
+  if (events === undefined)
+    return [];
+
+  var evlistener = events[type];
+  if (evlistener === undefined)
+    return [];
+
+  if (typeof evlistener === 'function')
+    return unwrap ? [evlistener.listener || evlistener] : [evlistener];
+
+  return unwrap ?
+    unwrapListeners(evlistener) : arrayClone(evlistener, evlistener.length);
+}
+
+EventEmitter.prototype.listeners = function listeners(type) {
+  return _listeners(this, type, true);
+};
+
+EventEmitter.prototype.rawListeners = function rawListeners(type) {
+  return _listeners(this, type, false);
+};
+
+EventEmitter.listenerCount = function(emitter, type) {
+  if (typeof emitter.listenerCount === 'function') {
+    return emitter.listenerCount(type);
+  } else {
+    return listenerCount.call(emitter, type);
+  }
+};
+
+EventEmitter.prototype.listenerCount = listenerCount;
+function listenerCount(type) {
+  var events = this._events;
+
+  if (events !== undefined) {
+    var evlistener = events[type];
+
+    if (typeof evlistener === 'function') {
+      return 1;
+    } else if (evlistener !== undefined) {
+      return evlistener.length;
+    }
+  }
+
+  return 0;
+}
+
+EventEmitter.prototype.eventNames = function eventNames() {
+  return this._eventsCount > 0 ? ReflectOwnKeys(this._events) : [];
+};
+
+function arrayClone(arr, n) {
+  var copy = new Array(n);
+  for (var i = 0; i < n; ++i)
+    copy[i] = arr[i];
+  return copy;
+}
+
+function spliceOne(list, index) {
+  for (; index + 1 < list.length; index++)
+    list[index] = list[index + 1];
+  list.pop();
+}
+
+function unwrapListeners(arr) {
+  var ret = new Array(arr.length);
+  for (var i = 0; i < ret.length; ++i) {
+    ret[i] = arr[i].listener || arr[i];
+  }
+  return ret;
+}
+
+function once(emitter, name) {
+  return new Promise(function (resolve, reject) {
+    function errorListener(err) {
+      emitter.removeListener(name, resolver);
+      reject(err);
+    }
+
+    function resolver() {
+      if (typeof emitter.removeListener === 'function') {
+        emitter.removeListener('error', errorListener);
+      }
+      resolve([].slice.call(arguments));
+    };
+
+    eventTargetAgnosticAddListener(emitter, name, resolver, { once: true });
+    if (name !== 'error') {
+      addErrorHandlerIfEventEmitter(emitter, errorListener, { once: true });
+    }
+  });
+}
+
+function addErrorHandlerIfEventEmitter(emitter, handler, flags) {
+  if (typeof emitter.on === 'function') {
+    eventTargetAgnosticAddListener(emitter, 'error', handler, flags);
+  }
+}
+
+function eventTargetAgnosticAddListener(emitter, name, listener, flags) {
+  if (typeof emitter.on === 'function') {
+    if (flags.once) {
+      emitter.once(name, listener);
+    } else {
+      emitter.on(name, listener);
+    }
+  } else if (typeof emitter.addEventListener === 'function') {
+    // EventTarget does not have `error` event semantics like Node
+    // EventEmitters, we do not listen for `error` events here.
+    emitter.addEventListener(name, function wrapListener(arg) {
+      // IE does not have builtin `{ once: true }` support so we
+      // have to do it manually.
+      if (flags.once) {
+        emitter.removeEventListener(name, wrapListener);
+      }
+      listener(arg);
+    });
+  } else {
+    throw new TypeError('The "emitter" argument must be of type EventEmitter. Received type ' + typeof emitter);
+  }
+}
+
+},{}],6:[function(require,module,exports){
+/*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
+exports.read = function (buffer, offset, isLE, mLen, nBytes) {
+  var e, m
+  var eLen = (nBytes * 8) - mLen - 1
+  var eMax = (1 << eLen) - 1
+  var eBias = eMax >> 1
+  var nBits = -7
+  var i = isLE ? (nBytes - 1) : 0
+  var d = isLE ? -1 : 1
+  var s = buffer[offset + i]
+
+  i += d
+
+  e = s & ((1 << (-nBits)) - 1)
+  s >>= (-nBits)
+  nBits += eLen
+  for (; nBits > 0; e = (e * 256) + buffer[offset + i], i += d, nBits -= 8) {}
+
+  m = e & ((1 << (-nBits)) - 1)
+  e >>= (-nBits)
+  nBits += mLen
+  for (; nBits > 0; m = (m * 256) + buffer[offset + i], i += d, nBits -= 8) {}
+
+  if (e === 0) {
+    e = 1 - eBias
+  } else if (e === eMax) {
+    return m ? NaN : ((s ? -1 : 1) * Infinity)
+  } else {
+    m = m + Math.pow(2, mLen)
+    e = e - eBias
+  }
+  return (s ? -1 : 1) * m * Math.pow(2, e - mLen)
+}
+
+exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
+  var e, m, c
+  var eLen = (nBytes * 8) - mLen - 1
+  var eMax = (1 << eLen) - 1
+  var eBias = eMax >> 1
+  var rt = (mLen === 23 ? Math.pow(2, -24) - Math.pow(2, -77) : 0)
+  var i = isLE ? 0 : (nBytes - 1)
+  var d = isLE ? 1 : -1
+  var s = value < 0 || (value === 0 && 1 / value < 0) ? 1 : 0
+
+  value = Math.abs(value)
+
+  if (isNaN(value) || value === Infinity) {
+    m = isNaN(value) ? 1 : 0
+    e = eMax
+  } else {
+    e = Math.floor(Math.log(value) / Math.LN2)
+    if (value * (c = Math.pow(2, -e)) < 1) {
+      e--
+      c *= 2
+    }
+    if (e + eBias >= 1) {
+      value += rt / c
+    } else {
+      value += rt * Math.pow(2, 1 - eBias)
+    }
+    if (value * c >= 2) {
+      e++
+      c /= 2
+    }
+
+    if (e + eBias >= eMax) {
+      m = 0
+      e = eMax
+    } else if (e + eBias >= 1) {
+      m = ((value * c) - 1) * Math.pow(2, mLen)
+      e = e + eBias
+    } else {
+      m = value * Math.pow(2, eBias - 1) * Math.pow(2, mLen)
+      e = 0
+    }
+  }
+
+  for (; mLen >= 8; buffer[offset + i] = m & 0xff, i += d, m /= 256, mLen -= 8) {}
+
+  e = (e << mLen) | m
+  eLen += mLen
+  for (; eLen > 0; buffer[offset + i] = e & 0xff, i += d, e /= 256, eLen -= 8) {}
+
+  buffer[offset + i - d] |= s * 128
+}
+
+},{}],7:[function(require,module,exports){
+/*!
+ * Determine if an object is a Buffer
+ *
+ * @author   Feross Aboukhadijeh <https://feross.org>
+ * @license  MIT
+ */
+
+// The _isBuffer check is for Safari 5-7 support, because it's missing
+// Object.prototype.constructor. Remove this eventually
+module.exports = function (obj) {
+  return obj != null && (isBuffer(obj) || isSlowBuffer(obj) || !!obj._isBuffer)
+}
+
+function isBuffer (obj) {
+  return !!obj.constructor && typeof obj.constructor.isBuffer === 'function' && obj.constructor.isBuffer(obj)
+}
+
+// For Node v0.10 support. Remove this eventually.
+function isSlowBuffer (obj) {
+  return typeof obj.readFloatLE === 'function' && typeof obj.slice === 'function' && isBuffer(obj.slice(0, 0))
+}
+
+},{}],8:[function(require,module,exports){
+exports.endianness = function () { return 'LE' };
+
+exports.hostname = function () {
+    if (typeof location !== 'undefined') {
+        return location.hostname
+    }
+    else return '';
+};
+
+exports.loadavg = function () { return [] };
+
+exports.uptime = function () { return 0 };
+
+exports.freemem = function () {
+    return Number.MAX_VALUE;
+};
+
+exports.totalmem = function () {
+    return Number.MAX_VALUE;
+};
+
+exports.cpus = function () { return [] };
+
+exports.type = function () { return 'Browser' };
+
+exports.release = function () {
+    if (typeof navigator !== 'undefined') {
+        return navigator.appVersion;
+    }
+    return '';
+};
+
+exports.networkInterfaces
+= exports.getNetworkInterfaces
+= function () { return {} };
+
+exports.arch = function () { return 'javascript' };
+
+exports.platform = function () { return 'browser' };
+
+exports.tmpdir = exports.tmpDir = function () {
+    return '/tmp';
+};
+
+exports.EOL = '\n';
+
+exports.homedir = function () {
+	return '/'
+};
+
+},{}],9:[function(require,module,exports){
 (function (process){(function (){
 // 'path' module extracted from Node.js v8.11.1 (only the posix part)
 // transplited with Babel
@@ -533,7 +3128,7 @@ posix.posix = posix;
 module.exports = posix;
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":3}],3:[function(require,module,exports){
+},{"_process":10}],10:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -719,7 +3314,7 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],4:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 (function (setImmediate,clearImmediate){(function (){
 var nextTick = require('process/browser.js').nextTick;
 var apply = Function.prototype.apply;
@@ -798,7 +3393,7 @@ exports.clearImmediate = typeof clearImmediate === "function" ? clearImmediate :
   delete immediateIds[id];
 };
 }).call(this)}).call(this,require("timers").setImmediate,require("timers").clearImmediate)
-},{"process/browser.js":3,"timers":4}],5:[function(require,module,exports){
+},{"process/browser.js":10,"timers":11}],12:[function(require,module,exports){
 module.exports={
   "contractName": "Buttholes",
   "abi": [
@@ -1804,9 +4399,9 @@ module.exports={
       "type": "function"
     }
   ],
-  "metadata": "{\"compiler\":{\"version\":\"0.8.11+commit.d7f03943\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[{\"internalType\":\"string\",\"name\":\"baseURI_\",\"type\":\"string\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"approved\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"Approval\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"operator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"approved\",\"type\":\"bool\"}],\"name\":\"ApprovalForAll\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"Paused\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"removedButthole\",\"type\":\"address\"}],\"name\":\"PuckerDown\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"addedButthole\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"buttholeHash\",\"type\":\"string\"}],\"name\":\"PuckerUp\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"previousAdminRole\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"newAdminRole\",\"type\":\"bytes32\"}],\"name\":\"RoleAdminChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"RoleGranted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"RoleRevoked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"Transfer\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"Unpaused\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"DEFAULT_ADMIN_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"MINTER_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"PAUSER_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newButthole\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"_tokenURI\",\"type\":\"string\"}],\"name\":\"addButthole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"addMinter\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"approve\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"balanceOf\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"burn\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"buttholeMap\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"buttholes\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"donor1\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor2\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor3\",\"type\":\"address\"}],\"name\":\"createCheekSpreader\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"getApproved\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"}],\"name\":\"getRoleAdmin\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"getRoleMember\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"}],\"name\":\"getRoleMemberCount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"grantRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"hasRole\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"operator\",\"type\":\"address\"}],\"name\":\"isApprovedForAll\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"}],\"name\":\"mint\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"name\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"ownerOf\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceButthole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"renounceRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"revokeRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_tokenId\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_salePrice\",\"type\":\"uint256\"}],\"name\":\"royaltyInfo\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"royaltyValue\",\"outputs\":[{\"internalType\":\"uint96\",\"name\":\"\",\"type\":\"uint96\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"safeTransferFrom\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"_data\",\"type\":\"bytes\"}],\"name\":\"safeTransferFrom\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"operator\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"approved\",\"type\":\"bool\"}],\"name\":\"setApprovalForAll\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"symbol\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"tokenByIndex\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"tokenOfOwnerByIndex\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"tokenURI\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"transferFrom\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"buttholeAddress\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor1\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor2\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor3\",\"type\":\"address\"}],\"name\":\"updateCheekSpreader\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}],\"devdoc\":{\"author\":\"Skeetzo\",\"details\":\"Stupid (non-Solana) butthole nfts.\",\"kind\":\"dev\",\"methods\":{\"addButthole(address,string)\":{\"details\":\"Sets `_tokenURI` as the tokenURI of `tokenId`. Requirements: - `newButthole` must not exist as a butthole.\"},\"addMinter()\":{\"details\":\"18+ confirm to enable minting.\"},\"approve(address,uint256)\":{\"details\":\"See {IERC721-approve}.\"},\"balanceOf(address)\":{\"details\":\"See {IERC721-balanceOf}.\"},\"burn(uint256)\":{\"details\":\"Burns `tokenId`. See {ERC721-_burn}. Requirements: - The caller must own `tokenId` or be an approved operator.\"},\"constructor\":{\"details\":\"Contract constructor. Sets metadata extension `name` and `symbol`.\"},\"createCheekSpreader(address,address,address)\":{\"details\":\"Create a new CheekSpreader contract for handling royalty payments.\"},\"getApproved(uint256)\":{\"details\":\"See {IERC721-getApproved}.\"},\"getRoleAdmin(bytes32)\":{\"details\":\"Returns the admin role that controls `role`. See {grantRole} and {revokeRole}. To change a role's admin, use {_setRoleAdmin}.\"},\"getRoleMember(bytes32,uint256)\":{\"details\":\"Returns one of the accounts that have `role`. `index` must be a value between 0 and {getRoleMemberCount}, non-inclusive. Role bearers are not sorted in any particular way, and their ordering may change at any point. WARNING: When using {getRoleMember} and {getRoleMemberCount}, make sure you perform all queries on the same block. See the following https://forum.openzeppelin.com/t/iterating-over-elements-on-enumerableset-in-openzeppelin-contracts/2296[forum post] for more information.\"},\"getRoleMemberCount(bytes32)\":{\"details\":\"Returns the number of accounts that have `role`. Can be used together with {getRoleMember} to enumerate all bearers of a role.\"},\"grantRole(bytes32,address)\":{\"details\":\"Grants `role` to `account`. If `account` had not been already granted `role`, emits a {RoleGranted} event. Requirements: - the caller must have ``role``'s admin role.\"},\"hasRole(bytes32,address)\":{\"details\":\"Returns `true` if `account` has been granted `role`.\"},\"isApprovedForAll(address,address)\":{\"details\":\"See {IERC721-isApprovedForAll}.\"},\"mint(address)\":{\"details\":\"Creates a new token for `to`. Its token ID will be automatically assigned (and available on the emitted {IERC721-Transfer} event), and the token URI autogenerated based on the base URI passed at construction. See {ERC721-_mint}. Requirements: - the caller must have the `MINTER_ROLE`.\"},\"name()\":{\"details\":\"See {IERC721Metadata-name}.\"},\"owner()\":{\"details\":\"Returns the address of the current owner.\"},\"ownerOf(uint256)\":{\"details\":\"See {IERC721-ownerOf}.\"},\"pause()\":{\"details\":\"Pauses all token transfers. See {ERC721Pausable} and {Pausable-_pause}. Requirements: - the caller must have the `PAUSER_ROLE`.\"},\"paused()\":{\"details\":\"Returns true if the contract is paused, and false otherwise.\"},\"renounceButthole()\":{\"details\":\"Renounce ownership of your own butthole. Requirements: - `_msgSender` must exist as a butthole.\"},\"renounceOwnership()\":{\"details\":\"Leaves the contract without owner. It will not be possible to call `onlyOwner` functions anymore. Can only be called by the current owner. NOTE: Renouncing ownership will leave the contract without an owner, thereby removing any functionality that is only available to the owner.\"},\"renounceRole(bytes32,address)\":{\"details\":\"Revokes `role` from the calling account. Roles are often managed via {grantRole} and {revokeRole}: this function's purpose is to provide a mechanism for accounts to lose their privileges if they are compromised (such as when a trusted device is misplaced). If the calling account had been revoked `role`, emits a {RoleRevoked} event. Requirements: - the caller must be `account`.\"},\"revokeRole(bytes32,address)\":{\"details\":\"Revokes `role` from `account`. If `account` had been granted `role`, emits a {RoleRevoked} event. Requirements: - the caller must have ``role``'s admin role.\"},\"royaltyInfo(uint256,uint256)\":{\"details\":\"Returns how much royalty is owed and to whom, based on a sale price that may be denominated in any unit of exchange. The royalty amount is denominated and should be payed in that same unit of exchange.\"},\"safeTransferFrom(address,address,uint256)\":{\"details\":\"See {IERC721-safeTransferFrom}.\"},\"safeTransferFrom(address,address,uint256,bytes)\":{\"details\":\"See {IERC721-safeTransferFrom}.\"},\"setApprovalForAll(address,bool)\":{\"details\":\"See {IERC721-setApprovalForAll}.\"},\"supportsInterface(bytes4)\":{\"details\":\"See {IERC165-supportsInterface}.\"},\"symbol()\":{\"details\":\"See {IERC721Metadata-symbol}.\"},\"tokenByIndex(uint256)\":{\"details\":\"See {IERC721Enumerable-tokenByIndex}.\"},\"tokenOfOwnerByIndex(address,uint256)\":{\"details\":\"See {IERC721Enumerable-tokenOfOwnerByIndex}.\"},\"tokenURI(uint256)\":{\"details\":\"See {IERC721Metadata-tokenURI}.\"},\"totalSupply()\":{\"details\":\"See {IERC721Enumerable-totalSupply}.\"},\"transferFrom(address,address,uint256)\":{\"details\":\"See {IERC721-transferFrom}.\"},\"transferOwnership(address)\":{\"details\":\"Transfers ownership of the contract to a new account (`newOwner`). Can only be called by the current owner.\"},\"unpause()\":{\"details\":\"Unpauses all token transfers. See {ERC721Pausable} and {Pausable-_unpause}. Requirements: - the caller must have the `PAUSER_ROLE`.\"},\"updateCheekSpreader(address,address,address,address)\":{\"details\":\"Create a new CheekSpreader contract for handling royalty payments for an unset butthole.\"}},\"title\":\"Buttholes\",\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"project:/contracts/Buttholes.sol\":\"Buttholes\"},\"evmVersion\":\"petersburg\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":200},\"remappings\":[]},\"sources\":{\"@openzeppelin/contracts/access/AccessControl.sol\":{\"keccak256\":\"0x4a1a0ba12bf1a33f10d9fe226278cf59675c0b929d29e4da99658a079b27fb84\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://bda1319db846d6d6f92d8a57a9bdee8bde1dc39aa7546165791692c24dd6f30a\",\"dweb:/ipfs/Qma5oZ7DmbdAjd8mpiW7mx896PDtwsQtCQ2hj9Upf7b7JK\"]},\"@openzeppelin/contracts/access/AccessControlEnumerable.sol\":{\"keccak256\":\"0x13f5e15f2a0650c0b6aaee2ef19e89eaf4870d6e79662d572a393334c1397247\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://7ee05f28f549a5d6515e152580716b87636ed4bfab9812499a6e3803df88288b\",\"dweb:/ipfs/QmeEnhdwY1t5Y3YU5a4ffzgXuToydH2PNdNxV9W7dEPRQJ\"]},\"@openzeppelin/contracts/access/IAccessControl.sol\":{\"keccak256\":\"0x59ce320a585d7e1f163cd70390a0ef2ff9cec832e2aa544293a00692465a7a57\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://bb2c137c343ef0c4c7ce7b18c1d108afdc9d315a04e48307288d2d05adcbde3a\",\"dweb:/ipfs/QmUxhrAQM3MM3FF5j7AtcXLXguWCJBHJ14BRdVtuoQc8Fh\"]},\"@openzeppelin/contracts/access/IAccessControlEnumerable.sol\":{\"keccak256\":\"0xba4459ab871dfa300f5212c6c30178b63898c03533a1ede28436f11546626676\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://3dcc7b09bfa6e18aab262ca372f4a9b1fc82e294b430706a4e1378cf58e6a276\",\"dweb:/ipfs/QmT8oSAcesdctR15HMLhr2a1HRpXymxdjTfdtfTYJcj2N2\"]},\"@openzeppelin/contracts/access/Ownable.sol\":{\"keccak256\":\"0x24e0364e503a9bbde94c715d26573a76f14cd2a202d45f96f52134ab806b67b9\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://e12cbaa7378fd9b62280e4e1d164bedcb4399ce238f5f98fc0eefb7e50577981\",\"dweb:/ipfs/QmXRoFGUgfsaRkoPT5bxNMtSayKTQ8GZATLPXf69HcRA51\"]},\"@openzeppelin/contracts/interfaces/IERC165.sol\":{\"keccak256\":\"0xd04b0f06e0666f29cf7cccc82894de541e19bb30a765b107b1e40bb7fe5f7d7a\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://7b652499d098e88d8d878374616bb58434301061cae2253298b3f374044e0ddb\",\"dweb:/ipfs/QmbhAzctqo5jrSKU6idHdVyqfmzCcDbNUPvmx4GiXxfA6q\"]},\"@openzeppelin/contracts/interfaces/IERC2981.sol\":{\"keccak256\":\"0x0117c84d8584216a032bbfc24a21077e672609fa4e788624aace97dd97ceec9b\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://17ca798d2bcd2ef1c8b87f8fcf973f30e2fb9ffbd07fb8eb46530906d1d05af1\",\"dweb:/ipfs/QmW4WhbDRptY151tu9khBRD6WQPwG3CeU3eXofGp4fNuaQ\"]},\"@openzeppelin/contracts/security/Pausable.sol\":{\"keccak256\":\"0xe68ed7fb8766ed1e888291f881e36b616037f852b37d96877045319ad298ba87\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://1d491a2ca79dbf44bc02e876e21a5847a2cbcc011188532ad8662cdc1c134a4e\",\"dweb:/ipfs/QmUQXhSV8ZvHLzfdG89ZNSh1nLrAYyjnNBLznJGwGcwVk8\"]},\"@openzeppelin/contracts/token/ERC20/IERC20.sol\":{\"keccak256\":\"0xbbc8ac883ac3c0078ce5ad3e288fbb3ffcc8a30c3a98c0fda0114d64fc44fca2\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://87a7a5d2f6f63f84598af02b8c50ca2df2631cb8ba2453e8d95fcb17e4be9824\",\"dweb:/ipfs/QmR76hqtAcRqoFj33tmNjcWTLrgNsAaakYwnKZ8zoJtKei\"]},\"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\":{\"keccak256\":\"0xc3d946432c0ddbb1f846a0d3985be71299df331b91d06732152117f62f0be2b5\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://4632c341a06ba5c079b51ca5a915efab4e6ab57735b37839b3e8365ff806a43e\",\"dweb:/ipfs/QmTHT3xHYed2wajEoA5qu7ii2BxLpPhQZHwAhtLK5Z7ANK\"]},\"@openzeppelin/contracts/token/ERC721/ERC721.sol\":{\"keccak256\":\"0x11b84bb56dc112a6590bfe3e0efa118aa1b5891132342200d04c4ef544cb93de\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://cbc4803332d45dff58f865ed21c942fe4668e47cc7196c8dfe84102040b1d70f\",\"dweb:/ipfs/QmXhZLsocznRWCSyhjo3vo66Z1VsuuNptAVb6ASPYsWtGx\"]},\"@openzeppelin/contracts/token/ERC721/IERC721.sol\":{\"keccak256\":\"0x516a22876c1fab47f49b1bc22b4614491cd05338af8bd2e7b382da090a079990\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://a439187f7126d31add4557f82d8aed6be0162007cd7182c48fd934dbab8f3849\",\"dweb:/ipfs/QmRPLguRFvrRJS7r6F1bcLvsx6q1VrgjEpZafyeL8D7xZh\"]},\"@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol\":{\"keccak256\":\"0xd5fa74b4fb323776fa4a8158800fec9d5ac0fec0d6dd046dd93798632ada265f\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://33017a30a99cc5411a9e376622c31fc4a55cfc6a335e2f57f00cbf24a817ff3f\",\"dweb:/ipfs/QmWNQtWTPhA7Lo8nbxbc8KFMvZwbFYB8fSeEQ3vuapSV4a\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol\":{\"keccak256\":\"0x1f16f9737853b988865ab819d1ebf8b5009defe981c75bc9079e0f40ed2a2e57\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://05e50f827969ca93b0d7bad1e022aa3147c8f390e9f91bb814752e8fbbbe621c\",\"dweb:/ipfs/QmdR2fJ2a3HM7FyC9pGD4JeKF9z6bxqU9FbhMyQfH1sDJH\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol\":{\"keccak256\":\"0x0a79511df8151b10b0a0004d6a76ad956582d32824af4c0f4886bdbdfe5746e5\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://afbedcf17f31db719e6fdc56caa8f458799c5fa2eb94cb1e94ef18f89af85768\",\"dweb:/ipfs/QmVmqRdBfbgYThpZSoAJ5o9mnAMjx8mCHHjv3Rh8cQAAg3\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol\":{\"keccak256\":\"0xa2695a4c7b192f34b98a3875dfce54c8c6c4976b898a5598b1ce0355ce2e6c56\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6a9eed1168b7794c22eb3ef76ac6d8c523cfb453c5113e3314781dadb5d0de4b\",\"dweb:/ipfs/QmcoTzSK56c3tUN9zsD66YpTjoxguuo76BdrDs5ZSSaJMp\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol\":{\"keccak256\":\"0x7cdc887a364b6e3f9669bb4b16582e135121437399ac69d41db15012e09b96cc\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://ce1c4fcd6eafe8f6b8daf541a2cccfcd44368aa0a697c567a5b875edc8c43fea\",\"dweb:/ipfs/QmcN4HhvYveWTtcGfUY3vnzSbJyAtmgvprUW58rDLY7Vdf\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol\":{\"keccak256\":\"0x1cbe42915bc66227970fe99bc0f783eb1de30f2b48f984af01ad45edb9658698\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://2baa08eb67d9da46e6c4c049f17b7684a1c68c5268d0f466cfa0eb23ce2bf9b0\",\"dweb:/ipfs/Qmdnj8zj4PfErB2HM2eKmDt7FrqrhggsZ6Qd8MpD593tgj\"]},\"@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol\":{\"keccak256\":\"0xd1556954440b31c97a142c6ba07d5cade45f96fafd52091d33a14ebe365aecbf\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://26fef835622b46a5ba08b3ef6b46a22e94b5f285d0f0fb66b703bd30217d2c34\",\"dweb:/ipfs/QmZ548qdwfL1qF7aXz3xh1GCdTiST81kGGuKRqVUfYmPZR\"]},\"@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol\":{\"keccak256\":\"0x75b829ff2f26c14355d1cba20e16fe7b29ca58eb5fef665ede48bc0f9c6c74b9\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://a0a107160525724f9e1bbbab031defc2f298296dd9e331f16a6f7130cec32146\",\"dweb:/ipfs/QmemujxSd7gX8A9M8UwmNbz4Ms3U9FG9QfudUgxwvTmPWf\"]},\"@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol\":{\"keccak256\":\"0x22e0d463a79b304ba50f62609f5ed68c8a32e8c5eb3868111b82d8943e1337ea\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://561d02fd4b5192c77bf285820221046a4e0af2fcd4daa0beb8ffea3eb5b2ec3a\",\"dweb:/ipfs/QmNbkyFhak5JiiPPchxRBEtnQTqFP5YJ9PU9MspjupZDpy\"]},\"@openzeppelin/contracts/token/common/ERC2981.sol\":{\"keccak256\":\"0x73a07d6155bb2549828bf1ce4dce2300b5d78c958acb922e61a3341ea4279c97\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6877199a7d20f8959bda1b9b1aafc79674dd4779cb297b292e828a6b4506c43f\",\"dweb:/ipfs/QmeeNhXkTNcAdd6DpvKSVN1Z7vUUTNxm2sd5dqmsojUezA\"]},\"@openzeppelin/contracts/utils/Address.sol\":{\"keccak256\":\"0x2ccf9d2313a313d41a791505f2b5abfdc62191b5d4334f7f7a82691c088a1c87\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://b3a57d0854b2fdce6ebff933a48dca2445643d1eccfc27f00292e937f26c6a58\",\"dweb:/ipfs/QmW45rZooS9TqR4YXUbjRbtf2Bpb5ouSarBvfW1LdGprvV\"]},\"@openzeppelin/contracts/utils/Context.sol\":{\"keccak256\":\"0xe2e337e6dde9ef6b680e07338c493ebea1b5fd09b43424112868e9cc1706bca7\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6df0ddf21ce9f58271bdfaa85cde98b200ef242a05a3f85c2bc10a8294800a92\",\"dweb:/ipfs/QmRK2Y5Yc6BK7tGKkgsgn3aJEQGi5aakeSPZvS65PV8Xp3\"]},\"@openzeppelin/contracts/utils/Counters.sol\":{\"keccak256\":\"0xf0018c2440fbe238dd3a8732fa8e17a0f9dce84d31451dc8a32f6d62b349c9f1\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://59e1c62884d55b70f3ae5432b44bb3166ad71ae3acd19c57ab6ddc3c87c325ee\",\"dweb:/ipfs/QmezuXg5GK5oeA4F91EZhozBFekhq5TD966bHPH18cCqhu\"]},\"@openzeppelin/contracts/utils/Strings.sol\":{\"keccak256\":\"0x32c202bd28995dd20c4347b7c6467a6d3241c74c8ad3edcbb610cd9205916c45\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://8179c356adb19e70d6b31a1eedc8c5c7f0c00e669e2540f4099e3844c6074d30\",\"dweb:/ipfs/QmWFbivarEobbqhS1go64ootVuHfVohBseerYy9FTEd1W2\"]},\"@openzeppelin/contracts/utils/introspection/ERC165.sol\":{\"keccak256\":\"0xd10975de010d89fd1c78dc5e8a9a7e7f496198085c151648f20cba166b32582b\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://fb0048dee081f6fffa5f74afc3fb328483c2a30504e94a0ddd2a5114d731ec4d\",\"dweb:/ipfs/QmZptt1nmYoA5SgjwnSgWqgUSDgm4q52Yos3xhnMv3MV43\"]},\"@openzeppelin/contracts/utils/introspection/IERC165.sol\":{\"keccak256\":\"0x447a5f3ddc18419d41ff92b3773fb86471b1db25773e07f877f548918a185bf1\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://be161e54f24e5c6fae81a12db1a8ae87bc5ae1b0ddc805d82a1440a68455088f\",\"dweb:/ipfs/QmP7C3CHdY9urF4dEMb9wmsp1wMxHF6nhA2yQE5SKiPAdy\"]},\"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\":{\"keccak256\":\"0x9772845c886f87a3aab315f8d6b68aa599027c20f441b131cd4afaf65b588900\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://ad2f29a9c17a4f746416c9e254e17671f43c409dbfa6e4d7d76c3e4a83212d31\",\"dweb:/ipfs/QmTqU65L6iu6yqmXKzcNLPioR8etzKPWycpDJCm17ifVdS\"]},\"project:/contracts/Buttholes.sol\":{\"keccak256\":\"0x396eabaaef7a89adbe39ade607602d3c1d860ed681f463c4cbd9071dea04199e\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://d71eb56e194a879707f997fc4a476220d1fe03090b9c689404901ea455b98443\",\"dweb:/ipfs/QmPWbU4tXHnowWxmPQL3Q8RJAnDM2Q3W2gtKxaPyXwn81F\"]},\"project:/contracts/CheekSpreader.sol\":{\"keccak256\":\"0xf2eb14a148abfc1f3626ac5cbf7645f0ecfe838fcf1473738a73c8dc22d28f3e\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://062cbc25b61b771b3118d36432b5a94dfb8a0c1f4d1197c58baac98a81ffe07d\",\"dweb:/ipfs/QmZHewaoCKVy65em8SGRc54xpYFjsRHkWFRrxJR7E8Uwdf\"]}},\"version\":1}",
-  "bytecode": "0x60806040523480156200001157600080fd5b506040516200515e3803806200515e83398101604081905262000034916200040c565b6040518060400160405280600881526020017f42757474686f6c650000000000000000000000000000000000000000000000008152506040518060400160405280600481526020017f4255545400000000000000000000000000000000000000000000000000000000815250828282620000bd620000b76200017a60201b60201c565b6200017e565b8151620000d290600590602085019062000337565b508051620000e890600690602084019062000337565b50506010805460ff191690555080516200010a90601290602084019062000337565b5062000118600033620001ce565b620001447f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a633620001ce565b620001707f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a33620001ce565b505050506200053e565b3390565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b620001da8282620001de565b5050565b620001f582826200022160201b62001a8c1760201c565b60008281526004602090815260409091206200021c91839062001b16620002c5821b17901c565b505050565b60008281526003602090815260408083206001600160a01b038516845290915290205460ff16620001da5760008281526003602090815260408083206001600160a01b03851684529091529020805460ff19166001179055620002813390565b6001600160a01b0316816001600160a01b0316837f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a45050565b6000620002dc836001600160a01b038416620002e5565b90505b92915050565b60008181526001830160205260408120546200032e57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155620002df565b506000620002df565b8280546200034590620004e8565b90600052602060002090601f016020900481019282620003695760008555620003b4565b82601f106200038457805160ff1916838001178555620003b4565b82800160010185558215620003b4579182015b82811115620003b457825182559160200191906001019062000397565b50620003c2929150620003c6565b5090565b5b80821115620003c25760008155600101620003c7565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b600060208083850312156200042057600080fd5b82516001600160401b03808211156200043857600080fd5b818501915085601f8301126200044d57600080fd5b815181811115620004625762000462620003dd565b604051601f8201601f19908116603f011681019083821181831017156200048d576200048d620003dd565b816040528281528886848701011115620004a657600080fd5b600093505b82841015620004ca5784840186015181850187015292850192620004ab565b82841115620004dc5760008684830101525b98975050505050505050565b600181811c90821680620004fd57607f821691505b6020821081141562000538577f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260246000fd5b50919050565b614c10806200054e6000396000f3fe60806040523480156200001157600080fd5b50600436106200029d5760003560e01c80636a627842116200016d578063a22cb46511620000d3578063d53913931162000092578063d53913931462000600578063d547741f1462000628578063e63ab1e9146200063f578063e985e9c51462000667578063f2fde38b14620006a6578063f8984a4b14620006bd57600080fd5b8063a22cb465146200059a578063b88d4fde14620005b1578063bd2573bb14620005c8578063c87b56dd14620005d2578063ca15c87314620005e957600080fd5b80638456cb59116200012c5780638456cb59146200053d5780638da5cb5b14620005475780639010d07c146200055957806391d14854146200057057806395d89b411462000587578063a217fddf146200059157600080fd5b80636a62784214620004c857806370a0823114620004df578063715018a614620004f65780637a2ed4d414620005005780637d54349c146200052657600080fd5b80632f745c59116200021357806342966c6811620001d257806342966c68146200043e5780634f6ccce714620004555780635c975abb146200046c5780635cbf7deb14620004785780635fc20588146200048f5780636352211e14620004b157600080fd5b80632f745c5914620003d857806336568abe14620003ef57806339c1e21d14620004065780633f4ba83a146200041d57806342842e0e146200042757600080fd5b806318160ddd116200026057806318160ddd146200033a57806323b872dd146200034d578063248a9ca314620003645780632a55205a146200038a5780632f2ff15d14620003c157600080fd5b806301ffc9a714620002a2578063031cf58614620002ce57806306fdde0314620002da578063081812fc14620002f3578063095ea7b31462000323575b600080fd5b620002b9620002b336600462003482565b620006d4565b60405190151581526020015b60405180910390f35b620002d8620006e7565b005b620002e462000715565b604051620002c59190620034ff565b6200030a6200030436600462003514565b620007af565b6040516001600160a01b039091168152602001620002c5565b620002d8620003343660046200354b565b6200083f565b600e545b604051908152602001620002c5565b620002d86200035e36600462003578565b62000960565b6200033e6200037536600462003514565b60009081526003602052604090206001015490565b620003a16200039b366004620035b9565b62000999565b604080516001600160a01b039093168352602083019190915201620002c5565b620002d8620003d2366004620035dc565b62000a4a565b6200033e620003e93660046200354b565b62000a74565b620002d862000400366004620035dc565b62000b0e565b620002d8620004173660046200369e565b62000b90565b620002d862000cf0565b620002d86200043836600462003578565b62000d9c565b620002d86200044f36600462003514565b62000db9565b6200033e6200046636600462003514565b62000e39565b60105460ff16620002b9565b620002d86200048936600462003707565b62000ed2565b6200049860c881565b6040516001600160601b039091168152602001620002c5565b6200030a620004c236600462003514565b62001121565b620002d8620004d936600462003751565b6200119a565b6200033e620004f036600462003751565b6200125e565b620002d8620012e7565b620002b96200051136600462003751565b60146020526000908152604090205460ff1681565b620002e46200053736600462003751565b62001320565b620002d8620013c2565b6000546001600160a01b03166200030a565b6200030a6200056a366004620035b9565b6200146c565b620002b962000581366004620035dc565b6200148d565b620002e4620014b8565b6200033e600081565b620002d8620005ab3660046200376f565b620014c9565b620002d8620005c2366004620037af565b620014d6565b620002d862001515565b620002e4620005e336600462003514565b6200165e565b6200033e620005fa36600462003514565b6200166b565b6200033e7f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a681565b620002d862000639366004620035dc565b62001684565b6200033e7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a81565b620002b96200067836600462003834565b6001600160a01b039182166000908152600a6020908152604080832093909416825291909152205460ff1690565b620002d8620006b736600462003751565b620016ae565b620002d8620006ce36600462003863565b6200174d565b6000620006e18262001b2d565b92915050565b620007137f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a63362001b3a565b565b6060600580546200072690620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200075490620038c0565b8015620007a55780601f106200077957610100808354040283529160200191620007a5565b820191906000526020600020905b8154815290600101906020018083116200078757829003601f168201915b5050505050905090565b6000620007bc8262001b46565b620008235760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a20617070726f76656420717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084015b60405180910390fd5b506000908152600960205260409020546001600160a01b031690565b60006200084c8262001121565b9050806001600160a01b0316836001600160a01b03161415620008bc5760405162461bcd60e51b815260206004820152602160248201527f4552433732313a20617070726f76616c20746f2063757272656e74206f776e656044820152603960f91b60648201526084016200081a565b336001600160a01b0382161480620008db5750620008db813362000678565b6200094f5760405162461bcd60e51b815260206004820152603860248201527f4552433732313a20617070726f76652063616c6c6572206973206e6f74206f7760448201527f6e6572206e6f7220617070726f76656420666f7220616c6c000000000000000060648201526084016200081a565b6200095b838362001b63565b505050565b6200096d335b8262001bd3565b6200098c5760405162461bcd60e51b81526004016200081a90620038fd565b6200095b83838362001cc7565b60008281526002602090815260408083208151808301909252546001600160a01b038116808352600160a01b9091046001600160601b031692820192909252829162000a0f5750604080518082019091526001546001600160a01b0381168252600160a01b90046001600160601b031660208201525b60208101516000906127109062000a30906001600160601b03168762003964565b62000a3c91906200399c565b915196919550909350505050565b60008281526003602052604090206001015462000a68813362001e7c565b6200095b838362001eeb565b600062000a81836200125e565b821062000ae55760405162461bcd60e51b815260206004820152602b60248201527f455243373231456e756d657261626c653a206f776e657220696e646578206f7560448201526a74206f6620626f756e647360a81b60648201526084016200081a565b506001600160a01b03919091166000908152600c60209081526040808320938352929052205490565b6001600160a01b038116331462000b805760405162461bcd60e51b815260206004820152602f60248201527f416363657373436f6e74726f6c3a2063616e206f6e6c792072656e6f756e636560448201526e103937b632b9903337b91039b2b63360891b60648201526084016200081a565b62000b8c828262001f11565b5050565b6000546001600160a01b0316331462000bbd5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03821660009081526014602052604090205460ff161562000c325760405162461bcd60e51b815260206004820152602160248201527f42757474686f6c65733a206163636f756e74206d757374206e6f7420657869736044820152601d60fa1b60648201526084016200081a565b6001600160a01b0382166000818152601460209081526040808320805460ff191660019081179091556015805491820190557f55f448fdea98c4d29eb340757ef0a66cd03dbb9538908a6a81d96026b71ec4750180546001600160a01b0319168517905592825260138152919020825162000cb09284019062003381565b507f3928d8d4ef77269d64bde1cdb2870113bf1ae2d5c8e970356e43f58a09134bbe828260405162000ce4929190620039e8565b60405180910390a15050565b62000d1c7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b62000d92576040805162461bcd60e51b81526020600482015260248101919091527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f20756e706175736560648201526084016200081a565b6200071362001f37565b6200095b83838360405180602001604052806000815250620014d6565b62000dc43362000966565b62000e2b5760405162461bcd60e51b815260206004820152603060248201527f4552433732314275726e61626c653a2063616c6c6572206973206e6f74206f7760448201526f1b995c881b9bdc88185c1c1c9bdd995960821b60648201526084016200081a565b62000e368162001fb4565b50565b600062000e45600e5490565b821062000eaa5760405162461bcd60e51b815260206004820152602c60248201527f455243373231456e756d657261626c653a20676c6f62616c20696e646578206f60448201526b7574206f6620626f756e647360a01b60648201526084016200081a565b600e828154811062000ec05762000ec062003a0e565b90600052602060002001549050919050565b3360009081526014602052604090205460ff1662000f045760405162461bcd60e51b81526004016200081a9062003a24565b60408051600480825260a0820190925260009160208201608080368337019050509050338160008151811062000f3e5762000f3e62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050838160018151811062000f755762000f7562003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062000fac5762000fac62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050818160038151811062000fe35762000fe362003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b8160008151811062001037576200103762003a0e565b6020026020010181815250506003816001815181106200105b576200105b62003a0e565b6020026020010181815250506003816002815181106200107f576200107f62003a0e565b602002602001018181525050600381600381518110620010a357620010a362003a0e565b60200260200101818152505060008282604051620010c1906200340c565b620010ce92919062003a68565b604051809103906000f080158015620010eb573d6000803e3d6000fd5b5033600090815260166020526040902080546001600160a01b0319166001600160a01b0392909216919091179055505050505050565b6000818152600760205260408120546001600160a01b031680620006e15760405162461bcd60e51b815260206004820152602960248201527f4552433732313a206f776e657220717565727920666f72206e6f6e657869737460448201526832b73a103a37b5b2b760b91b60648201526084016200081a565b620011c67f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6336200148d565b6200123a5760405162461bcd60e51b815260206004820152603d60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d7573742068617665206d696e74657220726f6c6520746f206d696e7400000060648201526084016200081a565b6200124f816200124960115490565b62001fbf565b62000e36601180546001019055565b60006001600160a01b038216620012cb5760405162461bcd60e51b815260206004820152602a60248201527f4552433732313a2062616c616e636520717565727920666f7220746865207a65604482015269726f206164647265737360b01b60648201526084016200081a565b506001600160a01b031660009081526008602052604090205490565b6000546001600160a01b03163314620013145760405162461bcd60e51b81526004016200081a90620039b3565b620007136000620020dc565b601360205260009081526040902080546200133b90620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200136990620038c0565b8015620013ba5780601f106200138e57610100808354040283529160200191620013ba565b820191906000526020600020905b8154815290600101906020018083116200139c57829003601f168201915b505050505081565b620013ee7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b620014625760405162461bcd60e51b815260206004820152603e60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f207061757365000060648201526084016200081a565b620007136200212c565b6000828152600460205260408120620014869083620021aa565b9392505050565b60009182526003602090815260408084206001600160a01b0393909316845291905290205460ff1690565b6060600680546200072690620038c0565b62000b8c338383620021b8565b620014e2338362001bd3565b620015015760405162461bcd60e51b81526004016200081a90620038fd565b6200150f8484848462002289565b50505050565b3360009081526014602052604090205460ff16620015475760405162461bcd60e51b81526004016200081a9062003a24565b33600090815260136020526040812062001561916200341a565b33600090815260166020908152604080832080546001600160a01b031916905560149091528120805460ff191690555b6015548110156200161d57336001600160a01b031660158281548110620015bc57620015bc62003a0e565b6000918252602090912001546001600160a01b03161415620016085760158181548110620015ee57620015ee62003a0e565b600091825260209091200180546001600160a01b03191690555b80620016148162003af0565b91505062001591565b507fb177a07085e0487947eaa3af695b80cf8af7044400eae85f7095bcfab312902f335b6040516001600160a01b03909116815260200160405180910390a1565b6060620006e182620022c3565b6000818152600460205260408120620006e19062002439565b600082815260036020526040902060010154620016a2813362001e7c565b6200095b838362001f11565b6000546001600160a01b03163314620016db5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b038116620017425760405162461bcd60e51b815260206004820152602660248201527f4f776e61626c653a206e6577206f776e657220697320746865207a65726f206160448201526564647265737360d01b60648201526084016200081a565b62000e3681620020dc565b6000546001600160a01b031633146200177a5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03841660009081526014602052604090205460ff16620017f25760405162461bcd60e51b815260206004820152602560248201527f42757474686f6c65733a2061646472657373206d75737420626520612062757460448201526474686f6c6560d81b60648201526084016200081a565b6001600160a01b0384811660009081526016602052604090205416156200186f5760405162461bcd60e51b815260206004820152602a60248201527f42757474686f6c65733a2061646472657373206d757374206e6f7420616c726560448201526918591e481899481cd95d60b21b60648201526084016200081a565b60408051600480825260a08201909252600091602082016080803683370190505090508481600081518110620018a957620018a962003a0e565b60200260200101906001600160a01b031690816001600160a01b0316815250508381600181518110620018e057620018e062003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062001917576200191762003a0e565b60200260200101906001600160a01b031690816001600160a01b03168152505081816003815181106200194e576200194e62003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b81600081518110620019a257620019a262003a0e565b602002602001018181525050600381600181518110620019c657620019c662003a0e565b602002602001018181525050600381600281518110620019ea57620019ea62003a0e565b60200260200101818152505060038160038151811062001a0e5762001a0e62003a0e565b6020026020010181815250506000828260405162001a2c906200340c565b62001a3992919062003a68565b604051809103906000f08015801562001a56573d6000803e3d6000fd5b506001600160a01b03978816600090815260166020526040902080546001600160a01b0319169190981617909655505050505050565b62001a9882826200148d565b62000b8c5760008281526003602090815260408083206001600160a01b03851684529091529020805460ff1916600117905562001ad23390565b6001600160a01b0316816001600160a01b0316837f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a45050565b600062001486836001600160a01b03841662002444565b6000620006e18262002496565b62000b8c828262001eeb565b6000908152600760205260409020546001600160a01b0316151590565b600081815260096020526040902080546001600160a01b0319166001600160a01b038416908117909155819062001b9a8262001121565b6001600160a01b03167f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b92560405160405180910390a45050565b600062001be08262001b46565b62001c435760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a206f70657261746f7220717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084016200081a565b600062001c508362001121565b9050806001600160a01b0316846001600160a01b0316148062001c8e5750836001600160a01b031662001c8384620007af565b6001600160a01b0316145b8062001cbf57506001600160a01b038082166000908152600a602090815260408083209388168352929052205460ff165b949350505050565b826001600160a01b031662001cdc8262001121565b6001600160a01b03161462001d425760405162461bcd60e51b815260206004820152602560248201527f4552433732313a207472616e736665722066726f6d20696e636f72726563742060448201526437bbb732b960d91b60648201526084016200081a565b6001600160a01b03821662001da65760405162461bcd60e51b8152602060048201526024808201527f4552433732313a207472616e7366657220746f20746865207a65726f206164646044820152637265737360e01b60648201526084016200081a565b62001db3838383620024be565b62001dc060008262001b63565b6001600160a01b038316600090815260086020526040812080546001929062001deb90849062003b0e565b90915550506001600160a01b038216600090815260086020526040812080546001929062001e1b90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b0386811691821790925591518493918716917fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef91a4505050565b62001e8882826200148d565b62000b8c5762001ea3816001600160a01b03166014620024cb565b62001eb0836020620024cb565b60405160200162001ec392919062003b43565b60408051601f198184030181529082905262461bcd60e51b82526200081a91600401620034ff565b62001ef7828262001a8c565b60008281526004602052604090206200095b908262001b16565b62001f1d828262002685565b60008281526004602052604090206200095b9082620026ef565b60105460ff1662001f825760405162461bcd60e51b815260206004820152601460248201527314185d5cd8589b194e881b9bdd081c185d5cd95960621b60448201526064016200081a565b6010805460ff191690557f5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa3362001641565b62000e368162002706565b62001fcb828262002722565b600062001fd76200286b565b6001600160a01b0381166000908152601360205260409020805491925062002091918491906200200790620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200203590620038c0565b8015620020865780601f106200205a5761010080835404028352916020019162002086565b820191906000526020600020905b8154815290600101906020018083116200206857829003601f168201915b5050505050620028de565b6001600160a01b038181166000908152601660205260409020541615620020ce576001600160a01b03908116600090815260166020526040902054165b6200095b828260c86200296f565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b60105460ff1615620021745760405162461bcd60e51b815260206004820152601060248201526f14185d5cd8589b194e881c185d5cd95960821b60448201526064016200081a565b6010805460ff191660011790557f62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258620016413390565b600062001486838362002a81565b816001600160a01b0316836001600160a01b031614156200221c5760405162461bcd60e51b815260206004820152601960248201527f4552433732313a20617070726f766520746f2063616c6c65720000000000000060448201526064016200081a565b6001600160a01b038381166000818152600a6020908152604080832094871680845294825291829020805460ff191686151590811790915591519182527f17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31910160405180910390a3505050565b6200229684848462001cc7565b620022a48484848462002aae565b6200150f5760405162461bcd60e51b81526004016200081a9062003bbc565b6060620022d08262001b46565b620023385760405162461bcd60e51b815260206004820152603160248201527f45524337323155524953746f726167653a2055524920717565727920666f72206044820152703737b732bc34b9ba32b73a103a37b5b2b760791b60648201526084016200081a565b6000828152600b6020526040812080546200235390620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200238190620038c0565b8015620023d25780601f10620023a657610100808354040283529160200191620023d2565b820191906000526020600020905b815481529060010190602001808311620023b457829003601f168201915b505050505090506000620023e562002bb9565b9050805160001415620023f9575092915050565b8151156200242e5780826040516020016200241692919062003c0e565b60405160208183030381529060405292505050919050565b62001cbf8462002bc9565b6000620006e1825490565b60008181526001830160205260408120546200248d57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155620006e1565b506000620006e1565b60006001600160e01b0319821663780e9d6360e01b1480620006e15750620006e18262002c9f565b6200095b83838362002cac565b60606000620024dc83600262003964565b620024e990600262003b28565b67ffffffffffffffff8111156200250457620025046200360b565b6040519080825280601f01601f1916602001820160405280156200252f576020820181803683370190505b509050600360fc1b816000815181106200254d576200254d62003a0e565b60200101906001600160f81b031916908160001a905350600f60fb1b816001815181106200257f576200257f62003a0e565b60200101906001600160f81b031916908160001a9053506000620025a584600262003964565b620025b290600162003b28565b90505b600181111562002634576f181899199a1a9b1b9c1cb0b131b232b360811b85600f1660108110620025ea57620025ea62003a0e565b1a60f81b82828151811062002603576200260362003a0e565b60200101906001600160f81b031916908160001a90535060049490941c936200262c8162003c41565b9050620025b5565b508315620014865760405162461bcd60e51b815260206004820181905260248201527f537472696e67733a20686578206c656e67746820696e73756666696369656e7460448201526064016200081a565b6200269182826200148d565b1562000b8c5760008281526003602090815260408083206001600160a01b0385168085529252808320805460ff1916905551339285917ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9190a45050565b600062001486836001600160a01b03841662002cb9565b620027118162002dbd565b600090815260026020526040812055565b6001600160a01b0382166200277a5760405162461bcd60e51b815260206004820181905260248201527f4552433732313a206d696e7420746f20746865207a65726f206164647265737360448201526064016200081a565b620027858162001b46565b15620027d45760405162461bcd60e51b815260206004820152601c60248201527f4552433732313a20746f6b656e20616c7265616479206d696e7465640000000060448201526064016200081a565b620027e260008383620024be565b6001600160a01b03821660009081526008602052604081208054600192906200280d90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b03861690811790915590518392907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908290a45050565b600060158080549050444260156040516020016200288c9392919062003c5b565b6040516020818303038152906040528051906020012060001c620028b1919062003cad565b81548110620028c457620028c462003a0e565b6000918252602090912001546001600160a01b0316919050565b620028e98262001b46565b6200294e5760405162461bcd60e51b815260206004820152602e60248201527f45524337323155524953746f726167653a2055524920736574206f66206e6f6e60448201526d32bc34b9ba32b73a103a37b5b2b760911b60648201526084016200081a565b6000828152600b6020908152604090912082516200095b9284019062003381565b6127106001600160601b0382161115620029df5760405162461bcd60e51b815260206004820152602a60248201527f455243323938313a20726f79616c7479206665652077696c6c206578636565646044820152692073616c65507269636560b01b60648201526084016200081a565b6001600160a01b03821662002a375760405162461bcd60e51b815260206004820152601b60248201527f455243323938313a20496e76616c696420706172616d6574657273000000000060448201526064016200081a565b6040805180820182526001600160a01b0393841681526001600160601b0392831660208083019182526000968752600290529190942093519051909116600160a01b029116179055565b600082600001828154811062002a9b5762002a9b62003a0e565b9060005260206000200154905092915050565b60006001600160a01b0384163b1562002bae57604051630a85bd0160e11b81526001600160a01b0385169063150b7a029062002af590339089908890889060040162003cc4565b6020604051808303816000875af192505050801562002b33575060408051601f3d908101601f1916820190925262002b309181019062003d03565b60015b62002b93573d80801562002b64576040519150601f19603f3d011682016040523d82523d6000602084013e62002b69565b606091505b50805162002b8b5760405162461bcd60e51b81526004016200081a9062003bbc565b805181602001fd5b6001600160e01b031916630a85bd0160e11b14905062001cbf565b506001949350505050565b606062002bc562002e04565b5090565b606062002bd68262001b46565b62002c3c5760405162461bcd60e51b815260206004820152602f60248201527f4552433732314d657461646174613a2055524920717565727920666f72206e6f60448201526e3732bc34b9ba32b73a103a37b5b2b760891b60648201526084016200081a565b600062002c4862002bb9565b9050600081511162002c6a576040518060200160405280600081525062001486565b8062002c768462002e15565b60405160200162002c8992919062003c0e565b6040516020818303038152906040529392505050565b6000620006e18262002f2b565b6200095b83838362002f6f565b6000818152600183016020526040812054801562002db257600062002ce060018362003b0e565b855490915060009062002cf69060019062003b0e565b905081811462002d6257600086600001828154811062002d1a5762002d1a62003a0e565b906000526020600020015490508087600001848154811062002d405762002d4062003a0e565b6000918252602080832090910192909255918252600188019052604090208390555b855486908062002d765762002d7662003d23565b600190038181906000526020600020016000905590558560010160008681526020019081526020016000206000905560019350505050620006e1565b6000915050620006e1565b62002dc88162002fe5565b6000818152600b60205260409020805462002de390620038c0565b15905062000e36576000818152600b6020526040812062000e36916200341a565b6060601280546200072690620038c0565b60608162002e3a5750506040805180820190915260018152600360fc1b602082015290565b8160005b811562002e6a578062002e518162003af0565b915062002e629050600a836200399c565b915062002e3e565b60008167ffffffffffffffff81111562002e885762002e886200360b565b6040519080825280601f01601f19166020018201604052801562002eb3576020820181803683370190505b5090505b841562001cbf5762002ecb60018362003b0e565b915062002eda600a8662003cad565b62002ee790603062003b28565b60f81b81838151811062002eff5762002eff62003a0e565b60200101906001600160f81b031916908160001a90535062002f23600a866200399c565b945062002eb7565b60006001600160e01b031982166380ac58cd60e01b148062002f5d57506001600160e01b03198216635b5e139f60e01b145b80620006e15750620006e18262003094565b62002f7c838383620030bc565b60105460ff16156200095b5760405162461bcd60e51b815260206004820152602b60248201527f4552433732315061757361626c653a20746f6b656e207472616e73666572207760448201526a1a1a5b19481c185d5cd95960aa1b60648201526084016200081a565b600062002ff28262001121565b90506200300281600084620024be565b6200300f60008362001b63565b6001600160a01b03811660009081526008602052604081208054600192906200303a90849062003b0e565b909155505060008281526007602052604080822080546001600160a01b0319169055518391906001600160a01b038416907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908390a45050565b60006001600160e01b03198216635a05180f60e01b1480620006e15750620006e18262003180565b6001600160a01b0383166200311a576200311481600e80546000838152600f60205260408120829055600182018355919091527fbb7b4a454dc3493923482f07822329ed19e8244eff582cc204f8554c3620c3fd0155565b62003140565b816001600160a01b0316836001600160a01b0316146200314057620031408382620031a8565b6001600160a01b0382166200315a576200095b816200324a565b826001600160a01b0316826001600160a01b0316146200095b576200095b828262003304565b60006001600160e01b03198216637965db0b60e01b1480620006e15750620006e1826200334a565b60006001620031b7846200125e565b620031c3919062003b0e565b6000838152600d602052604090205490915080821462003217576001600160a01b0384166000908152600c602090815260408083208584528252808320548484528184208190558352600d90915290208190555b506000918252600d602090815260408084208490556001600160a01b039094168352600c81528383209183525290812055565b600e546000906200325e9060019062003b0e565b6000838152600f6020526040812054600e805493945090928490811062003289576200328962003a0e565b9060005260206000200154905080600e8381548110620032ad57620032ad62003a0e565b6000918252602080832090910192909255828152600f9091526040808220849055858252812055600e805480620032e857620032e862003d23565b6001900381819060005260206000200160009055905550505050565b600062003311836200125e565b6001600160a01b039093166000908152600c602090815260408083208684528252808320859055938252600d9052919091209190915550565b60006001600160e01b0319821663152a902d60e11b1480620006e157506301ffc9a760e01b6001600160e01b0319831614620006e1565b8280546200338f90620038c0565b90600052602060002090601f016020900481019282620033b35760008555620033fe565b82601f10620033ce57805160ff1916838001178555620033fe565b82800160010185558215620033fe579182015b82811115620033fe578251825591602001919060010190620033e1565b5062002bc592915062003454565b610ea18062003d3a83390190565b5080546200342890620038c0565b6000825580601f1062003439575050565b601f01602090049060005260206000209081019062000e3691905b5b8082111562002bc5576000815560010162003455565b6001600160e01b03198116811462000e3657600080fd5b6000602082840312156200349557600080fd5b813562001486816200346b565b60005b83811015620034bf578181015183820152602001620034a5565b838111156200150f5750506000910152565b60008151808452620034eb816020860160208601620034a2565b601f01601f19169290920160200192915050565b602081526000620014866020830184620034d1565b6000602082840312156200352757600080fd5b5035919050565b80356001600160a01b03811681146200354657600080fd5b919050565b600080604083850312156200355f57600080fd5b6200356a836200352e565b946020939093013593505050565b6000806000606084860312156200358e57600080fd5b62003599846200352e565b9250620035a9602085016200352e565b9150604084013590509250925092565b60008060408385031215620035cd57600080fd5b50508035926020909101359150565b60008060408385031215620035f057600080fd5b8235915062003602602084016200352e565b90509250929050565b634e487b7160e01b600052604160045260246000fd5b600067ffffffffffffffff808411156200363f576200363f6200360b565b604051601f8501601f19908116603f011681019082821181831017156200366a576200366a6200360b565b816040528093508581528686860111156200368457600080fd5b858560208301376000602087830101525050509392505050565b60008060408385031215620036b257600080fd5b620036bd836200352e565b9150602083013567ffffffffffffffff811115620036da57600080fd5b8301601f81018513620036ec57600080fd5b620036fd8582356020840162003621565b9150509250929050565b6000806000606084860312156200371d57600080fd5b62003728846200352e565b925062003738602085016200352e565b915062003748604085016200352e565b90509250925092565b6000602082840312156200376457600080fd5b62001486826200352e565b600080604083850312156200378357600080fd5b6200378e836200352e565b915060208301358015158114620037a457600080fd5b809150509250929050565b60008060008060808587031215620037c657600080fd5b620037d1856200352e565b9350620037e1602086016200352e565b925060408501359150606085013567ffffffffffffffff8111156200380557600080fd5b8501601f810187136200381757600080fd5b620038288782356020840162003621565b91505092959194509250565b600080604083850312156200384857600080fd5b62003853836200352e565b915062003602602084016200352e565b600080600080608085870312156200387a57600080fd5b62003885856200352e565b935062003895602086016200352e565b9250620038a5604086016200352e565b9150620038b5606086016200352e565b905092959194509250565b600181811c90821680620038d557607f821691505b60208210811415620038f757634e487b7160e01b600052602260045260246000fd5b50919050565b60208082526031908201527f4552433732313a207472616e736665722063616c6c6572206973206e6f74206f6040820152701ddb995c881b9bdc88185c1c1c9bdd9959607a1b606082015260800190565b634e487b7160e01b600052601160045260246000fd5b60008160001904831182151516156200398157620039816200394e565b500290565b634e487b7160e01b600052601260045260246000fd5b600082620039ae57620039ae62003986565b500490565b6020808252818101527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e6572604082015260600190565b6001600160a01b038316815260406020820181905260009062001cbf90830184620034d1565b634e487b7160e01b600052603260045260246000fd5b60208082526024908201527f42757474686f6c65733a2063616c6c6572206d75737420626520612062757474604082015263686f6c6560e01b606082015260800190565b604080825283519082018190526000906020906060840190828701845b8281101562003aac5781516001600160a01b03168452928401929084019060010162003a85565b5050508381038285015284518082528583019183019060005b8181101562003ae35783518352928401929184019160010162003ac5565b5090979650505050505050565b600060001982141562003b075762003b076200394e565b5060010190565b60008282101562003b235762003b236200394e565b500390565b6000821982111562003b3e5762003b3e6200394e565b500190565b7f416363657373436f6e74726f6c3a206163636f756e742000000000000000000081526000835162003b7d816017850160208801620034a2565b7001034b99036b4b9b9b4b733903937b6329607d1b601791840191820152835162003bb0816028840160208801620034a2565b01602801949350505050565b60208082526032908201527f4552433732313a207472616e7366657220746f206e6f6e20455243373231526560408201527131b2b4bb32b91034b6b83632b6b2b73a32b960711b606082015260800190565b6000835162003c22818460208801620034a2565b83519083019062003c38818360208801620034a2565b01949350505050565b60008162003c535762003c536200394e565b506000190190565b838152600060208481840152604083018454856000528260002060005b8281101562003c9f5781546001600160a01b03168452928401926001918201910162003c78565b509198975050505050505050565b60008262003cbf5762003cbf62003986565b500690565b6001600160a01b038581168252841660208201526040810183905260806060820181905260009062003cf990830184620034d1565b9695505050505050565b60006020828403121562003d1657600080fd5b815162001486816200346b565b634e487b7160e01b600052603160045260246000fdfe608060405260405162000ea138038062000ea18339810160408190526200002691620004f7565b8051825114620000bd576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152603060248201527f436865656b53707265616465723a2070617965657320616e642073686172657360448201527f206c656e677468206d69736d617463680000000000000000000000000000000060648201526084015b60405180910390fd5b60008251116200012a576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601860248201527f436865656b53707265616465723a206e6f2070617965657300000000000000006044820152606401620000b4565b60005b8251811015620001965762000181838281518110620001505762000150620005d5565b60200260200101518383815181106200016d576200016d620005d5565b60200260200101516200019f60201b60201c565b806200018d8162000633565b9150506200012d565b5050506200066c565b6001600160a01b03821662000237576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602a60248201527f436865656b53707265616465723a206163636f756e7420697320746865207a6560448201527f726f2061646472657373000000000000000000000000000000000000000000006064820152608401620000b4565b60008111620002a3576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601b60248201527f436865656b53707265616465723a2073686172657320617265203000000000006044820152606401620000b4565b6001600160a01b038216600090815260026020526040902054156200034b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602960248201527f436865656b53707265616465723a206163636f756e7420616c7265616479206860448201527f61732073686172657300000000000000000000000000000000000000000000006064820152608401620000b4565b60048054600181019091557f8a35acfbc15ff81a39ae7d344fd709f28e8600b4aa8c65c6b64bfe7fe36bd19b0180546001600160a01b0319166001600160a01b038416908117909155600090815260026020526040812082905554620003b390829062000651565b600055604080516001600160a01b0384168152602081018390527f40c340f65e17194d14ddddb073d3c9f888e3cb52b5aae0c6c7706b4fbc905fac910160405180910390a15050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b604051601f8201601f191681016001600160401b0381118282101715620004565762000456620003fc565b604052919050565b60006001600160401b038211156200047a576200047a620003fc565b5060051b60200190565b600082601f8301126200049657600080fd5b81516020620004af620004a9836200045e565b6200042b565b82815260059290921b84018101918181019086841115620004cf57600080fd5b8286015b84811015620004ec5780518352918301918301620004d3565b509695505050505050565b600080604083850312156200050b57600080fd5b82516001600160401b03808211156200052357600080fd5b818501915085601f8301126200053857600080fd5b815160206200054b620004a9836200045e565b82815260059290921b840181019181810190898411156200056b57600080fd5b948201945b83861015620005a25785516001600160a01b0381168114620005925760008081fd5b8252948201949082019062000570565b91880151919650909350505080821115620005bc57600080fd5b50620005cb8582860162000484565b9150509250929050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052603260045260246000fd5b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b60006000198214156200064a576200064a62000604565b5060010190565b6000821982111562000667576200066762000604565b500190565b610825806200067c6000396000f3fe60806040526004361061007f5760003560e01c80639852595c1161004e5780639852595c14610186578063ce7c2ac2146101bc578063d79779b2146101f2578063e33b7de31461022857600080fd5b80633a98ef39146100cd578063406072a9146100f15780635be7fde8146101375780638b83209b1461014e57600080fd5b366100c8577f6ef95f06320e7a25a04a175ca677b7052bdd97131872c2192525a629f51be77033604080516001600160a01b0390921682523460208301520160405180910390a1005b600080fd5b3480156100d957600080fd5b506000545b6040519081526020015b60405180910390f35b3480156100fd57600080fd5b506100de61010c3660046106c2565b6001600160a01b03918216600090815260066020908152604080832093909416825291909152205490565b34801561014357600080fd5b5061014c61023d565b005b34801561015a57600080fd5b5061016e6101693660046106fb565b61036e565b6040516001600160a01b0390911681526020016100e8565b34801561019257600080fd5b506100de6101a1366004610714565b6001600160a01b031660009081526003602052604090205490565b3480156101c857600080fd5b506100de6101d7366004610714565b6001600160a01b031660009081526002602052604090205490565b3480156101fe57600080fd5b506100de61020d366004610714565b6001600160a01b031660009081526005602052604090205490565b34801561023457600080fd5b506001546100de565b60005b60045481101561036b57600260006004838154811061026157610261610738565b60009182526020808320909101546001600160a01b0316835282019290925260400190205461028f57610359565b600061029a60015490565b6102a5903031610764565b9050600061031e600484815481106102bf576102bf610738565b9060005260206000200160009054906101000a90046001600160a01b031683610319600487815481106102f4576102f4610738565b60009182526020808320909101546001600160a01b0316825260039052604090205490565b61039e565b90508015610356576103566004848154811061033c5761033c610738565b6000918252602090912001546001600160a01b03166103e1565b50505b806103638161077c565b915050610240565b50565b60006004828154811061038357610383610738565b6000918252602090912001546001600160a01b031692915050565b600080546001600160a01b0385168252600260205260408220548391906103c59086610797565b6103cf91906107b6565b6103d991906107d8565b949350505050565b6001600160a01b0381166000908152600260205260409020546104575760405162461bcd60e51b8152602060048201526024808201527f436865656b53707265616465723a206163636f756e7420686173206e6f2073686044820152636172657360e01b60648201526084015b60405180910390fd5b600061046260015490565b61046d903031610764565b905060006104958383610319866001600160a01b031660009081526003602052604090205490565b9050806104f65760405162461bcd60e51b815260206004820152602960248201527f436865656b53707265616465723a206163636f756e74206973206e6f7420647560448201526819481c185e5b595b9d60ba1b606482015260840161044e565b6001600160a01b0383166000908152600360205260408120805483929061051e908490610764565b9250508190555080600160008282546105379190610764565b909155506105479050838261058e565b604080516001600160a01b0385168152602081018390527fdf20fd1e76bc69d672e4814fafb2c449bba3a5369d8359adf9e05e6fde87b056910160405180910390a1505050565b30318111156105df5760405162461bcd60e51b815260206004820152601d60248201527f416464726573733a20696e73756666696369656e742062616c616e6365000000604482015260640161044e565b6000826001600160a01b03168260405160006040518083038185875af1925050503d806000811461062c576040519150601f19603f3d011682016040523d82523d6000602084013e610631565b606091505b50509050806106a85760405162461bcd60e51b815260206004820152603a60248201527f416464726573733a20756e61626c6520746f2073656e642076616c75652c207260448201527f6563697069656e74206d61792068617665207265766572746564000000000000606482015260840161044e565b505050565b6001600160a01b038116811461036b57600080fd5b600080604083850312156106d557600080fd5b82356106e0816106ad565b915060208301356106f0816106ad565b809150509250929050565b60006020828403121561070d57600080fd5b5035919050565b60006020828403121561072657600080fd5b8135610731816106ad565b9392505050565b634e487b7160e01b600052603260045260246000fd5b634e487b7160e01b600052601160045260246000fd5b600082198211156107775761077761074e565b500190565b60006000198214156107905761079061074e565b5060010190565b60008160001904831182151516156107b1576107b161074e565b500290565b6000826107d357634e487b7160e01b600052601260045260246000fd5b500490565b6000828210156107ea576107ea61074e565b50039056fea2646970667358221220dabdae72bd4960b5045f12072912cb62fba0a06ef61af232757d40621623cda164736f6c634300080b0033a2646970667358221220466365d63c3f1aba0fbd6c4bca2e23d4b6abf6b47eed7d629e48234175801a8264736f6c634300080b0033",
-  "deployedBytecode": "0x60806040523480156200001157600080fd5b50600436106200029d5760003560e01c80636a627842116200016d578063a22cb46511620000d3578063d53913931162000092578063d53913931462000600578063d547741f1462000628578063e63ab1e9146200063f578063e985e9c51462000667578063f2fde38b14620006a6578063f8984a4b14620006bd57600080fd5b8063a22cb465146200059a578063b88d4fde14620005b1578063bd2573bb14620005c8578063c87b56dd14620005d2578063ca15c87314620005e957600080fd5b80638456cb59116200012c5780638456cb59146200053d5780638da5cb5b14620005475780639010d07c146200055957806391d14854146200057057806395d89b411462000587578063a217fddf146200059157600080fd5b80636a62784214620004c857806370a0823114620004df578063715018a614620004f65780637a2ed4d414620005005780637d54349c146200052657600080fd5b80632f745c59116200021357806342966c6811620001d257806342966c68146200043e5780634f6ccce714620004555780635c975abb146200046c5780635cbf7deb14620004785780635fc20588146200048f5780636352211e14620004b157600080fd5b80632f745c5914620003d857806336568abe14620003ef57806339c1e21d14620004065780633f4ba83a146200041d57806342842e0e146200042757600080fd5b806318160ddd116200026057806318160ddd146200033a57806323b872dd146200034d578063248a9ca314620003645780632a55205a146200038a5780632f2ff15d14620003c157600080fd5b806301ffc9a714620002a2578063031cf58614620002ce57806306fdde0314620002da578063081812fc14620002f3578063095ea7b31462000323575b600080fd5b620002b9620002b336600462003482565b620006d4565b60405190151581526020015b60405180910390f35b620002d8620006e7565b005b620002e462000715565b604051620002c59190620034ff565b6200030a6200030436600462003514565b620007af565b6040516001600160a01b039091168152602001620002c5565b620002d8620003343660046200354b565b6200083f565b600e545b604051908152602001620002c5565b620002d86200035e36600462003578565b62000960565b6200033e6200037536600462003514565b60009081526003602052604090206001015490565b620003a16200039b366004620035b9565b62000999565b604080516001600160a01b039093168352602083019190915201620002c5565b620002d8620003d2366004620035dc565b62000a4a565b6200033e620003e93660046200354b565b62000a74565b620002d862000400366004620035dc565b62000b0e565b620002d8620004173660046200369e565b62000b90565b620002d862000cf0565b620002d86200043836600462003578565b62000d9c565b620002d86200044f36600462003514565b62000db9565b6200033e6200046636600462003514565b62000e39565b60105460ff16620002b9565b620002d86200048936600462003707565b62000ed2565b6200049860c881565b6040516001600160601b039091168152602001620002c5565b6200030a620004c236600462003514565b62001121565b620002d8620004d936600462003751565b6200119a565b6200033e620004f036600462003751565b6200125e565b620002d8620012e7565b620002b96200051136600462003751565b60146020526000908152604090205460ff1681565b620002e46200053736600462003751565b62001320565b620002d8620013c2565b6000546001600160a01b03166200030a565b6200030a6200056a366004620035b9565b6200146c565b620002b962000581366004620035dc565b6200148d565b620002e4620014b8565b6200033e600081565b620002d8620005ab3660046200376f565b620014c9565b620002d8620005c2366004620037af565b620014d6565b620002d862001515565b620002e4620005e336600462003514565b6200165e565b6200033e620005fa36600462003514565b6200166b565b6200033e7f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a681565b620002d862000639366004620035dc565b62001684565b6200033e7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a81565b620002b96200067836600462003834565b6001600160a01b039182166000908152600a6020908152604080832093909416825291909152205460ff1690565b620002d8620006b736600462003751565b620016ae565b620002d8620006ce36600462003863565b6200174d565b6000620006e18262001b2d565b92915050565b620007137f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a63362001b3a565b565b6060600580546200072690620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200075490620038c0565b8015620007a55780601f106200077957610100808354040283529160200191620007a5565b820191906000526020600020905b8154815290600101906020018083116200078757829003601f168201915b5050505050905090565b6000620007bc8262001b46565b620008235760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a20617070726f76656420717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084015b60405180910390fd5b506000908152600960205260409020546001600160a01b031690565b60006200084c8262001121565b9050806001600160a01b0316836001600160a01b03161415620008bc5760405162461bcd60e51b815260206004820152602160248201527f4552433732313a20617070726f76616c20746f2063757272656e74206f776e656044820152603960f91b60648201526084016200081a565b336001600160a01b0382161480620008db5750620008db813362000678565b6200094f5760405162461bcd60e51b815260206004820152603860248201527f4552433732313a20617070726f76652063616c6c6572206973206e6f74206f7760448201527f6e6572206e6f7220617070726f76656420666f7220616c6c000000000000000060648201526084016200081a565b6200095b838362001b63565b505050565b6200096d335b8262001bd3565b6200098c5760405162461bcd60e51b81526004016200081a90620038fd565b6200095b83838362001cc7565b60008281526002602090815260408083208151808301909252546001600160a01b038116808352600160a01b9091046001600160601b031692820192909252829162000a0f5750604080518082019091526001546001600160a01b0381168252600160a01b90046001600160601b031660208201525b60208101516000906127109062000a30906001600160601b03168762003964565b62000a3c91906200399c565b915196919550909350505050565b60008281526003602052604090206001015462000a68813362001e7c565b6200095b838362001eeb565b600062000a81836200125e565b821062000ae55760405162461bcd60e51b815260206004820152602b60248201527f455243373231456e756d657261626c653a206f776e657220696e646578206f7560448201526a74206f6620626f756e647360a81b60648201526084016200081a565b506001600160a01b03919091166000908152600c60209081526040808320938352929052205490565b6001600160a01b038116331462000b805760405162461bcd60e51b815260206004820152602f60248201527f416363657373436f6e74726f6c3a2063616e206f6e6c792072656e6f756e636560448201526e103937b632b9903337b91039b2b63360891b60648201526084016200081a565b62000b8c828262001f11565b5050565b6000546001600160a01b0316331462000bbd5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03821660009081526014602052604090205460ff161562000c325760405162461bcd60e51b815260206004820152602160248201527f42757474686f6c65733a206163636f756e74206d757374206e6f7420657869736044820152601d60fa1b60648201526084016200081a565b6001600160a01b0382166000818152601460209081526040808320805460ff191660019081179091556015805491820190557f55f448fdea98c4d29eb340757ef0a66cd03dbb9538908a6a81d96026b71ec4750180546001600160a01b0319168517905592825260138152919020825162000cb09284019062003381565b507f3928d8d4ef77269d64bde1cdb2870113bf1ae2d5c8e970356e43f58a09134bbe828260405162000ce4929190620039e8565b60405180910390a15050565b62000d1c7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b62000d92576040805162461bcd60e51b81526020600482015260248101919091527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f20756e706175736560648201526084016200081a565b6200071362001f37565b6200095b83838360405180602001604052806000815250620014d6565b62000dc43362000966565b62000e2b5760405162461bcd60e51b815260206004820152603060248201527f4552433732314275726e61626c653a2063616c6c6572206973206e6f74206f7760448201526f1b995c881b9bdc88185c1c1c9bdd995960821b60648201526084016200081a565b62000e368162001fb4565b50565b600062000e45600e5490565b821062000eaa5760405162461bcd60e51b815260206004820152602c60248201527f455243373231456e756d657261626c653a20676c6f62616c20696e646578206f60448201526b7574206f6620626f756e647360a01b60648201526084016200081a565b600e828154811062000ec05762000ec062003a0e565b90600052602060002001549050919050565b3360009081526014602052604090205460ff1662000f045760405162461bcd60e51b81526004016200081a9062003a24565b60408051600480825260a0820190925260009160208201608080368337019050509050338160008151811062000f3e5762000f3e62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050838160018151811062000f755762000f7562003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062000fac5762000fac62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050818160038151811062000fe35762000fe362003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b8160008151811062001037576200103762003a0e565b6020026020010181815250506003816001815181106200105b576200105b62003a0e565b6020026020010181815250506003816002815181106200107f576200107f62003a0e565b602002602001018181525050600381600381518110620010a357620010a362003a0e565b60200260200101818152505060008282604051620010c1906200340c565b620010ce92919062003a68565b604051809103906000f080158015620010eb573d6000803e3d6000fd5b5033600090815260166020526040902080546001600160a01b0319166001600160a01b0392909216919091179055505050505050565b6000818152600760205260408120546001600160a01b031680620006e15760405162461bcd60e51b815260206004820152602960248201527f4552433732313a206f776e657220717565727920666f72206e6f6e657869737460448201526832b73a103a37b5b2b760b91b60648201526084016200081a565b620011c67f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6336200148d565b6200123a5760405162461bcd60e51b815260206004820152603d60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d7573742068617665206d696e74657220726f6c6520746f206d696e7400000060648201526084016200081a565b6200124f816200124960115490565b62001fbf565b62000e36601180546001019055565b60006001600160a01b038216620012cb5760405162461bcd60e51b815260206004820152602a60248201527f4552433732313a2062616c616e636520717565727920666f7220746865207a65604482015269726f206164647265737360b01b60648201526084016200081a565b506001600160a01b031660009081526008602052604090205490565b6000546001600160a01b03163314620013145760405162461bcd60e51b81526004016200081a90620039b3565b620007136000620020dc565b601360205260009081526040902080546200133b90620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200136990620038c0565b8015620013ba5780601f106200138e57610100808354040283529160200191620013ba565b820191906000526020600020905b8154815290600101906020018083116200139c57829003601f168201915b505050505081565b620013ee7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b620014625760405162461bcd60e51b815260206004820152603e60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f207061757365000060648201526084016200081a565b620007136200212c565b6000828152600460205260408120620014869083620021aa565b9392505050565b60009182526003602090815260408084206001600160a01b0393909316845291905290205460ff1690565b6060600680546200072690620038c0565b62000b8c338383620021b8565b620014e2338362001bd3565b620015015760405162461bcd60e51b81526004016200081a90620038fd565b6200150f8484848462002289565b50505050565b3360009081526014602052604090205460ff16620015475760405162461bcd60e51b81526004016200081a9062003a24565b33600090815260136020526040812062001561916200341a565b33600090815260166020908152604080832080546001600160a01b031916905560149091528120805460ff191690555b6015548110156200161d57336001600160a01b031660158281548110620015bc57620015bc62003a0e565b6000918252602090912001546001600160a01b03161415620016085760158181548110620015ee57620015ee62003a0e565b600091825260209091200180546001600160a01b03191690555b80620016148162003af0565b91505062001591565b507fb177a07085e0487947eaa3af695b80cf8af7044400eae85f7095bcfab312902f335b6040516001600160a01b03909116815260200160405180910390a1565b6060620006e182620022c3565b6000818152600460205260408120620006e19062002439565b600082815260036020526040902060010154620016a2813362001e7c565b6200095b838362001f11565b6000546001600160a01b03163314620016db5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b038116620017425760405162461bcd60e51b815260206004820152602660248201527f4f776e61626c653a206e6577206f776e657220697320746865207a65726f206160448201526564647265737360d01b60648201526084016200081a565b62000e3681620020dc565b6000546001600160a01b031633146200177a5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03841660009081526014602052604090205460ff16620017f25760405162461bcd60e51b815260206004820152602560248201527f42757474686f6c65733a2061646472657373206d75737420626520612062757460448201526474686f6c6560d81b60648201526084016200081a565b6001600160a01b0384811660009081526016602052604090205416156200186f5760405162461bcd60e51b815260206004820152602a60248201527f42757474686f6c65733a2061646472657373206d757374206e6f7420616c726560448201526918591e481899481cd95d60b21b60648201526084016200081a565b60408051600480825260a08201909252600091602082016080803683370190505090508481600081518110620018a957620018a962003a0e565b60200260200101906001600160a01b031690816001600160a01b0316815250508381600181518110620018e057620018e062003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062001917576200191762003a0e565b60200260200101906001600160a01b031690816001600160a01b03168152505081816003815181106200194e576200194e62003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b81600081518110620019a257620019a262003a0e565b602002602001018181525050600381600181518110620019c657620019c662003a0e565b602002602001018181525050600381600281518110620019ea57620019ea62003a0e565b60200260200101818152505060038160038151811062001a0e5762001a0e62003a0e565b6020026020010181815250506000828260405162001a2c906200340c565b62001a3992919062003a68565b604051809103906000f08015801562001a56573d6000803e3d6000fd5b506001600160a01b03978816600090815260166020526040902080546001600160a01b0319169190981617909655505050505050565b62001a9882826200148d565b62000b8c5760008281526003602090815260408083206001600160a01b03851684529091529020805460ff1916600117905562001ad23390565b6001600160a01b0316816001600160a01b0316837f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a45050565b600062001486836001600160a01b03841662002444565b6000620006e18262002496565b62000b8c828262001eeb565b6000908152600760205260409020546001600160a01b0316151590565b600081815260096020526040902080546001600160a01b0319166001600160a01b038416908117909155819062001b9a8262001121565b6001600160a01b03167f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b92560405160405180910390a45050565b600062001be08262001b46565b62001c435760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a206f70657261746f7220717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084016200081a565b600062001c508362001121565b9050806001600160a01b0316846001600160a01b0316148062001c8e5750836001600160a01b031662001c8384620007af565b6001600160a01b0316145b8062001cbf57506001600160a01b038082166000908152600a602090815260408083209388168352929052205460ff165b949350505050565b826001600160a01b031662001cdc8262001121565b6001600160a01b03161462001d425760405162461bcd60e51b815260206004820152602560248201527f4552433732313a207472616e736665722066726f6d20696e636f72726563742060448201526437bbb732b960d91b60648201526084016200081a565b6001600160a01b03821662001da65760405162461bcd60e51b8152602060048201526024808201527f4552433732313a207472616e7366657220746f20746865207a65726f206164646044820152637265737360e01b60648201526084016200081a565b62001db3838383620024be565b62001dc060008262001b63565b6001600160a01b038316600090815260086020526040812080546001929062001deb90849062003b0e565b90915550506001600160a01b038216600090815260086020526040812080546001929062001e1b90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b0386811691821790925591518493918716917fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef91a4505050565b62001e8882826200148d565b62000b8c5762001ea3816001600160a01b03166014620024cb565b62001eb0836020620024cb565b60405160200162001ec392919062003b43565b60408051601f198184030181529082905262461bcd60e51b82526200081a91600401620034ff565b62001ef7828262001a8c565b60008281526004602052604090206200095b908262001b16565b62001f1d828262002685565b60008281526004602052604090206200095b9082620026ef565b60105460ff1662001f825760405162461bcd60e51b815260206004820152601460248201527314185d5cd8589b194e881b9bdd081c185d5cd95960621b60448201526064016200081a565b6010805460ff191690557f5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa3362001641565b62000e368162002706565b62001fcb828262002722565b600062001fd76200286b565b6001600160a01b0381166000908152601360205260409020805491925062002091918491906200200790620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200203590620038c0565b8015620020865780601f106200205a5761010080835404028352916020019162002086565b820191906000526020600020905b8154815290600101906020018083116200206857829003601f168201915b5050505050620028de565b6001600160a01b038181166000908152601660205260409020541615620020ce576001600160a01b03908116600090815260166020526040902054165b6200095b828260c86200296f565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b60105460ff1615620021745760405162461bcd60e51b815260206004820152601060248201526f14185d5cd8589b194e881c185d5cd95960821b60448201526064016200081a565b6010805460ff191660011790557f62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258620016413390565b600062001486838362002a81565b816001600160a01b0316836001600160a01b031614156200221c5760405162461bcd60e51b815260206004820152601960248201527f4552433732313a20617070726f766520746f2063616c6c65720000000000000060448201526064016200081a565b6001600160a01b038381166000818152600a6020908152604080832094871680845294825291829020805460ff191686151590811790915591519182527f17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31910160405180910390a3505050565b6200229684848462001cc7565b620022a48484848462002aae565b6200150f5760405162461bcd60e51b81526004016200081a9062003bbc565b6060620022d08262001b46565b620023385760405162461bcd60e51b815260206004820152603160248201527f45524337323155524953746f726167653a2055524920717565727920666f72206044820152703737b732bc34b9ba32b73a103a37b5b2b760791b60648201526084016200081a565b6000828152600b6020526040812080546200235390620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200238190620038c0565b8015620023d25780601f10620023a657610100808354040283529160200191620023d2565b820191906000526020600020905b815481529060010190602001808311620023b457829003601f168201915b505050505090506000620023e562002bb9565b9050805160001415620023f9575092915050565b8151156200242e5780826040516020016200241692919062003c0e565b60405160208183030381529060405292505050919050565b62001cbf8462002bc9565b6000620006e1825490565b60008181526001830160205260408120546200248d57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155620006e1565b506000620006e1565b60006001600160e01b0319821663780e9d6360e01b1480620006e15750620006e18262002c9f565b6200095b83838362002cac565b60606000620024dc83600262003964565b620024e990600262003b28565b67ffffffffffffffff8111156200250457620025046200360b565b6040519080825280601f01601f1916602001820160405280156200252f576020820181803683370190505b509050600360fc1b816000815181106200254d576200254d62003a0e565b60200101906001600160f81b031916908160001a905350600f60fb1b816001815181106200257f576200257f62003a0e565b60200101906001600160f81b031916908160001a9053506000620025a584600262003964565b620025b290600162003b28565b90505b600181111562002634576f181899199a1a9b1b9c1cb0b131b232b360811b85600f1660108110620025ea57620025ea62003a0e565b1a60f81b82828151811062002603576200260362003a0e565b60200101906001600160f81b031916908160001a90535060049490941c936200262c8162003c41565b9050620025b5565b508315620014865760405162461bcd60e51b815260206004820181905260248201527f537472696e67733a20686578206c656e67746820696e73756666696369656e7460448201526064016200081a565b6200269182826200148d565b1562000b8c5760008281526003602090815260408083206001600160a01b0385168085529252808320805460ff1916905551339285917ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9190a45050565b600062001486836001600160a01b03841662002cb9565b620027118162002dbd565b600090815260026020526040812055565b6001600160a01b0382166200277a5760405162461bcd60e51b815260206004820181905260248201527f4552433732313a206d696e7420746f20746865207a65726f206164647265737360448201526064016200081a565b620027858162001b46565b15620027d45760405162461bcd60e51b815260206004820152601c60248201527f4552433732313a20746f6b656e20616c7265616479206d696e7465640000000060448201526064016200081a565b620027e260008383620024be565b6001600160a01b03821660009081526008602052604081208054600192906200280d90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b03861690811790915590518392907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908290a45050565b600060158080549050444260156040516020016200288c9392919062003c5b565b6040516020818303038152906040528051906020012060001c620028b1919062003cad565b81548110620028c457620028c462003a0e565b6000918252602090912001546001600160a01b0316919050565b620028e98262001b46565b6200294e5760405162461bcd60e51b815260206004820152602e60248201527f45524337323155524953746f726167653a2055524920736574206f66206e6f6e60448201526d32bc34b9ba32b73a103a37b5b2b760911b60648201526084016200081a565b6000828152600b6020908152604090912082516200095b9284019062003381565b6127106001600160601b0382161115620029df5760405162461bcd60e51b815260206004820152602a60248201527f455243323938313a20726f79616c7479206665652077696c6c206578636565646044820152692073616c65507269636560b01b60648201526084016200081a565b6001600160a01b03821662002a375760405162461bcd60e51b815260206004820152601b60248201527f455243323938313a20496e76616c696420706172616d6574657273000000000060448201526064016200081a565b6040805180820182526001600160a01b0393841681526001600160601b0392831660208083019182526000968752600290529190942093519051909116600160a01b029116179055565b600082600001828154811062002a9b5762002a9b62003a0e565b9060005260206000200154905092915050565b60006001600160a01b0384163b1562002bae57604051630a85bd0160e11b81526001600160a01b0385169063150b7a029062002af590339089908890889060040162003cc4565b6020604051808303816000875af192505050801562002b33575060408051601f3d908101601f1916820190925262002b309181019062003d03565b60015b62002b93573d80801562002b64576040519150601f19603f3d011682016040523d82523d6000602084013e62002b69565b606091505b50805162002b8b5760405162461bcd60e51b81526004016200081a9062003bbc565b805181602001fd5b6001600160e01b031916630a85bd0160e11b14905062001cbf565b506001949350505050565b606062002bc562002e04565b5090565b606062002bd68262001b46565b62002c3c5760405162461bcd60e51b815260206004820152602f60248201527f4552433732314d657461646174613a2055524920717565727920666f72206e6f60448201526e3732bc34b9ba32b73a103a37b5b2b760891b60648201526084016200081a565b600062002c4862002bb9565b9050600081511162002c6a576040518060200160405280600081525062001486565b8062002c768462002e15565b60405160200162002c8992919062003c0e565b6040516020818303038152906040529392505050565b6000620006e18262002f2b565b6200095b83838362002f6f565b6000818152600183016020526040812054801562002db257600062002ce060018362003b0e565b855490915060009062002cf69060019062003b0e565b905081811462002d6257600086600001828154811062002d1a5762002d1a62003a0e565b906000526020600020015490508087600001848154811062002d405762002d4062003a0e565b6000918252602080832090910192909255918252600188019052604090208390555b855486908062002d765762002d7662003d23565b600190038181906000526020600020016000905590558560010160008681526020019081526020016000206000905560019350505050620006e1565b6000915050620006e1565b62002dc88162002fe5565b6000818152600b60205260409020805462002de390620038c0565b15905062000e36576000818152600b6020526040812062000e36916200341a565b6060601280546200072690620038c0565b60608162002e3a5750506040805180820190915260018152600360fc1b602082015290565b8160005b811562002e6a578062002e518162003af0565b915062002e629050600a836200399c565b915062002e3e565b60008167ffffffffffffffff81111562002e885762002e886200360b565b6040519080825280601f01601f19166020018201604052801562002eb3576020820181803683370190505b5090505b841562001cbf5762002ecb60018362003b0e565b915062002eda600a8662003cad565b62002ee790603062003b28565b60f81b81838151811062002eff5762002eff62003a0e565b60200101906001600160f81b031916908160001a90535062002f23600a866200399c565b945062002eb7565b60006001600160e01b031982166380ac58cd60e01b148062002f5d57506001600160e01b03198216635b5e139f60e01b145b80620006e15750620006e18262003094565b62002f7c838383620030bc565b60105460ff16156200095b5760405162461bcd60e51b815260206004820152602b60248201527f4552433732315061757361626c653a20746f6b656e207472616e73666572207760448201526a1a1a5b19481c185d5cd95960aa1b60648201526084016200081a565b600062002ff28262001121565b90506200300281600084620024be565b6200300f60008362001b63565b6001600160a01b03811660009081526008602052604081208054600192906200303a90849062003b0e565b909155505060008281526007602052604080822080546001600160a01b0319169055518391906001600160a01b038416907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908390a45050565b60006001600160e01b03198216635a05180f60e01b1480620006e15750620006e18262003180565b6001600160a01b0383166200311a576200311481600e80546000838152600f60205260408120829055600182018355919091527fbb7b4a454dc3493923482f07822329ed19e8244eff582cc204f8554c3620c3fd0155565b62003140565b816001600160a01b0316836001600160a01b0316146200314057620031408382620031a8565b6001600160a01b0382166200315a576200095b816200324a565b826001600160a01b0316826001600160a01b0316146200095b576200095b828262003304565b60006001600160e01b03198216637965db0b60e01b1480620006e15750620006e1826200334a565b60006001620031b7846200125e565b620031c3919062003b0e565b6000838152600d602052604090205490915080821462003217576001600160a01b0384166000908152600c602090815260408083208584528252808320548484528184208190558352600d90915290208190555b506000918252600d602090815260408084208490556001600160a01b039094168352600c81528383209183525290812055565b600e546000906200325e9060019062003b0e565b6000838152600f6020526040812054600e805493945090928490811062003289576200328962003a0e565b9060005260206000200154905080600e8381548110620032ad57620032ad62003a0e565b6000918252602080832090910192909255828152600f9091526040808220849055858252812055600e805480620032e857620032e862003d23565b6001900381819060005260206000200160009055905550505050565b600062003311836200125e565b6001600160a01b039093166000908152600c602090815260408083208684528252808320859055938252600d9052919091209190915550565b60006001600160e01b0319821663152a902d60e11b1480620006e157506301ffc9a760e01b6001600160e01b0319831614620006e1565b8280546200338f90620038c0565b90600052602060002090601f016020900481019282620033b35760008555620033fe565b82601f10620033ce57805160ff1916838001178555620033fe565b82800160010185558215620033fe579182015b82811115620033fe578251825591602001919060010190620033e1565b5062002bc592915062003454565b610ea18062003d3a83390190565b5080546200342890620038c0565b6000825580601f1062003439575050565b601f01602090049060005260206000209081019062000e3691905b5b8082111562002bc5576000815560010162003455565b6001600160e01b03198116811462000e3657600080fd5b6000602082840312156200349557600080fd5b813562001486816200346b565b60005b83811015620034bf578181015183820152602001620034a5565b838111156200150f5750506000910152565b60008151808452620034eb816020860160208601620034a2565b601f01601f19169290920160200192915050565b602081526000620014866020830184620034d1565b6000602082840312156200352757600080fd5b5035919050565b80356001600160a01b03811681146200354657600080fd5b919050565b600080604083850312156200355f57600080fd5b6200356a836200352e565b946020939093013593505050565b6000806000606084860312156200358e57600080fd5b62003599846200352e565b9250620035a9602085016200352e565b9150604084013590509250925092565b60008060408385031215620035cd57600080fd5b50508035926020909101359150565b60008060408385031215620035f057600080fd5b8235915062003602602084016200352e565b90509250929050565b634e487b7160e01b600052604160045260246000fd5b600067ffffffffffffffff808411156200363f576200363f6200360b565b604051601f8501601f19908116603f011681019082821181831017156200366a576200366a6200360b565b816040528093508581528686860111156200368457600080fd5b858560208301376000602087830101525050509392505050565b60008060408385031215620036b257600080fd5b620036bd836200352e565b9150602083013567ffffffffffffffff811115620036da57600080fd5b8301601f81018513620036ec57600080fd5b620036fd8582356020840162003621565b9150509250929050565b6000806000606084860312156200371d57600080fd5b62003728846200352e565b925062003738602085016200352e565b915062003748604085016200352e565b90509250925092565b6000602082840312156200376457600080fd5b62001486826200352e565b600080604083850312156200378357600080fd5b6200378e836200352e565b915060208301358015158114620037a457600080fd5b809150509250929050565b60008060008060808587031215620037c657600080fd5b620037d1856200352e565b9350620037e1602086016200352e565b925060408501359150606085013567ffffffffffffffff8111156200380557600080fd5b8501601f810187136200381757600080fd5b620038288782356020840162003621565b91505092959194509250565b600080604083850312156200384857600080fd5b62003853836200352e565b915062003602602084016200352e565b600080600080608085870312156200387a57600080fd5b62003885856200352e565b935062003895602086016200352e565b9250620038a5604086016200352e565b9150620038b5606086016200352e565b905092959194509250565b600181811c90821680620038d557607f821691505b60208210811415620038f757634e487b7160e01b600052602260045260246000fd5b50919050565b60208082526031908201527f4552433732313a207472616e736665722063616c6c6572206973206e6f74206f6040820152701ddb995c881b9bdc88185c1c1c9bdd9959607a1b606082015260800190565b634e487b7160e01b600052601160045260246000fd5b60008160001904831182151516156200398157620039816200394e565b500290565b634e487b7160e01b600052601260045260246000fd5b600082620039ae57620039ae62003986565b500490565b6020808252818101527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e6572604082015260600190565b6001600160a01b038316815260406020820181905260009062001cbf90830184620034d1565b634e487b7160e01b600052603260045260246000fd5b60208082526024908201527f42757474686f6c65733a2063616c6c6572206d75737420626520612062757474604082015263686f6c6560e01b606082015260800190565b604080825283519082018190526000906020906060840190828701845b8281101562003aac5781516001600160a01b03168452928401929084019060010162003a85565b5050508381038285015284518082528583019183019060005b8181101562003ae35783518352928401929184019160010162003ac5565b5090979650505050505050565b600060001982141562003b075762003b076200394e565b5060010190565b60008282101562003b235762003b236200394e565b500390565b6000821982111562003b3e5762003b3e6200394e565b500190565b7f416363657373436f6e74726f6c3a206163636f756e742000000000000000000081526000835162003b7d816017850160208801620034a2565b7001034b99036b4b9b9b4b733903937b6329607d1b601791840191820152835162003bb0816028840160208801620034a2565b01602801949350505050565b60208082526032908201527f4552433732313a207472616e7366657220746f206e6f6e20455243373231526560408201527131b2b4bb32b91034b6b83632b6b2b73a32b960711b606082015260800190565b6000835162003c22818460208801620034a2565b83519083019062003c38818360208801620034a2565b01949350505050565b60008162003c535762003c536200394e565b506000190190565b838152600060208481840152604083018454856000528260002060005b8281101562003c9f5781546001600160a01b03168452928401926001918201910162003c78565b509198975050505050505050565b60008262003cbf5762003cbf62003986565b500690565b6001600160a01b038581168252841660208201526040810183905260806060820181905260009062003cf990830184620034d1565b9695505050505050565b60006020828403121562003d1657600080fd5b815162001486816200346b565b634e487b7160e01b600052603160045260246000fdfe608060405260405162000ea138038062000ea18339810160408190526200002691620004f7565b8051825114620000bd576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152603060248201527f436865656b53707265616465723a2070617965657320616e642073686172657360448201527f206c656e677468206d69736d617463680000000000000000000000000000000060648201526084015b60405180910390fd5b60008251116200012a576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601860248201527f436865656b53707265616465723a206e6f2070617965657300000000000000006044820152606401620000b4565b60005b8251811015620001965762000181838281518110620001505762000150620005d5565b60200260200101518383815181106200016d576200016d620005d5565b60200260200101516200019f60201b60201c565b806200018d8162000633565b9150506200012d565b5050506200066c565b6001600160a01b03821662000237576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602a60248201527f436865656b53707265616465723a206163636f756e7420697320746865207a6560448201527f726f2061646472657373000000000000000000000000000000000000000000006064820152608401620000b4565b60008111620002a3576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601b60248201527f436865656b53707265616465723a2073686172657320617265203000000000006044820152606401620000b4565b6001600160a01b038216600090815260026020526040902054156200034b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602960248201527f436865656b53707265616465723a206163636f756e7420616c7265616479206860448201527f61732073686172657300000000000000000000000000000000000000000000006064820152608401620000b4565b60048054600181019091557f8a35acfbc15ff81a39ae7d344fd709f28e8600b4aa8c65c6b64bfe7fe36bd19b0180546001600160a01b0319166001600160a01b038416908117909155600090815260026020526040812082905554620003b390829062000651565b600055604080516001600160a01b0384168152602081018390527f40c340f65e17194d14ddddb073d3c9f888e3cb52b5aae0c6c7706b4fbc905fac910160405180910390a15050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b604051601f8201601f191681016001600160401b0381118282101715620004565762000456620003fc565b604052919050565b60006001600160401b038211156200047a576200047a620003fc565b5060051b60200190565b600082601f8301126200049657600080fd5b81516020620004af620004a9836200045e565b6200042b565b82815260059290921b84018101918181019086841115620004cf57600080fd5b8286015b84811015620004ec5780518352918301918301620004d3565b509695505050505050565b600080604083850312156200050b57600080fd5b82516001600160401b03808211156200052357600080fd5b818501915085601f8301126200053857600080fd5b815160206200054b620004a9836200045e565b82815260059290921b840181019181810190898411156200056b57600080fd5b948201945b83861015620005a25785516001600160a01b0381168114620005925760008081fd5b8252948201949082019062000570565b91880151919650909350505080821115620005bc57600080fd5b50620005cb8582860162000484565b9150509250929050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052603260045260246000fd5b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b60006000198214156200064a576200064a62000604565b5060010190565b6000821982111562000667576200066762000604565b500190565b610825806200067c6000396000f3fe60806040526004361061007f5760003560e01c80639852595c1161004e5780639852595c14610186578063ce7c2ac2146101bc578063d79779b2146101f2578063e33b7de31461022857600080fd5b80633a98ef39146100cd578063406072a9146100f15780635be7fde8146101375780638b83209b1461014e57600080fd5b366100c8577f6ef95f06320e7a25a04a175ca677b7052bdd97131872c2192525a629f51be77033604080516001600160a01b0390921682523460208301520160405180910390a1005b600080fd5b3480156100d957600080fd5b506000545b6040519081526020015b60405180910390f35b3480156100fd57600080fd5b506100de61010c3660046106c2565b6001600160a01b03918216600090815260066020908152604080832093909416825291909152205490565b34801561014357600080fd5b5061014c61023d565b005b34801561015a57600080fd5b5061016e6101693660046106fb565b61036e565b6040516001600160a01b0390911681526020016100e8565b34801561019257600080fd5b506100de6101a1366004610714565b6001600160a01b031660009081526003602052604090205490565b3480156101c857600080fd5b506100de6101d7366004610714565b6001600160a01b031660009081526002602052604090205490565b3480156101fe57600080fd5b506100de61020d366004610714565b6001600160a01b031660009081526005602052604090205490565b34801561023457600080fd5b506001546100de565b60005b60045481101561036b57600260006004838154811061026157610261610738565b60009182526020808320909101546001600160a01b0316835282019290925260400190205461028f57610359565b600061029a60015490565b6102a5903031610764565b9050600061031e600484815481106102bf576102bf610738565b9060005260206000200160009054906101000a90046001600160a01b031683610319600487815481106102f4576102f4610738565b60009182526020808320909101546001600160a01b0316825260039052604090205490565b61039e565b90508015610356576103566004848154811061033c5761033c610738565b6000918252602090912001546001600160a01b03166103e1565b50505b806103638161077c565b915050610240565b50565b60006004828154811061038357610383610738565b6000918252602090912001546001600160a01b031692915050565b600080546001600160a01b0385168252600260205260408220548391906103c59086610797565b6103cf91906107b6565b6103d991906107d8565b949350505050565b6001600160a01b0381166000908152600260205260409020546104575760405162461bcd60e51b8152602060048201526024808201527f436865656b53707265616465723a206163636f756e7420686173206e6f2073686044820152636172657360e01b60648201526084015b60405180910390fd5b600061046260015490565b61046d903031610764565b905060006104958383610319866001600160a01b031660009081526003602052604090205490565b9050806104f65760405162461bcd60e51b815260206004820152602960248201527f436865656b53707265616465723a206163636f756e74206973206e6f7420647560448201526819481c185e5b595b9d60ba1b606482015260840161044e565b6001600160a01b0383166000908152600360205260408120805483929061051e908490610764565b9250508190555080600160008282546105379190610764565b909155506105479050838261058e565b604080516001600160a01b0385168152602081018390527fdf20fd1e76bc69d672e4814fafb2c449bba3a5369d8359adf9e05e6fde87b056910160405180910390a1505050565b30318111156105df5760405162461bcd60e51b815260206004820152601d60248201527f416464726573733a20696e73756666696369656e742062616c616e6365000000604482015260640161044e565b6000826001600160a01b03168260405160006040518083038185875af1925050503d806000811461062c576040519150601f19603f3d011682016040523d82523d6000602084013e610631565b606091505b50509050806106a85760405162461bcd60e51b815260206004820152603a60248201527f416464726573733a20756e61626c6520746f2073656e642076616c75652c207260448201527f6563697069656e74206d61792068617665207265766572746564000000000000606482015260840161044e565b505050565b6001600160a01b038116811461036b57600080fd5b600080604083850312156106d557600080fd5b82356106e0816106ad565b915060208301356106f0816106ad565b809150509250929050565b60006020828403121561070d57600080fd5b5035919050565b60006020828403121561072657600080fd5b8135610731816106ad565b9392505050565b634e487b7160e01b600052603260045260246000fd5b634e487b7160e01b600052601160045260246000fd5b600082198211156107775761077761074e565b500190565b60006000198214156107905761079061074e565b5060010190565b60008160001904831182151516156107b1576107b161074e565b500290565b6000826107d357634e487b7160e01b600052601260045260246000fd5b500490565b6000828210156107ea576107ea61074e565b50039056fea2646970667358221220dabdae72bd4960b5045f12072912cb62fba0a06ef61af232757d40621623cda164736f6c634300080b0033a2646970667358221220466365d63c3f1aba0fbd6c4bca2e23d4b6abf6b47eed7d629e48234175801a8264736f6c634300080b0033",
+  "metadata": "{\"compiler\":{\"version\":\"0.8.11+commit.d7f03943\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[{\"internalType\":\"string\",\"name\":\"baseURI_\",\"type\":\"string\"}],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"approved\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"Approval\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"operator\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"approved\",\"type\":\"bool\"}],\"name\":\"ApprovalForAll\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"previousOwner\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"OwnershipTransferred\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"Paused\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"removedButthole\",\"type\":\"address\"}],\"name\":\"PuckerDown\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"addedButthole\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"buttholeHash\",\"type\":\"string\"}],\"name\":\"PuckerUp\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"previousAdminRole\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"newAdminRole\",\"type\":\"bytes32\"}],\"name\":\"RoleAdminChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"RoleGranted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"RoleRevoked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"Transfer\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"Unpaused\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"DEFAULT_ADMIN_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"MINTER_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"PAUSER_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newButthole\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"_tokenURI\",\"type\":\"string\"}],\"name\":\"addButthole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"addMinter\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"approve\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"}],\"name\":\"balanceOf\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"burn\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"buttholeMap\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"name\":\"buttholes\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"donor1\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor2\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor3\",\"type\":\"address\"}],\"name\":\"createCheekSpreader\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"getApproved\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"}],\"name\":\"getRoleAdmin\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"getRoleMember\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"}],\"name\":\"getRoleMemberCount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"grantRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"hasRole\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"operator\",\"type\":\"address\"}],\"name\":\"isApprovedForAll\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"}],\"name\":\"mint\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"name\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"ownerOf\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceButthole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"renounceOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"renounceRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"revokeRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_tokenId\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_salePrice\",\"type\":\"uint256\"}],\"name\":\"royaltyInfo\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"royaltyValue\",\"outputs\":[{\"internalType\":\"uint96\",\"name\":\"\",\"type\":\"uint96\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"safeTransferFrom\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"_data\",\"type\":\"bytes\"}],\"name\":\"safeTransferFrom\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"operator\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"approved\",\"type\":\"bool\"}],\"name\":\"setApprovalForAll\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"symbol\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"tokenByIndex\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"tokenOfOwnerByIndex\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"tokenURI\",\"outputs\":[{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"from\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"tokenId\",\"type\":\"uint256\"}],\"name\":\"transferFrom\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"transferOwnership\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"buttholeAddress\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor1\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor2\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"donor3\",\"type\":\"address\"}],\"name\":\"updateCheekSpreader\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}],\"devdoc\":{\"author\":\"Skeetzo\",\"details\":\"Stupid (non-Solana) butthole nfts.\",\"kind\":\"dev\",\"methods\":{\"addButthole(address,string)\":{\"details\":\"Sets `_tokenURI` as the tokenURI of `tokenId`. Requirements: - `newButthole` must not exist as a butthole.\"},\"addMinter()\":{\"details\":\"18+ confirm to enable minting.\"},\"approve(address,uint256)\":{\"details\":\"See {IERC721-approve}.\"},\"balanceOf(address)\":{\"details\":\"See {IERC721-balanceOf}.\"},\"burn(uint256)\":{\"details\":\"Burns `tokenId`. See {ERC721-_burn}. Requirements: - The caller must own `tokenId` or be an approved operator.\"},\"constructor\":{\"details\":\"Contract constructor. Sets metadata extension `name` and `symbol`.\"},\"createCheekSpreader(address,address,address)\":{\"details\":\"Create a new CheekSpreader contract for handling royalty payments.\"},\"getApproved(uint256)\":{\"details\":\"See {IERC721-getApproved}.\"},\"getRoleAdmin(bytes32)\":{\"details\":\"Returns the admin role that controls `role`. See {grantRole} and {revokeRole}. To change a role's admin, use {_setRoleAdmin}.\"},\"getRoleMember(bytes32,uint256)\":{\"details\":\"Returns one of the accounts that have `role`. `index` must be a value between 0 and {getRoleMemberCount}, non-inclusive. Role bearers are not sorted in any particular way, and their ordering may change at any point. WARNING: When using {getRoleMember} and {getRoleMemberCount}, make sure you perform all queries on the same block. See the following https://forum.openzeppelin.com/t/iterating-over-elements-on-enumerableset-in-openzeppelin-contracts/2296[forum post] for more information.\"},\"getRoleMemberCount(bytes32)\":{\"details\":\"Returns the number of accounts that have `role`. Can be used together with {getRoleMember} to enumerate all bearers of a role.\"},\"grantRole(bytes32,address)\":{\"details\":\"Grants `role` to `account`. If `account` had not been already granted `role`, emits a {RoleGranted} event. Requirements: - the caller must have ``role``'s admin role.\"},\"hasRole(bytes32,address)\":{\"details\":\"Returns `true` if `account` has been granted `role`.\"},\"isApprovedForAll(address,address)\":{\"details\":\"See {IERC721-isApprovedForAll}.\"},\"mint(address)\":{\"details\":\"Creates a new token for `to`. Its token ID will be automatically assigned (and available on the emitted {IERC721-Transfer} event), and the token URI autogenerated based on the base URI passed at construction. See {ERC721-_mint}. Requirements: - the caller must have the `MINTER_ROLE`.\"},\"name()\":{\"details\":\"See {IERC721Metadata-name}.\"},\"owner()\":{\"details\":\"Returns the address of the current owner.\"},\"ownerOf(uint256)\":{\"details\":\"See {IERC721-ownerOf}.\"},\"pause()\":{\"details\":\"Pauses all token transfers. See {ERC721Pausable} and {Pausable-_pause}. Requirements: - the caller must have the `PAUSER_ROLE`.\"},\"paused()\":{\"details\":\"Returns true if the contract is paused, and false otherwise.\"},\"renounceButthole()\":{\"details\":\"Renounce ownership of your own butthole. Requirements: - `_msgSender` must exist as a butthole.\"},\"renounceOwnership()\":{\"details\":\"Leaves the contract without owner. It will not be possible to call `onlyOwner` functions anymore. Can only be called by the current owner. NOTE: Renouncing ownership will leave the contract without an owner, thereby removing any functionality that is only available to the owner.\"},\"renounceRole(bytes32,address)\":{\"details\":\"Revokes `role` from the calling account. Roles are often managed via {grantRole} and {revokeRole}: this function's purpose is to provide a mechanism for accounts to lose their privileges if they are compromised (such as when a trusted device is misplaced). If the calling account had been revoked `role`, emits a {RoleRevoked} event. Requirements: - the caller must be `account`.\"},\"revokeRole(bytes32,address)\":{\"details\":\"Revokes `role` from `account`. If `account` had been granted `role`, emits a {RoleRevoked} event. Requirements: - the caller must have ``role``'s admin role.\"},\"royaltyInfo(uint256,uint256)\":{\"details\":\"Returns how much royalty is owed and to whom, based on a sale price that may be denominated in any unit of exchange. The royalty amount is denominated and should be payed in that same unit of exchange.\"},\"safeTransferFrom(address,address,uint256)\":{\"details\":\"See {IERC721-safeTransferFrom}.\"},\"safeTransferFrom(address,address,uint256,bytes)\":{\"details\":\"See {IERC721-safeTransferFrom}.\"},\"setApprovalForAll(address,bool)\":{\"details\":\"See {IERC721-setApprovalForAll}.\"},\"supportsInterface(bytes4)\":{\"details\":\"See {IERC165-supportsInterface}.\"},\"symbol()\":{\"details\":\"See {IERC721Metadata-symbol}.\"},\"tokenByIndex(uint256)\":{\"details\":\"See {IERC721Enumerable-tokenByIndex}.\"},\"tokenOfOwnerByIndex(address,uint256)\":{\"details\":\"See {IERC721Enumerable-tokenOfOwnerByIndex}.\"},\"tokenURI(uint256)\":{\"details\":\"See {IERC721Metadata-tokenURI}.\"},\"totalSupply()\":{\"details\":\"See {IERC721Enumerable-totalSupply}.\"},\"transferFrom(address,address,uint256)\":{\"details\":\"See {IERC721-transferFrom}.\"},\"transferOwnership(address)\":{\"details\":\"Transfers ownership of the contract to a new account (`newOwner`). Can only be called by the current owner.\"},\"unpause()\":{\"details\":\"Unpauses all token transfers. See {ERC721Pausable} and {Pausable-_unpause}. Requirements: - the caller must have the `PAUSER_ROLE`.\"},\"updateCheekSpreader(address,address,address,address)\":{\"details\":\"Create a new CheekSpreader contract for handling royalty payments for an unset butthole.\"}},\"title\":\"Buttholes\",\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"project:/contracts/Buttholes.sol\":\"Buttholes\"},\"evmVersion\":\"petersburg\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":200},\"remappings\":[]},\"sources\":{\"@openzeppelin/contracts/access/AccessControl.sol\":{\"keccak256\":\"0x4a1a0ba12bf1a33f10d9fe226278cf59675c0b929d29e4da99658a079b27fb84\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://bda1319db846d6d6f92d8a57a9bdee8bde1dc39aa7546165791692c24dd6f30a\",\"dweb:/ipfs/Qma5oZ7DmbdAjd8mpiW7mx896PDtwsQtCQ2hj9Upf7b7JK\"]},\"@openzeppelin/contracts/access/AccessControlEnumerable.sol\":{\"keccak256\":\"0x13f5e15f2a0650c0b6aaee2ef19e89eaf4870d6e79662d572a393334c1397247\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://7ee05f28f549a5d6515e152580716b87636ed4bfab9812499a6e3803df88288b\",\"dweb:/ipfs/QmeEnhdwY1t5Y3YU5a4ffzgXuToydH2PNdNxV9W7dEPRQJ\"]},\"@openzeppelin/contracts/access/IAccessControl.sol\":{\"keccak256\":\"0x59ce320a585d7e1f163cd70390a0ef2ff9cec832e2aa544293a00692465a7a57\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://bb2c137c343ef0c4c7ce7b18c1d108afdc9d315a04e48307288d2d05adcbde3a\",\"dweb:/ipfs/QmUxhrAQM3MM3FF5j7AtcXLXguWCJBHJ14BRdVtuoQc8Fh\"]},\"@openzeppelin/contracts/access/IAccessControlEnumerable.sol\":{\"keccak256\":\"0xba4459ab871dfa300f5212c6c30178b63898c03533a1ede28436f11546626676\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://3dcc7b09bfa6e18aab262ca372f4a9b1fc82e294b430706a4e1378cf58e6a276\",\"dweb:/ipfs/QmT8oSAcesdctR15HMLhr2a1HRpXymxdjTfdtfTYJcj2N2\"]},\"@openzeppelin/contracts/access/Ownable.sol\":{\"keccak256\":\"0x24e0364e503a9bbde94c715d26573a76f14cd2a202d45f96f52134ab806b67b9\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://e12cbaa7378fd9b62280e4e1d164bedcb4399ce238f5f98fc0eefb7e50577981\",\"dweb:/ipfs/QmXRoFGUgfsaRkoPT5bxNMtSayKTQ8GZATLPXf69HcRA51\"]},\"@openzeppelin/contracts/interfaces/IERC165.sol\":{\"keccak256\":\"0xd04b0f06e0666f29cf7cccc82894de541e19bb30a765b107b1e40bb7fe5f7d7a\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://7b652499d098e88d8d878374616bb58434301061cae2253298b3f374044e0ddb\",\"dweb:/ipfs/QmbhAzctqo5jrSKU6idHdVyqfmzCcDbNUPvmx4GiXxfA6q\"]},\"@openzeppelin/contracts/interfaces/IERC2981.sol\":{\"keccak256\":\"0x0117c84d8584216a032bbfc24a21077e672609fa4e788624aace97dd97ceec9b\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://17ca798d2bcd2ef1c8b87f8fcf973f30e2fb9ffbd07fb8eb46530906d1d05af1\",\"dweb:/ipfs/QmW4WhbDRptY151tu9khBRD6WQPwG3CeU3eXofGp4fNuaQ\"]},\"@openzeppelin/contracts/security/Pausable.sol\":{\"keccak256\":\"0xe68ed7fb8766ed1e888291f881e36b616037f852b37d96877045319ad298ba87\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://1d491a2ca79dbf44bc02e876e21a5847a2cbcc011188532ad8662cdc1c134a4e\",\"dweb:/ipfs/QmUQXhSV8ZvHLzfdG89ZNSh1nLrAYyjnNBLznJGwGcwVk8\"]},\"@openzeppelin/contracts/token/ERC20/IERC20.sol\":{\"keccak256\":\"0xbbc8ac883ac3c0078ce5ad3e288fbb3ffcc8a30c3a98c0fda0114d64fc44fca2\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://87a7a5d2f6f63f84598af02b8c50ca2df2631cb8ba2453e8d95fcb17e4be9824\",\"dweb:/ipfs/QmR76hqtAcRqoFj33tmNjcWTLrgNsAaakYwnKZ8zoJtKei\"]},\"@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\":{\"keccak256\":\"0xc3d946432c0ddbb1f846a0d3985be71299df331b91d06732152117f62f0be2b5\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://4632c341a06ba5c079b51ca5a915efab4e6ab57735b37839b3e8365ff806a43e\",\"dweb:/ipfs/QmTHT3xHYed2wajEoA5qu7ii2BxLpPhQZHwAhtLK5Z7ANK\"]},\"@openzeppelin/contracts/token/ERC721/ERC721.sol\":{\"keccak256\":\"0x11b84bb56dc112a6590bfe3e0efa118aa1b5891132342200d04c4ef544cb93de\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://cbc4803332d45dff58f865ed21c942fe4668e47cc7196c8dfe84102040b1d70f\",\"dweb:/ipfs/QmXhZLsocznRWCSyhjo3vo66Z1VsuuNptAVb6ASPYsWtGx\"]},\"@openzeppelin/contracts/token/ERC721/IERC721.sol\":{\"keccak256\":\"0x516a22876c1fab47f49b1bc22b4614491cd05338af8bd2e7b382da090a079990\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://a439187f7126d31add4557f82d8aed6be0162007cd7182c48fd934dbab8f3849\",\"dweb:/ipfs/QmRPLguRFvrRJS7r6F1bcLvsx6q1VrgjEpZafyeL8D7xZh\"]},\"@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol\":{\"keccak256\":\"0xd5fa74b4fb323776fa4a8158800fec9d5ac0fec0d6dd046dd93798632ada265f\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://33017a30a99cc5411a9e376622c31fc4a55cfc6a335e2f57f00cbf24a817ff3f\",\"dweb:/ipfs/QmWNQtWTPhA7Lo8nbxbc8KFMvZwbFYB8fSeEQ3vuapSV4a\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol\":{\"keccak256\":\"0x1f16f9737853b988865ab819d1ebf8b5009defe981c75bc9079e0f40ed2a2e57\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://05e50f827969ca93b0d7bad1e022aa3147c8f390e9f91bb814752e8fbbbe621c\",\"dweb:/ipfs/QmdR2fJ2a3HM7FyC9pGD4JeKF9z6bxqU9FbhMyQfH1sDJH\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol\":{\"keccak256\":\"0x0a79511df8151b10b0a0004d6a76ad956582d32824af4c0f4886bdbdfe5746e5\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://afbedcf17f31db719e6fdc56caa8f458799c5fa2eb94cb1e94ef18f89af85768\",\"dweb:/ipfs/QmVmqRdBfbgYThpZSoAJ5o9mnAMjx8mCHHjv3Rh8cQAAg3\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol\":{\"keccak256\":\"0xa2695a4c7b192f34b98a3875dfce54c8c6c4976b898a5598b1ce0355ce2e6c56\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6a9eed1168b7794c22eb3ef76ac6d8c523cfb453c5113e3314781dadb5d0de4b\",\"dweb:/ipfs/QmcoTzSK56c3tUN9zsD66YpTjoxguuo76BdrDs5ZSSaJMp\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol\":{\"keccak256\":\"0x7cdc887a364b6e3f9669bb4b16582e135121437399ac69d41db15012e09b96cc\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://ce1c4fcd6eafe8f6b8daf541a2cccfcd44368aa0a697c567a5b875edc8c43fea\",\"dweb:/ipfs/QmcN4HhvYveWTtcGfUY3vnzSbJyAtmgvprUW58rDLY7Vdf\"]},\"@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol\":{\"keccak256\":\"0x1cbe42915bc66227970fe99bc0f783eb1de30f2b48f984af01ad45edb9658698\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://2baa08eb67d9da46e6c4c049f17b7684a1c68c5268d0f466cfa0eb23ce2bf9b0\",\"dweb:/ipfs/Qmdnj8zj4PfErB2HM2eKmDt7FrqrhggsZ6Qd8MpD593tgj\"]},\"@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol\":{\"keccak256\":\"0xd1556954440b31c97a142c6ba07d5cade45f96fafd52091d33a14ebe365aecbf\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://26fef835622b46a5ba08b3ef6b46a22e94b5f285d0f0fb66b703bd30217d2c34\",\"dweb:/ipfs/QmZ548qdwfL1qF7aXz3xh1GCdTiST81kGGuKRqVUfYmPZR\"]},\"@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol\":{\"keccak256\":\"0x75b829ff2f26c14355d1cba20e16fe7b29ca58eb5fef665ede48bc0f9c6c74b9\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://a0a107160525724f9e1bbbab031defc2f298296dd9e331f16a6f7130cec32146\",\"dweb:/ipfs/QmemujxSd7gX8A9M8UwmNbz4Ms3U9FG9QfudUgxwvTmPWf\"]},\"@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol\":{\"keccak256\":\"0x22e0d463a79b304ba50f62609f5ed68c8a32e8c5eb3868111b82d8943e1337ea\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://561d02fd4b5192c77bf285820221046a4e0af2fcd4daa0beb8ffea3eb5b2ec3a\",\"dweb:/ipfs/QmNbkyFhak5JiiPPchxRBEtnQTqFP5YJ9PU9MspjupZDpy\"]},\"@openzeppelin/contracts/token/common/ERC2981.sol\":{\"keccak256\":\"0x73a07d6155bb2549828bf1ce4dce2300b5d78c958acb922e61a3341ea4279c97\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6877199a7d20f8959bda1b9b1aafc79674dd4779cb297b292e828a6b4506c43f\",\"dweb:/ipfs/QmeeNhXkTNcAdd6DpvKSVN1Z7vUUTNxm2sd5dqmsojUezA\"]},\"@openzeppelin/contracts/utils/Address.sol\":{\"keccak256\":\"0x2ccf9d2313a313d41a791505f2b5abfdc62191b5d4334f7f7a82691c088a1c87\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://b3a57d0854b2fdce6ebff933a48dca2445643d1eccfc27f00292e937f26c6a58\",\"dweb:/ipfs/QmW45rZooS9TqR4YXUbjRbtf2Bpb5ouSarBvfW1LdGprvV\"]},\"@openzeppelin/contracts/utils/Context.sol\":{\"keccak256\":\"0xe2e337e6dde9ef6b680e07338c493ebea1b5fd09b43424112868e9cc1706bca7\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://6df0ddf21ce9f58271bdfaa85cde98b200ef242a05a3f85c2bc10a8294800a92\",\"dweb:/ipfs/QmRK2Y5Yc6BK7tGKkgsgn3aJEQGi5aakeSPZvS65PV8Xp3\"]},\"@openzeppelin/contracts/utils/Counters.sol\":{\"keccak256\":\"0xf0018c2440fbe238dd3a8732fa8e17a0f9dce84d31451dc8a32f6d62b349c9f1\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://59e1c62884d55b70f3ae5432b44bb3166ad71ae3acd19c57ab6ddc3c87c325ee\",\"dweb:/ipfs/QmezuXg5GK5oeA4F91EZhozBFekhq5TD966bHPH18cCqhu\"]},\"@openzeppelin/contracts/utils/Strings.sol\":{\"keccak256\":\"0x32c202bd28995dd20c4347b7c6467a6d3241c74c8ad3edcbb610cd9205916c45\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://8179c356adb19e70d6b31a1eedc8c5c7f0c00e669e2540f4099e3844c6074d30\",\"dweb:/ipfs/QmWFbivarEobbqhS1go64ootVuHfVohBseerYy9FTEd1W2\"]},\"@openzeppelin/contracts/utils/introspection/ERC165.sol\":{\"keccak256\":\"0xd10975de010d89fd1c78dc5e8a9a7e7f496198085c151648f20cba166b32582b\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://fb0048dee081f6fffa5f74afc3fb328483c2a30504e94a0ddd2a5114d731ec4d\",\"dweb:/ipfs/QmZptt1nmYoA5SgjwnSgWqgUSDgm4q52Yos3xhnMv3MV43\"]},\"@openzeppelin/contracts/utils/introspection/IERC165.sol\":{\"keccak256\":\"0x447a5f3ddc18419d41ff92b3773fb86471b1db25773e07f877f548918a185bf1\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://be161e54f24e5c6fae81a12db1a8ae87bc5ae1b0ddc805d82a1440a68455088f\",\"dweb:/ipfs/QmP7C3CHdY9urF4dEMb9wmsp1wMxHF6nhA2yQE5SKiPAdy\"]},\"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\":{\"keccak256\":\"0x9772845c886f87a3aab315f8d6b68aa599027c20f441b131cd4afaf65b588900\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://ad2f29a9c17a4f746416c9e254e17671f43c409dbfa6e4d7d76c3e4a83212d31\",\"dweb:/ipfs/QmTqU65L6iu6yqmXKzcNLPioR8etzKPWycpDJCm17ifVdS\"]},\"project:/contracts/Buttholes.sol\":{\"keccak256\":\"0xf6be4c606be4289ea93afd2a547fd53640d218f833800cab38ab3c67aadd5c35\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://1196399ee4578295dbbbe6128b5d2e6ee1523cb965d4583a773af06442404eb5\",\"dweb:/ipfs/QmNUHHMETnywdSrCcsNY88nJxpucpe4FzNxis9JxnwKRyc\"]},\"project:/contracts/CheekSpreader.sol\":{\"keccak256\":\"0xf2eb14a148abfc1f3626ac5cbf7645f0ecfe838fcf1473738a73c8dc22d28f3e\",\"license\":\"MIT\",\"urls\":[\"bzz-raw://062cbc25b61b771b3118d36432b5a94dfb8a0c1f4d1197c58baac98a81ffe07d\",\"dweb:/ipfs/QmZHewaoCKVy65em8SGRc54xpYFjsRHkWFRrxJR7E8Uwdf\"]}},\"version\":1}",
+  "bytecode": "0x60806040523480156200001157600080fd5b506040516200515e3803806200515e83398101604081905262000034916200040c565b6040518060400160405280600881526020017f42757474686f6c650000000000000000000000000000000000000000000000008152506040518060400160405280600481526020017f4255545400000000000000000000000000000000000000000000000000000000815250828282620000bd620000b76200017a60201b60201c565b6200017e565b8151620000d290600590602085019062000337565b508051620000e890600690602084019062000337565b50506010805460ff191690555080516200010a90601290602084019062000337565b5062000118600033620001ce565b620001447f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a633620001ce565b620001707f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a33620001ce565b505050506200053e565b3390565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b620001da8282620001de565b5050565b620001f582826200022160201b62001a8c1760201c565b60008281526004602090815260409091206200021c91839062001b16620002c5821b17901c565b505050565b60008281526003602090815260408083206001600160a01b038516845290915290205460ff16620001da5760008281526003602090815260408083206001600160a01b03851684529091529020805460ff19166001179055620002813390565b6001600160a01b0316816001600160a01b0316837f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a45050565b6000620002dc836001600160a01b038416620002e5565b90505b92915050565b60008181526001830160205260408120546200032e57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155620002df565b506000620002df565b8280546200034590620004e8565b90600052602060002090601f016020900481019282620003695760008555620003b4565b82601f106200038457805160ff1916838001178555620003b4565b82800160010185558215620003b4579182015b82811115620003b457825182559160200191906001019062000397565b50620003c2929150620003c6565b5090565b5b80821115620003c25760008155600101620003c7565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b600060208083850312156200042057600080fd5b82516001600160401b03808211156200043857600080fd5b818501915085601f8301126200044d57600080fd5b815181811115620004625762000462620003dd565b604051601f8201601f19908116603f011681019083821181831017156200048d576200048d620003dd565b816040528281528886848701011115620004a657600080fd5b600093505b82841015620004ca5784840186015181850187015292850192620004ab565b82841115620004dc5760008684830101525b98975050505050505050565b600181811c90821680620004fd57607f821691505b6020821081141562000538577f4e487b7100000000000000000000000000000000000000000000000000000000600052602260045260246000fd5b50919050565b614c10806200054e6000396000f3fe60806040523480156200001157600080fd5b50600436106200029d5760003560e01c80636a627842116200016d578063a22cb46511620000d3578063d53913931162000092578063d53913931462000600578063d547741f1462000628578063e63ab1e9146200063f578063e985e9c51462000667578063f2fde38b14620006a6578063f8984a4b14620006bd57600080fd5b8063a22cb465146200059a578063b88d4fde14620005b1578063bd2573bb14620005c8578063c87b56dd14620005d2578063ca15c87314620005e957600080fd5b80638456cb59116200012c5780638456cb59146200053d5780638da5cb5b14620005475780639010d07c146200055957806391d14854146200057057806395d89b411462000587578063a217fddf146200059157600080fd5b80636a62784214620004c857806370a0823114620004df578063715018a614620004f65780637a2ed4d414620005005780637d54349c146200052657600080fd5b80632f745c59116200021357806342966c6811620001d257806342966c68146200043e5780634f6ccce714620004555780635c975abb146200046c5780635cbf7deb14620004785780635fc20588146200048f5780636352211e14620004b157600080fd5b80632f745c5914620003d857806336568abe14620003ef57806339c1e21d14620004065780633f4ba83a146200041d57806342842e0e146200042757600080fd5b806318160ddd116200026057806318160ddd146200033a57806323b872dd146200034d578063248a9ca314620003645780632a55205a146200038a5780632f2ff15d14620003c157600080fd5b806301ffc9a714620002a2578063031cf58614620002ce57806306fdde0314620002da578063081812fc14620002f3578063095ea7b31462000323575b600080fd5b620002b9620002b336600462003482565b620006d4565b60405190151581526020015b60405180910390f35b620002d8620006e7565b005b620002e462000715565b604051620002c59190620034ff565b6200030a6200030436600462003514565b620007af565b6040516001600160a01b039091168152602001620002c5565b620002d8620003343660046200354b565b6200083f565b600e545b604051908152602001620002c5565b620002d86200035e36600462003578565b62000960565b6200033e6200037536600462003514565b60009081526003602052604090206001015490565b620003a16200039b366004620035b9565b62000999565b604080516001600160a01b039093168352602083019190915201620002c5565b620002d8620003d2366004620035dc565b62000a4a565b6200033e620003e93660046200354b565b62000a74565b620002d862000400366004620035dc565b62000b0e565b620002d8620004173660046200369e565b62000b90565b620002d862000cf0565b620002d86200043836600462003578565b62000d9c565b620002d86200044f36600462003514565b62000db9565b6200033e6200046636600462003514565b62000e39565b60105460ff16620002b9565b620002d86200048936600462003707565b62000ed2565b6200049860c881565b6040516001600160601b039091168152602001620002c5565b6200030a620004c236600462003514565b62001121565b620002d8620004d936600462003751565b6200119a565b6200033e620004f036600462003751565b6200125e565b620002d8620012e7565b620002b96200051136600462003751565b60146020526000908152604090205460ff1681565b620002e46200053736600462003751565b62001320565b620002d8620013c2565b6000546001600160a01b03166200030a565b6200030a6200056a366004620035b9565b6200146c565b620002b962000581366004620035dc565b6200148d565b620002e4620014b8565b6200033e600081565b620002d8620005ab3660046200376f565b620014c9565b620002d8620005c2366004620037af565b620014d6565b620002d862001515565b620002e4620005e336600462003514565b6200165e565b6200033e620005fa36600462003514565b6200166b565b6200033e7f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a681565b620002d862000639366004620035dc565b62001684565b6200033e7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a81565b620002b96200067836600462003834565b6001600160a01b039182166000908152600a6020908152604080832093909416825291909152205460ff1690565b620002d8620006b736600462003751565b620016ae565b620002d8620006ce36600462003863565b6200174d565b6000620006e18262001b2d565b92915050565b620007137f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a63362001b3a565b565b6060600580546200072690620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200075490620038c0565b8015620007a55780601f106200077957610100808354040283529160200191620007a5565b820191906000526020600020905b8154815290600101906020018083116200078757829003601f168201915b5050505050905090565b6000620007bc8262001b46565b620008235760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a20617070726f76656420717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084015b60405180910390fd5b506000908152600960205260409020546001600160a01b031690565b60006200084c8262001121565b9050806001600160a01b0316836001600160a01b03161415620008bc5760405162461bcd60e51b815260206004820152602160248201527f4552433732313a20617070726f76616c20746f2063757272656e74206f776e656044820152603960f91b60648201526084016200081a565b336001600160a01b0382161480620008db5750620008db813362000678565b6200094f5760405162461bcd60e51b815260206004820152603860248201527f4552433732313a20617070726f76652063616c6c6572206973206e6f74206f7760448201527f6e6572206e6f7220617070726f76656420666f7220616c6c000000000000000060648201526084016200081a565b6200095b838362001b63565b505050565b6200096d335b8262001bd3565b6200098c5760405162461bcd60e51b81526004016200081a90620038fd565b6200095b83838362001cc7565b60008281526002602090815260408083208151808301909252546001600160a01b038116808352600160a01b9091046001600160601b031692820192909252829162000a0f5750604080518082019091526001546001600160a01b0381168252600160a01b90046001600160601b031660208201525b60208101516000906127109062000a30906001600160601b03168762003964565b62000a3c91906200399c565b915196919550909350505050565b60008281526003602052604090206001015462000a68813362001e7c565b6200095b838362001eeb565b600062000a81836200125e565b821062000ae55760405162461bcd60e51b815260206004820152602b60248201527f455243373231456e756d657261626c653a206f776e657220696e646578206f7560448201526a74206f6620626f756e647360a81b60648201526084016200081a565b506001600160a01b03919091166000908152600c60209081526040808320938352929052205490565b6001600160a01b038116331462000b805760405162461bcd60e51b815260206004820152602f60248201527f416363657373436f6e74726f6c3a2063616e206f6e6c792072656e6f756e636560448201526e103937b632b9903337b91039b2b63360891b60648201526084016200081a565b62000b8c828262001f11565b5050565b6000546001600160a01b0316331462000bbd5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03821660009081526014602052604090205460ff161562000c325760405162461bcd60e51b815260206004820152602160248201527f42757474686f6c65733a206163636f756e74206d757374206e6f7420657869736044820152601d60fa1b60648201526084016200081a565b6001600160a01b0382166000818152601460209081526040808320805460ff191660019081179091556015805491820190557f55f448fdea98c4d29eb340757ef0a66cd03dbb9538908a6a81d96026b71ec4750180546001600160a01b0319168517905592825260138152919020825162000cb09284019062003381565b507f3928d8d4ef77269d64bde1cdb2870113bf1ae2d5c8e970356e43f58a09134bbe828260405162000ce4929190620039e8565b60405180910390a15050565b62000d1c7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b62000d92576040805162461bcd60e51b81526020600482015260248101919091527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f20756e706175736560648201526084016200081a565b6200071362001f37565b6200095b83838360405180602001604052806000815250620014d6565b62000dc43362000966565b62000e2b5760405162461bcd60e51b815260206004820152603060248201527f4552433732314275726e61626c653a2063616c6c6572206973206e6f74206f7760448201526f1b995c881b9bdc88185c1c1c9bdd995960821b60648201526084016200081a565b62000e368162001fb4565b50565b600062000e45600e5490565b821062000eaa5760405162461bcd60e51b815260206004820152602c60248201527f455243373231456e756d657261626c653a20676c6f62616c20696e646578206f60448201526b7574206f6620626f756e647360a01b60648201526084016200081a565b600e828154811062000ec05762000ec062003a0e565b90600052602060002001549050919050565b3360009081526014602052604090205460ff1662000f045760405162461bcd60e51b81526004016200081a9062003a24565b60408051600480825260a0820190925260009160208201608080368337019050509050338160008151811062000f3e5762000f3e62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050838160018151811062000f755762000f7562003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062000fac5762000fac62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050818160038151811062000fe35762000fe362003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b8160008151811062001037576200103762003a0e565b6020026020010181815250506003816001815181106200105b576200105b62003a0e565b6020026020010181815250506003816002815181106200107f576200107f62003a0e565b602002602001018181525050600381600381518110620010a357620010a362003a0e565b60200260200101818152505060008282604051620010c1906200340c565b620010ce92919062003a68565b604051809103906000f080158015620010eb573d6000803e3d6000fd5b5033600090815260166020526040902080546001600160a01b0319166001600160a01b0392909216919091179055505050505050565b6000818152600760205260408120546001600160a01b031680620006e15760405162461bcd60e51b815260206004820152602960248201527f4552433732313a206f776e657220717565727920666f72206e6f6e657869737460448201526832b73a103a37b5b2b760b91b60648201526084016200081a565b620011c67f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6336200148d565b6200123a5760405162461bcd60e51b815260206004820152603d60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d7573742068617665206d696e74657220726f6c6520746f206d696e7400000060648201526084016200081a565b6200124f816200124960115490565b62001fbf565b62000e36601180546001019055565b60006001600160a01b038216620012cb5760405162461bcd60e51b815260206004820152602a60248201527f4552433732313a2062616c616e636520717565727920666f7220746865207a65604482015269726f206164647265737360b01b60648201526084016200081a565b506001600160a01b031660009081526008602052604090205490565b6000546001600160a01b03163314620013145760405162461bcd60e51b81526004016200081a90620039b3565b620007136000620020dc565b601360205260009081526040902080546200133b90620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200136990620038c0565b8015620013ba5780601f106200138e57610100808354040283529160200191620013ba565b820191906000526020600020905b8154815290600101906020018083116200139c57829003601f168201915b505050505081565b620013ee7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b620014625760405162461bcd60e51b815260206004820152603e60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f207061757365000060648201526084016200081a565b620007136200212c565b6000828152600460205260408120620014869083620021aa565b9392505050565b60009182526003602090815260408084206001600160a01b0393909316845291905290205460ff1690565b6060600680546200072690620038c0565b62000b8c338383620021b8565b620014e2338362001bd3565b620015015760405162461bcd60e51b81526004016200081a90620038fd565b6200150f8484848462002289565b50505050565b3360009081526014602052604090205460ff16620015475760405162461bcd60e51b81526004016200081a9062003a24565b33600090815260136020526040812062001561916200341a565b33600090815260166020908152604080832080546001600160a01b031916905560149091528120805460ff191690555b6015548110156200161d57336001600160a01b031660158281548110620015bc57620015bc62003a0e565b6000918252602090912001546001600160a01b03161415620016085760158181548110620015ee57620015ee62003a0e565b600091825260209091200180546001600160a01b03191690555b80620016148162003af0565b91505062001591565b507fb177a07085e0487947eaa3af695b80cf8af7044400eae85f7095bcfab312902f335b6040516001600160a01b03909116815260200160405180910390a1565b6060620006e182620022c3565b6000818152600460205260408120620006e19062002439565b600082815260036020526040902060010154620016a2813362001e7c565b6200095b838362001f11565b6000546001600160a01b03163314620016db5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b038116620017425760405162461bcd60e51b815260206004820152602660248201527f4f776e61626c653a206e6577206f776e657220697320746865207a65726f206160448201526564647265737360d01b60648201526084016200081a565b62000e3681620020dc565b6000546001600160a01b031633146200177a5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03841660009081526014602052604090205460ff16620017f25760405162461bcd60e51b815260206004820152602560248201527f42757474686f6c65733a2061646472657373206d75737420626520612062757460448201526474686f6c6560d81b60648201526084016200081a565b6001600160a01b0384811660009081526016602052604090205416156200186f5760405162461bcd60e51b815260206004820152602a60248201527f42757474686f6c65733a2061646472657373206d757374206e6f7420616c726560448201526918591e481899481cd95d60b21b60648201526084016200081a565b60408051600480825260a08201909252600091602082016080803683370190505090508481600081518110620018a957620018a962003a0e565b60200260200101906001600160a01b031690816001600160a01b0316815250508381600181518110620018e057620018e062003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062001917576200191762003a0e565b60200260200101906001600160a01b031690816001600160a01b03168152505081816003815181106200194e576200194e62003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b81600081518110620019a257620019a262003a0e565b602002602001018181525050600381600181518110620019c657620019c662003a0e565b602002602001018181525050600381600281518110620019ea57620019ea62003a0e565b60200260200101818152505060038160038151811062001a0e5762001a0e62003a0e565b6020026020010181815250506000828260405162001a2c906200340c565b62001a3992919062003a68565b604051809103906000f08015801562001a56573d6000803e3d6000fd5b506001600160a01b03978816600090815260166020526040902080546001600160a01b0319169190981617909655505050505050565b62001a9882826200148d565b62000b8c5760008281526003602090815260408083206001600160a01b03851684529091529020805460ff1916600117905562001ad23390565b6001600160a01b0316816001600160a01b0316837f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a45050565b600062001486836001600160a01b03841662002444565b6000620006e18262002496565b62000b8c828262001eeb565b6000908152600760205260409020546001600160a01b0316151590565b600081815260096020526040902080546001600160a01b0319166001600160a01b038416908117909155819062001b9a8262001121565b6001600160a01b03167f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b92560405160405180910390a45050565b600062001be08262001b46565b62001c435760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a206f70657261746f7220717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084016200081a565b600062001c508362001121565b9050806001600160a01b0316846001600160a01b0316148062001c8e5750836001600160a01b031662001c8384620007af565b6001600160a01b0316145b8062001cbf57506001600160a01b038082166000908152600a602090815260408083209388168352929052205460ff165b949350505050565b826001600160a01b031662001cdc8262001121565b6001600160a01b03161462001d425760405162461bcd60e51b815260206004820152602560248201527f4552433732313a207472616e736665722066726f6d20696e636f72726563742060448201526437bbb732b960d91b60648201526084016200081a565b6001600160a01b03821662001da65760405162461bcd60e51b8152602060048201526024808201527f4552433732313a207472616e7366657220746f20746865207a65726f206164646044820152637265737360e01b60648201526084016200081a565b62001db3838383620024be565b62001dc060008262001b63565b6001600160a01b038316600090815260086020526040812080546001929062001deb90849062003b0e565b90915550506001600160a01b038216600090815260086020526040812080546001929062001e1b90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b0386811691821790925591518493918716917fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef91a4505050565b62001e8882826200148d565b62000b8c5762001ea3816001600160a01b03166014620024cb565b62001eb0836020620024cb565b60405160200162001ec392919062003b43565b60408051601f198184030181529082905262461bcd60e51b82526200081a91600401620034ff565b62001ef7828262001a8c565b60008281526004602052604090206200095b908262001b16565b62001f1d828262002685565b60008281526004602052604090206200095b9082620026ef565b60105460ff1662001f825760405162461bcd60e51b815260206004820152601460248201527314185d5cd8589b194e881b9bdd081c185d5cd95960621b60448201526064016200081a565b6010805460ff191690557f5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa3362001641565b62000e368162002706565b62001fcb828262002722565b600062001fd76200286b565b6001600160a01b0381166000908152601360205260409020805491925062002091918491906200200790620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200203590620038c0565b8015620020865780601f106200205a5761010080835404028352916020019162002086565b820191906000526020600020905b8154815290600101906020018083116200206857829003601f168201915b5050505050620028de565b6001600160a01b038181166000908152601660205260409020541615620020ce576001600160a01b03908116600090815260166020526040902054165b6200095b828260c86200296f565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b60105460ff1615620021745760405162461bcd60e51b815260206004820152601060248201526f14185d5cd8589b194e881c185d5cd95960821b60448201526064016200081a565b6010805460ff191660011790557f62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258620016413390565b600062001486838362002a81565b816001600160a01b0316836001600160a01b031614156200221c5760405162461bcd60e51b815260206004820152601960248201527f4552433732313a20617070726f766520746f2063616c6c65720000000000000060448201526064016200081a565b6001600160a01b038381166000818152600a6020908152604080832094871680845294825291829020805460ff191686151590811790915591519182527f17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31910160405180910390a3505050565b6200229684848462001cc7565b620022a48484848462002aae565b6200150f5760405162461bcd60e51b81526004016200081a9062003bbc565b6060620022d08262001b46565b620023385760405162461bcd60e51b815260206004820152603160248201527f45524337323155524953746f726167653a2055524920717565727920666f72206044820152703737b732bc34b9ba32b73a103a37b5b2b760791b60648201526084016200081a565b6000828152600b6020526040812080546200235390620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200238190620038c0565b8015620023d25780601f10620023a657610100808354040283529160200191620023d2565b820191906000526020600020905b815481529060010190602001808311620023b457829003601f168201915b505050505090506000620023e562002bb9565b9050805160001415620023f9575092915050565b8151156200242e5780826040516020016200241692919062003c0e565b60405160208183030381529060405292505050919050565b62001cbf8462002bc9565b6000620006e1825490565b60008181526001830160205260408120546200248d57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155620006e1565b506000620006e1565b60006001600160e01b0319821663780e9d6360e01b1480620006e15750620006e18262002c9f565b6200095b83838362002cac565b60606000620024dc83600262003964565b620024e990600262003b28565b67ffffffffffffffff8111156200250457620025046200360b565b6040519080825280601f01601f1916602001820160405280156200252f576020820181803683370190505b509050600360fc1b816000815181106200254d576200254d62003a0e565b60200101906001600160f81b031916908160001a905350600f60fb1b816001815181106200257f576200257f62003a0e565b60200101906001600160f81b031916908160001a9053506000620025a584600262003964565b620025b290600162003b28565b90505b600181111562002634576f181899199a1a9b1b9c1cb0b131b232b360811b85600f1660108110620025ea57620025ea62003a0e565b1a60f81b82828151811062002603576200260362003a0e565b60200101906001600160f81b031916908160001a90535060049490941c936200262c8162003c41565b9050620025b5565b508315620014865760405162461bcd60e51b815260206004820181905260248201527f537472696e67733a20686578206c656e67746820696e73756666696369656e7460448201526064016200081a565b6200269182826200148d565b1562000b8c5760008281526003602090815260408083206001600160a01b0385168085529252808320805460ff1916905551339285917ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9190a45050565b600062001486836001600160a01b03841662002cb9565b620027118162002dbd565b600090815260026020526040812055565b6001600160a01b0382166200277a5760405162461bcd60e51b815260206004820181905260248201527f4552433732313a206d696e7420746f20746865207a65726f206164647265737360448201526064016200081a565b620027858162001b46565b15620027d45760405162461bcd60e51b815260206004820152601c60248201527f4552433732313a20746f6b656e20616c7265616479206d696e7465640000000060448201526064016200081a565b620027e260008383620024be565b6001600160a01b03821660009081526008602052604081208054600192906200280d90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b03861690811790915590518392907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908290a45050565b600060158080549050444260156040516020016200288c9392919062003c5b565b6040516020818303038152906040528051906020012060001c620028b1919062003cad565b81548110620028c457620028c462003a0e565b6000918252602090912001546001600160a01b0316919050565b620028e98262001b46565b6200294e5760405162461bcd60e51b815260206004820152602e60248201527f45524337323155524953746f726167653a2055524920736574206f66206e6f6e60448201526d32bc34b9ba32b73a103a37b5b2b760911b60648201526084016200081a565b6000828152600b6020908152604090912082516200095b9284019062003381565b6127106001600160601b0382161115620029df5760405162461bcd60e51b815260206004820152602a60248201527f455243323938313a20726f79616c7479206665652077696c6c206578636565646044820152692073616c65507269636560b01b60648201526084016200081a565b6001600160a01b03821662002a375760405162461bcd60e51b815260206004820152601b60248201527f455243323938313a20496e76616c696420706172616d6574657273000000000060448201526064016200081a565b6040805180820182526001600160a01b0393841681526001600160601b0392831660208083019182526000968752600290529190942093519051909116600160a01b029116179055565b600082600001828154811062002a9b5762002a9b62003a0e565b9060005260206000200154905092915050565b60006001600160a01b0384163b1562002bae57604051630a85bd0160e11b81526001600160a01b0385169063150b7a029062002af590339089908890889060040162003cc4565b6020604051808303816000875af192505050801562002b33575060408051601f3d908101601f1916820190925262002b309181019062003d03565b60015b62002b93573d80801562002b64576040519150601f19603f3d011682016040523d82523d6000602084013e62002b69565b606091505b50805162002b8b5760405162461bcd60e51b81526004016200081a9062003bbc565b805181602001fd5b6001600160e01b031916630a85bd0160e11b14905062001cbf565b506001949350505050565b606062002bc562002e04565b5090565b606062002bd68262001b46565b62002c3c5760405162461bcd60e51b815260206004820152602f60248201527f4552433732314d657461646174613a2055524920717565727920666f72206e6f60448201526e3732bc34b9ba32b73a103a37b5b2b760891b60648201526084016200081a565b600062002c4862002bb9565b9050600081511162002c6a576040518060200160405280600081525062001486565b8062002c768462002e15565b60405160200162002c8992919062003c0e565b6040516020818303038152906040529392505050565b6000620006e18262002f2b565b6200095b83838362002f6f565b6000818152600183016020526040812054801562002db257600062002ce060018362003b0e565b855490915060009062002cf69060019062003b0e565b905081811462002d6257600086600001828154811062002d1a5762002d1a62003a0e565b906000526020600020015490508087600001848154811062002d405762002d4062003a0e565b6000918252602080832090910192909255918252600188019052604090208390555b855486908062002d765762002d7662003d23565b600190038181906000526020600020016000905590558560010160008681526020019081526020016000206000905560019350505050620006e1565b6000915050620006e1565b62002dc88162002fe5565b6000818152600b60205260409020805462002de390620038c0565b15905062000e36576000818152600b6020526040812062000e36916200341a565b6060601280546200072690620038c0565b60608162002e3a5750506040805180820190915260018152600360fc1b602082015290565b8160005b811562002e6a578062002e518162003af0565b915062002e629050600a836200399c565b915062002e3e565b60008167ffffffffffffffff81111562002e885762002e886200360b565b6040519080825280601f01601f19166020018201604052801562002eb3576020820181803683370190505b5090505b841562001cbf5762002ecb60018362003b0e565b915062002eda600a8662003cad565b62002ee790603062003b28565b60f81b81838151811062002eff5762002eff62003a0e565b60200101906001600160f81b031916908160001a90535062002f23600a866200399c565b945062002eb7565b60006001600160e01b031982166380ac58cd60e01b148062002f5d57506001600160e01b03198216635b5e139f60e01b145b80620006e15750620006e18262003094565b62002f7c838383620030bc565b60105460ff16156200095b5760405162461bcd60e51b815260206004820152602b60248201527f4552433732315061757361626c653a20746f6b656e207472616e73666572207760448201526a1a1a5b19481c185d5cd95960aa1b60648201526084016200081a565b600062002ff28262001121565b90506200300281600084620024be565b6200300f60008362001b63565b6001600160a01b03811660009081526008602052604081208054600192906200303a90849062003b0e565b909155505060008281526007602052604080822080546001600160a01b0319169055518391906001600160a01b038416907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908390a45050565b60006001600160e01b03198216635a05180f60e01b1480620006e15750620006e18262003180565b6001600160a01b0383166200311a576200311481600e80546000838152600f60205260408120829055600182018355919091527fbb7b4a454dc3493923482f07822329ed19e8244eff582cc204f8554c3620c3fd0155565b62003140565b816001600160a01b0316836001600160a01b0316146200314057620031408382620031a8565b6001600160a01b0382166200315a576200095b816200324a565b826001600160a01b0316826001600160a01b0316146200095b576200095b828262003304565b60006001600160e01b03198216637965db0b60e01b1480620006e15750620006e1826200334a565b60006001620031b7846200125e565b620031c3919062003b0e565b6000838152600d602052604090205490915080821462003217576001600160a01b0384166000908152600c602090815260408083208584528252808320548484528184208190558352600d90915290208190555b506000918252600d602090815260408084208490556001600160a01b039094168352600c81528383209183525290812055565b600e546000906200325e9060019062003b0e565b6000838152600f6020526040812054600e805493945090928490811062003289576200328962003a0e565b9060005260206000200154905080600e8381548110620032ad57620032ad62003a0e565b6000918252602080832090910192909255828152600f9091526040808220849055858252812055600e805480620032e857620032e862003d23565b6001900381819060005260206000200160009055905550505050565b600062003311836200125e565b6001600160a01b039093166000908152600c602090815260408083208684528252808320859055938252600d9052919091209190915550565b60006001600160e01b0319821663152a902d60e11b1480620006e157506301ffc9a760e01b6001600160e01b0319831614620006e1565b8280546200338f90620038c0565b90600052602060002090601f016020900481019282620033b35760008555620033fe565b82601f10620033ce57805160ff1916838001178555620033fe565b82800160010185558215620033fe579182015b82811115620033fe578251825591602001919060010190620033e1565b5062002bc592915062003454565b610ea18062003d3a83390190565b5080546200342890620038c0565b6000825580601f1062003439575050565b601f01602090049060005260206000209081019062000e3691905b5b8082111562002bc5576000815560010162003455565b6001600160e01b03198116811462000e3657600080fd5b6000602082840312156200349557600080fd5b813562001486816200346b565b60005b83811015620034bf578181015183820152602001620034a5565b838111156200150f5750506000910152565b60008151808452620034eb816020860160208601620034a2565b601f01601f19169290920160200192915050565b602081526000620014866020830184620034d1565b6000602082840312156200352757600080fd5b5035919050565b80356001600160a01b03811681146200354657600080fd5b919050565b600080604083850312156200355f57600080fd5b6200356a836200352e565b946020939093013593505050565b6000806000606084860312156200358e57600080fd5b62003599846200352e565b9250620035a9602085016200352e565b9150604084013590509250925092565b60008060408385031215620035cd57600080fd5b50508035926020909101359150565b60008060408385031215620035f057600080fd5b8235915062003602602084016200352e565b90509250929050565b634e487b7160e01b600052604160045260246000fd5b600067ffffffffffffffff808411156200363f576200363f6200360b565b604051601f8501601f19908116603f011681019082821181831017156200366a576200366a6200360b565b816040528093508581528686860111156200368457600080fd5b858560208301376000602087830101525050509392505050565b60008060408385031215620036b257600080fd5b620036bd836200352e565b9150602083013567ffffffffffffffff811115620036da57600080fd5b8301601f81018513620036ec57600080fd5b620036fd8582356020840162003621565b9150509250929050565b6000806000606084860312156200371d57600080fd5b62003728846200352e565b925062003738602085016200352e565b915062003748604085016200352e565b90509250925092565b6000602082840312156200376457600080fd5b62001486826200352e565b600080604083850312156200378357600080fd5b6200378e836200352e565b915060208301358015158114620037a457600080fd5b809150509250929050565b60008060008060808587031215620037c657600080fd5b620037d1856200352e565b9350620037e1602086016200352e565b925060408501359150606085013567ffffffffffffffff8111156200380557600080fd5b8501601f810187136200381757600080fd5b620038288782356020840162003621565b91505092959194509250565b600080604083850312156200384857600080fd5b62003853836200352e565b915062003602602084016200352e565b600080600080608085870312156200387a57600080fd5b62003885856200352e565b935062003895602086016200352e565b9250620038a5604086016200352e565b9150620038b5606086016200352e565b905092959194509250565b600181811c90821680620038d557607f821691505b60208210811415620038f757634e487b7160e01b600052602260045260246000fd5b50919050565b60208082526031908201527f4552433732313a207472616e736665722063616c6c6572206973206e6f74206f6040820152701ddb995c881b9bdc88185c1c1c9bdd9959607a1b606082015260800190565b634e487b7160e01b600052601160045260246000fd5b60008160001904831182151516156200398157620039816200394e565b500290565b634e487b7160e01b600052601260045260246000fd5b600082620039ae57620039ae62003986565b500490565b6020808252818101527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e6572604082015260600190565b6001600160a01b038316815260406020820181905260009062001cbf90830184620034d1565b634e487b7160e01b600052603260045260246000fd5b60208082526024908201527f42757474686f6c65733a2063616c6c6572206d75737420626520612062757474604082015263686f6c6560e01b606082015260800190565b604080825283519082018190526000906020906060840190828701845b8281101562003aac5781516001600160a01b03168452928401929084019060010162003a85565b5050508381038285015284518082528583019183019060005b8181101562003ae35783518352928401929184019160010162003ac5565b5090979650505050505050565b600060001982141562003b075762003b076200394e565b5060010190565b60008282101562003b235762003b236200394e565b500390565b6000821982111562003b3e5762003b3e6200394e565b500190565b7f416363657373436f6e74726f6c3a206163636f756e742000000000000000000081526000835162003b7d816017850160208801620034a2565b7001034b99036b4b9b9b4b733903937b6329607d1b601791840191820152835162003bb0816028840160208801620034a2565b01602801949350505050565b60208082526032908201527f4552433732313a207472616e7366657220746f206e6f6e20455243373231526560408201527131b2b4bb32b91034b6b83632b6b2b73a32b960711b606082015260800190565b6000835162003c22818460208801620034a2565b83519083019062003c38818360208801620034a2565b01949350505050565b60008162003c535762003c536200394e565b506000190190565b838152600060208481840152604083018454856000528260002060005b8281101562003c9f5781546001600160a01b03168452928401926001918201910162003c78565b509198975050505050505050565b60008262003cbf5762003cbf62003986565b500690565b6001600160a01b038581168252841660208201526040810183905260806060820181905260009062003cf990830184620034d1565b9695505050505050565b60006020828403121562003d1657600080fd5b815162001486816200346b565b634e487b7160e01b600052603160045260246000fdfe608060405260405162000ea138038062000ea18339810160408190526200002691620004f7565b8051825114620000bd576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152603060248201527f436865656b53707265616465723a2070617965657320616e642073686172657360448201527f206c656e677468206d69736d617463680000000000000000000000000000000060648201526084015b60405180910390fd5b60008251116200012a576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601860248201527f436865656b53707265616465723a206e6f2070617965657300000000000000006044820152606401620000b4565b60005b8251811015620001965762000181838281518110620001505762000150620005d5565b60200260200101518383815181106200016d576200016d620005d5565b60200260200101516200019f60201b60201c565b806200018d8162000633565b9150506200012d565b5050506200066c565b6001600160a01b03821662000237576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602a60248201527f436865656b53707265616465723a206163636f756e7420697320746865207a6560448201527f726f2061646472657373000000000000000000000000000000000000000000006064820152608401620000b4565b60008111620002a3576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601b60248201527f436865656b53707265616465723a2073686172657320617265203000000000006044820152606401620000b4565b6001600160a01b038216600090815260026020526040902054156200034b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602960248201527f436865656b53707265616465723a206163636f756e7420616c7265616479206860448201527f61732073686172657300000000000000000000000000000000000000000000006064820152608401620000b4565b60048054600181019091557f8a35acfbc15ff81a39ae7d344fd709f28e8600b4aa8c65c6b64bfe7fe36bd19b0180546001600160a01b0319166001600160a01b038416908117909155600090815260026020526040812082905554620003b390829062000651565b600055604080516001600160a01b0384168152602081018390527f40c340f65e17194d14ddddb073d3c9f888e3cb52b5aae0c6c7706b4fbc905fac910160405180910390a15050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b604051601f8201601f191681016001600160401b0381118282101715620004565762000456620003fc565b604052919050565b60006001600160401b038211156200047a576200047a620003fc565b5060051b60200190565b600082601f8301126200049657600080fd5b81516020620004af620004a9836200045e565b6200042b565b82815260059290921b84018101918181019086841115620004cf57600080fd5b8286015b84811015620004ec5780518352918301918301620004d3565b509695505050505050565b600080604083850312156200050b57600080fd5b82516001600160401b03808211156200052357600080fd5b818501915085601f8301126200053857600080fd5b815160206200054b620004a9836200045e565b82815260059290921b840181019181810190898411156200056b57600080fd5b948201945b83861015620005a25785516001600160a01b0381168114620005925760008081fd5b8252948201949082019062000570565b91880151919650909350505080821115620005bc57600080fd5b50620005cb8582860162000484565b9150509250929050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052603260045260246000fd5b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b60006000198214156200064a576200064a62000604565b5060010190565b6000821982111562000667576200066762000604565b500190565b610825806200067c6000396000f3fe60806040526004361061007f5760003560e01c80639852595c1161004e5780639852595c14610186578063ce7c2ac2146101bc578063d79779b2146101f2578063e33b7de31461022857600080fd5b80633a98ef39146100cd578063406072a9146100f15780635be7fde8146101375780638b83209b1461014e57600080fd5b366100c8577f6ef95f06320e7a25a04a175ca677b7052bdd97131872c2192525a629f51be77033604080516001600160a01b0390921682523460208301520160405180910390a1005b600080fd5b3480156100d957600080fd5b506000545b6040519081526020015b60405180910390f35b3480156100fd57600080fd5b506100de61010c3660046106c2565b6001600160a01b03918216600090815260066020908152604080832093909416825291909152205490565b34801561014357600080fd5b5061014c61023d565b005b34801561015a57600080fd5b5061016e6101693660046106fb565b61036e565b6040516001600160a01b0390911681526020016100e8565b34801561019257600080fd5b506100de6101a1366004610714565b6001600160a01b031660009081526003602052604090205490565b3480156101c857600080fd5b506100de6101d7366004610714565b6001600160a01b031660009081526002602052604090205490565b3480156101fe57600080fd5b506100de61020d366004610714565b6001600160a01b031660009081526005602052604090205490565b34801561023457600080fd5b506001546100de565b60005b60045481101561036b57600260006004838154811061026157610261610738565b60009182526020808320909101546001600160a01b0316835282019290925260400190205461028f57610359565b600061029a60015490565b6102a5903031610764565b9050600061031e600484815481106102bf576102bf610738565b9060005260206000200160009054906101000a90046001600160a01b031683610319600487815481106102f4576102f4610738565b60009182526020808320909101546001600160a01b0316825260039052604090205490565b61039e565b90508015610356576103566004848154811061033c5761033c610738565b6000918252602090912001546001600160a01b03166103e1565b50505b806103638161077c565b915050610240565b50565b60006004828154811061038357610383610738565b6000918252602090912001546001600160a01b031692915050565b600080546001600160a01b0385168252600260205260408220548391906103c59086610797565b6103cf91906107b6565b6103d991906107d8565b949350505050565b6001600160a01b0381166000908152600260205260409020546104575760405162461bcd60e51b8152602060048201526024808201527f436865656b53707265616465723a206163636f756e7420686173206e6f2073686044820152636172657360e01b60648201526084015b60405180910390fd5b600061046260015490565b61046d903031610764565b905060006104958383610319866001600160a01b031660009081526003602052604090205490565b9050806104f65760405162461bcd60e51b815260206004820152602960248201527f436865656b53707265616465723a206163636f756e74206973206e6f7420647560448201526819481c185e5b595b9d60ba1b606482015260840161044e565b6001600160a01b0383166000908152600360205260408120805483929061051e908490610764565b9250508190555080600160008282546105379190610764565b909155506105479050838261058e565b604080516001600160a01b0385168152602081018390527fdf20fd1e76bc69d672e4814fafb2c449bba3a5369d8359adf9e05e6fde87b056910160405180910390a1505050565b30318111156105df5760405162461bcd60e51b815260206004820152601d60248201527f416464726573733a20696e73756666696369656e742062616c616e6365000000604482015260640161044e565b6000826001600160a01b03168260405160006040518083038185875af1925050503d806000811461062c576040519150601f19603f3d011682016040523d82523d6000602084013e610631565b606091505b50509050806106a85760405162461bcd60e51b815260206004820152603a60248201527f416464726573733a20756e61626c6520746f2073656e642076616c75652c207260448201527f6563697069656e74206d61792068617665207265766572746564000000000000606482015260840161044e565b505050565b6001600160a01b038116811461036b57600080fd5b600080604083850312156106d557600080fd5b82356106e0816106ad565b915060208301356106f0816106ad565b809150509250929050565b60006020828403121561070d57600080fd5b5035919050565b60006020828403121561072657600080fd5b8135610731816106ad565b9392505050565b634e487b7160e01b600052603260045260246000fd5b634e487b7160e01b600052601160045260246000fd5b600082198211156107775761077761074e565b500190565b60006000198214156107905761079061074e565b5060010190565b60008160001904831182151516156107b1576107b161074e565b500290565b6000826107d357634e487b7160e01b600052601260045260246000fd5b500490565b6000828210156107ea576107ea61074e565b50039056fea2646970667358221220dabdae72bd4960b5045f12072912cb62fba0a06ef61af232757d40621623cda164736f6c634300080b0033a2646970667358221220dbe4c3d47c43d4d5e2e252a7c247b2914b07338477ada405d4313a213d87e4e764736f6c634300080b0033",
+  "deployedBytecode": "0x60806040523480156200001157600080fd5b50600436106200029d5760003560e01c80636a627842116200016d578063a22cb46511620000d3578063d53913931162000092578063d53913931462000600578063d547741f1462000628578063e63ab1e9146200063f578063e985e9c51462000667578063f2fde38b14620006a6578063f8984a4b14620006bd57600080fd5b8063a22cb465146200059a578063b88d4fde14620005b1578063bd2573bb14620005c8578063c87b56dd14620005d2578063ca15c87314620005e957600080fd5b80638456cb59116200012c5780638456cb59146200053d5780638da5cb5b14620005475780639010d07c146200055957806391d14854146200057057806395d89b411462000587578063a217fddf146200059157600080fd5b80636a62784214620004c857806370a0823114620004df578063715018a614620004f65780637a2ed4d414620005005780637d54349c146200052657600080fd5b80632f745c59116200021357806342966c6811620001d257806342966c68146200043e5780634f6ccce714620004555780635c975abb146200046c5780635cbf7deb14620004785780635fc20588146200048f5780636352211e14620004b157600080fd5b80632f745c5914620003d857806336568abe14620003ef57806339c1e21d14620004065780633f4ba83a146200041d57806342842e0e146200042757600080fd5b806318160ddd116200026057806318160ddd146200033a57806323b872dd146200034d578063248a9ca314620003645780632a55205a146200038a5780632f2ff15d14620003c157600080fd5b806301ffc9a714620002a2578063031cf58614620002ce57806306fdde0314620002da578063081812fc14620002f3578063095ea7b31462000323575b600080fd5b620002b9620002b336600462003482565b620006d4565b60405190151581526020015b60405180910390f35b620002d8620006e7565b005b620002e462000715565b604051620002c59190620034ff565b6200030a6200030436600462003514565b620007af565b6040516001600160a01b039091168152602001620002c5565b620002d8620003343660046200354b565b6200083f565b600e545b604051908152602001620002c5565b620002d86200035e36600462003578565b62000960565b6200033e6200037536600462003514565b60009081526003602052604090206001015490565b620003a16200039b366004620035b9565b62000999565b604080516001600160a01b039093168352602083019190915201620002c5565b620002d8620003d2366004620035dc565b62000a4a565b6200033e620003e93660046200354b565b62000a74565b620002d862000400366004620035dc565b62000b0e565b620002d8620004173660046200369e565b62000b90565b620002d862000cf0565b620002d86200043836600462003578565b62000d9c565b620002d86200044f36600462003514565b62000db9565b6200033e6200046636600462003514565b62000e39565b60105460ff16620002b9565b620002d86200048936600462003707565b62000ed2565b6200049860c881565b6040516001600160601b039091168152602001620002c5565b6200030a620004c236600462003514565b62001121565b620002d8620004d936600462003751565b6200119a565b6200033e620004f036600462003751565b6200125e565b620002d8620012e7565b620002b96200051136600462003751565b60146020526000908152604090205460ff1681565b620002e46200053736600462003751565b62001320565b620002d8620013c2565b6000546001600160a01b03166200030a565b6200030a6200056a366004620035b9565b6200146c565b620002b962000581366004620035dc565b6200148d565b620002e4620014b8565b6200033e600081565b620002d8620005ab3660046200376f565b620014c9565b620002d8620005c2366004620037af565b620014d6565b620002d862001515565b620002e4620005e336600462003514565b6200165e565b6200033e620005fa36600462003514565b6200166b565b6200033e7f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a681565b620002d862000639366004620035dc565b62001684565b6200033e7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a81565b620002b96200067836600462003834565b6001600160a01b039182166000908152600a6020908152604080832093909416825291909152205460ff1690565b620002d8620006b736600462003751565b620016ae565b620002d8620006ce36600462003863565b6200174d565b6000620006e18262001b2d565b92915050565b620007137f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a63362001b3a565b565b6060600580546200072690620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200075490620038c0565b8015620007a55780601f106200077957610100808354040283529160200191620007a5565b820191906000526020600020905b8154815290600101906020018083116200078757829003601f168201915b5050505050905090565b6000620007bc8262001b46565b620008235760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a20617070726f76656420717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084015b60405180910390fd5b506000908152600960205260409020546001600160a01b031690565b60006200084c8262001121565b9050806001600160a01b0316836001600160a01b03161415620008bc5760405162461bcd60e51b815260206004820152602160248201527f4552433732313a20617070726f76616c20746f2063757272656e74206f776e656044820152603960f91b60648201526084016200081a565b336001600160a01b0382161480620008db5750620008db813362000678565b6200094f5760405162461bcd60e51b815260206004820152603860248201527f4552433732313a20617070726f76652063616c6c6572206973206e6f74206f7760448201527f6e6572206e6f7220617070726f76656420666f7220616c6c000000000000000060648201526084016200081a565b6200095b838362001b63565b505050565b6200096d335b8262001bd3565b6200098c5760405162461bcd60e51b81526004016200081a90620038fd565b6200095b83838362001cc7565b60008281526002602090815260408083208151808301909252546001600160a01b038116808352600160a01b9091046001600160601b031692820192909252829162000a0f5750604080518082019091526001546001600160a01b0381168252600160a01b90046001600160601b031660208201525b60208101516000906127109062000a30906001600160601b03168762003964565b62000a3c91906200399c565b915196919550909350505050565b60008281526003602052604090206001015462000a68813362001e7c565b6200095b838362001eeb565b600062000a81836200125e565b821062000ae55760405162461bcd60e51b815260206004820152602b60248201527f455243373231456e756d657261626c653a206f776e657220696e646578206f7560448201526a74206f6620626f756e647360a81b60648201526084016200081a565b506001600160a01b03919091166000908152600c60209081526040808320938352929052205490565b6001600160a01b038116331462000b805760405162461bcd60e51b815260206004820152602f60248201527f416363657373436f6e74726f6c3a2063616e206f6e6c792072656e6f756e636560448201526e103937b632b9903337b91039b2b63360891b60648201526084016200081a565b62000b8c828262001f11565b5050565b6000546001600160a01b0316331462000bbd5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03821660009081526014602052604090205460ff161562000c325760405162461bcd60e51b815260206004820152602160248201527f42757474686f6c65733a206163636f756e74206d757374206e6f7420657869736044820152601d60fa1b60648201526084016200081a565b6001600160a01b0382166000818152601460209081526040808320805460ff191660019081179091556015805491820190557f55f448fdea98c4d29eb340757ef0a66cd03dbb9538908a6a81d96026b71ec4750180546001600160a01b0319168517905592825260138152919020825162000cb09284019062003381565b507f3928d8d4ef77269d64bde1cdb2870113bf1ae2d5c8e970356e43f58a09134bbe828260405162000ce4929190620039e8565b60405180910390a15050565b62000d1c7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b62000d92576040805162461bcd60e51b81526020600482015260248101919091527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f20756e706175736560648201526084016200081a565b6200071362001f37565b6200095b83838360405180602001604052806000815250620014d6565b62000dc43362000966565b62000e2b5760405162461bcd60e51b815260206004820152603060248201527f4552433732314275726e61626c653a2063616c6c6572206973206e6f74206f7760448201526f1b995c881b9bdc88185c1c1c9bdd995960821b60648201526084016200081a565b62000e368162001fb4565b50565b600062000e45600e5490565b821062000eaa5760405162461bcd60e51b815260206004820152602c60248201527f455243373231456e756d657261626c653a20676c6f62616c20696e646578206f60448201526b7574206f6620626f756e647360a01b60648201526084016200081a565b600e828154811062000ec05762000ec062003a0e565b90600052602060002001549050919050565b3360009081526014602052604090205460ff1662000f045760405162461bcd60e51b81526004016200081a9062003a24565b60408051600480825260a0820190925260009160208201608080368337019050509050338160008151811062000f3e5762000f3e62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050838160018151811062000f755762000f7562003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062000fac5762000fac62003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050818160038151811062000fe35762000fe362003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b8160008151811062001037576200103762003a0e565b6020026020010181815250506003816001815181106200105b576200105b62003a0e565b6020026020010181815250506003816002815181106200107f576200107f62003a0e565b602002602001018181525050600381600381518110620010a357620010a362003a0e565b60200260200101818152505060008282604051620010c1906200340c565b620010ce92919062003a68565b604051809103906000f080158015620010eb573d6000803e3d6000fd5b5033600090815260166020526040902080546001600160a01b0319166001600160a01b0392909216919091179055505050505050565b6000818152600760205260408120546001600160a01b031680620006e15760405162461bcd60e51b815260206004820152602960248201527f4552433732313a206f776e657220717565727920666f72206e6f6e657869737460448201526832b73a103a37b5b2b760b91b60648201526084016200081a565b620011c67f9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6336200148d565b6200123a5760405162461bcd60e51b815260206004820152603d60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d7573742068617665206d696e74657220726f6c6520746f206d696e7400000060648201526084016200081a565b6200124f816200124960115490565b62001fbf565b62000e36601180546001019055565b60006001600160a01b038216620012cb5760405162461bcd60e51b815260206004820152602a60248201527f4552433732313a2062616c616e636520717565727920666f7220746865207a65604482015269726f206164647265737360b01b60648201526084016200081a565b506001600160a01b031660009081526008602052604090205490565b6000546001600160a01b03163314620013145760405162461bcd60e51b81526004016200081a90620039b3565b620007136000620020dc565b601360205260009081526040902080546200133b90620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200136990620038c0565b8015620013ba5780601f106200138e57610100808354040283529160200191620013ba565b820191906000526020600020905b8154815290600101906020018083116200139c57829003601f168201915b505050505081565b620013ee7f65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a336200148d565b620014625760405162461bcd60e51b815260206004820152603e60248201527f4552433732315072657365744d696e7465725061757365724175746f49643a2060448201527f6d75737420686176652070617573657220726f6c6520746f207061757365000060648201526084016200081a565b620007136200212c565b6000828152600460205260408120620014869083620021aa565b9392505050565b60009182526003602090815260408084206001600160a01b0393909316845291905290205460ff1690565b6060600680546200072690620038c0565b62000b8c338383620021b8565b620014e2338362001bd3565b620015015760405162461bcd60e51b81526004016200081a90620038fd565b6200150f8484848462002289565b50505050565b3360009081526014602052604090205460ff16620015475760405162461bcd60e51b81526004016200081a9062003a24565b33600090815260136020526040812062001561916200341a565b33600090815260166020908152604080832080546001600160a01b031916905560149091528120805460ff191690555b6015548110156200161d57336001600160a01b031660158281548110620015bc57620015bc62003a0e565b6000918252602090912001546001600160a01b03161415620016085760158181548110620015ee57620015ee62003a0e565b600091825260209091200180546001600160a01b03191690555b80620016148162003af0565b91505062001591565b507fb177a07085e0487947eaa3af695b80cf8af7044400eae85f7095bcfab312902f335b6040516001600160a01b03909116815260200160405180910390a1565b6060620006e182620022c3565b6000818152600460205260408120620006e19062002439565b600082815260036020526040902060010154620016a2813362001e7c565b6200095b838362001f11565b6000546001600160a01b03163314620016db5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b038116620017425760405162461bcd60e51b815260206004820152602660248201527f4f776e61626c653a206e6577206f776e657220697320746865207a65726f206160448201526564647265737360d01b60648201526084016200081a565b62000e3681620020dc565b6000546001600160a01b031633146200177a5760405162461bcd60e51b81526004016200081a90620039b3565b6001600160a01b03841660009081526014602052604090205460ff16620017f25760405162461bcd60e51b815260206004820152602560248201527f42757474686f6c65733a2061646472657373206d75737420626520612062757460448201526474686f6c6560d81b60648201526084016200081a565b6001600160a01b0384811660009081526016602052604090205416156200186f5760405162461bcd60e51b815260206004820152602a60248201527f42757474686f6c65733a2061646472657373206d757374206e6f7420616c726560448201526918591e481899481cd95d60b21b60648201526084016200081a565b60408051600480825260a08201909252600091602082016080803683370190505090508481600081518110620018a957620018a962003a0e565b60200260200101906001600160a01b031690816001600160a01b0316815250508381600181518110620018e057620018e062003a0e565b60200260200101906001600160a01b031690816001600160a01b031681525050828160028151811062001917576200191762003a0e565b60200260200101906001600160a01b031690816001600160a01b03168152505081816003815181106200194e576200194e62003a0e565b6001600160a01b039290921660209283029190910182015260408051600480825260a082019092526000929091908201608080368337019050509050605b81600081518110620019a257620019a262003a0e565b602002602001018181525050600381600181518110620019c657620019c662003a0e565b602002602001018181525050600381600281518110620019ea57620019ea62003a0e565b60200260200101818152505060038160038151811062001a0e5762001a0e62003a0e565b6020026020010181815250506000828260405162001a2c906200340c565b62001a3992919062003a68565b604051809103906000f08015801562001a56573d6000803e3d6000fd5b506001600160a01b03978816600090815260166020526040902080546001600160a01b0319169190981617909655505050505050565b62001a9882826200148d565b62000b8c5760008281526003602090815260408083206001600160a01b03851684529091529020805460ff1916600117905562001ad23390565b6001600160a01b0316816001600160a01b0316837f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a45050565b600062001486836001600160a01b03841662002444565b6000620006e18262002496565b62000b8c828262001eeb565b6000908152600760205260409020546001600160a01b0316151590565b600081815260096020526040902080546001600160a01b0319166001600160a01b038416908117909155819062001b9a8262001121565b6001600160a01b03167f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b92560405160405180910390a45050565b600062001be08262001b46565b62001c435760405162461bcd60e51b815260206004820152602c60248201527f4552433732313a206f70657261746f7220717565727920666f72206e6f6e657860448201526b34b9ba32b73a103a37b5b2b760a11b60648201526084016200081a565b600062001c508362001121565b9050806001600160a01b0316846001600160a01b0316148062001c8e5750836001600160a01b031662001c8384620007af565b6001600160a01b0316145b8062001cbf57506001600160a01b038082166000908152600a602090815260408083209388168352929052205460ff165b949350505050565b826001600160a01b031662001cdc8262001121565b6001600160a01b03161462001d425760405162461bcd60e51b815260206004820152602560248201527f4552433732313a207472616e736665722066726f6d20696e636f72726563742060448201526437bbb732b960d91b60648201526084016200081a565b6001600160a01b03821662001da65760405162461bcd60e51b8152602060048201526024808201527f4552433732313a207472616e7366657220746f20746865207a65726f206164646044820152637265737360e01b60648201526084016200081a565b62001db3838383620024be565b62001dc060008262001b63565b6001600160a01b038316600090815260086020526040812080546001929062001deb90849062003b0e565b90915550506001600160a01b038216600090815260086020526040812080546001929062001e1b90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b0386811691821790925591518493918716917fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef91a4505050565b62001e8882826200148d565b62000b8c5762001ea3816001600160a01b03166014620024cb565b62001eb0836020620024cb565b60405160200162001ec392919062003b43565b60408051601f198184030181529082905262461bcd60e51b82526200081a91600401620034ff565b62001ef7828262001a8c565b60008281526004602052604090206200095b908262001b16565b62001f1d828262002685565b60008281526004602052604090206200095b9082620026ef565b60105460ff1662001f825760405162461bcd60e51b815260206004820152601460248201527314185d5cd8589b194e881b9bdd081c185d5cd95960621b60448201526064016200081a565b6010805460ff191690557f5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa3362001641565b62000e368162002706565b62001fcb828262002722565b600062001fd76200286b565b6001600160a01b0381166000908152601360205260409020805491925062002091918491906200200790620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200203590620038c0565b8015620020865780601f106200205a5761010080835404028352916020019162002086565b820191906000526020600020905b8154815290600101906020018083116200206857829003601f168201915b5050505050620028de565b6001600160a01b038181166000908152601660205260409020541615620020ce576001600160a01b03908116600090815260166020526040902054165b6200095b828260c86200296f565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b60105460ff1615620021745760405162461bcd60e51b815260206004820152601060248201526f14185d5cd8589b194e881c185d5cd95960821b60448201526064016200081a565b6010805460ff191660011790557f62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258620016413390565b600062001486838362002a81565b816001600160a01b0316836001600160a01b031614156200221c5760405162461bcd60e51b815260206004820152601960248201527f4552433732313a20617070726f766520746f2063616c6c65720000000000000060448201526064016200081a565b6001600160a01b038381166000818152600a6020908152604080832094871680845294825291829020805460ff191686151590811790915591519182527f17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31910160405180910390a3505050565b6200229684848462001cc7565b620022a48484848462002aae565b6200150f5760405162461bcd60e51b81526004016200081a9062003bbc565b6060620022d08262001b46565b620023385760405162461bcd60e51b815260206004820152603160248201527f45524337323155524953746f726167653a2055524920717565727920666f72206044820152703737b732bc34b9ba32b73a103a37b5b2b760791b60648201526084016200081a565b6000828152600b6020526040812080546200235390620038c0565b80601f01602080910402602001604051908101604052809291908181526020018280546200238190620038c0565b8015620023d25780601f10620023a657610100808354040283529160200191620023d2565b820191906000526020600020905b815481529060010190602001808311620023b457829003601f168201915b505050505090506000620023e562002bb9565b9050805160001415620023f9575092915050565b8151156200242e5780826040516020016200241692919062003c0e565b60405160208183030381529060405292505050919050565b62001cbf8462002bc9565b6000620006e1825490565b60008181526001830160205260408120546200248d57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155620006e1565b506000620006e1565b60006001600160e01b0319821663780e9d6360e01b1480620006e15750620006e18262002c9f565b6200095b83838362002cac565b60606000620024dc83600262003964565b620024e990600262003b28565b67ffffffffffffffff8111156200250457620025046200360b565b6040519080825280601f01601f1916602001820160405280156200252f576020820181803683370190505b509050600360fc1b816000815181106200254d576200254d62003a0e565b60200101906001600160f81b031916908160001a905350600f60fb1b816001815181106200257f576200257f62003a0e565b60200101906001600160f81b031916908160001a9053506000620025a584600262003964565b620025b290600162003b28565b90505b600181111562002634576f181899199a1a9b1b9c1cb0b131b232b360811b85600f1660108110620025ea57620025ea62003a0e565b1a60f81b82828151811062002603576200260362003a0e565b60200101906001600160f81b031916908160001a90535060049490941c936200262c8162003c41565b9050620025b5565b508315620014865760405162461bcd60e51b815260206004820181905260248201527f537472696e67733a20686578206c656e67746820696e73756666696369656e7460448201526064016200081a565b6200269182826200148d565b1562000b8c5760008281526003602090815260408083206001600160a01b0385168085529252808320805460ff1916905551339285917ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9190a45050565b600062001486836001600160a01b03841662002cb9565b620027118162002dbd565b600090815260026020526040812055565b6001600160a01b0382166200277a5760405162461bcd60e51b815260206004820181905260248201527f4552433732313a206d696e7420746f20746865207a65726f206164647265737360448201526064016200081a565b620027858162001b46565b15620027d45760405162461bcd60e51b815260206004820152601c60248201527f4552433732313a20746f6b656e20616c7265616479206d696e7465640000000060448201526064016200081a565b620027e260008383620024be565b6001600160a01b03821660009081526008602052604081208054600192906200280d90849062003b28565b909155505060008181526007602052604080822080546001600160a01b0319166001600160a01b03861690811790915590518392907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908290a45050565b600060158080549050444260156040516020016200288c9392919062003c5b565b6040516020818303038152906040528051906020012060001c620028b1919062003cad565b81548110620028c457620028c462003a0e565b6000918252602090912001546001600160a01b0316919050565b620028e98262001b46565b6200294e5760405162461bcd60e51b815260206004820152602e60248201527f45524337323155524953746f726167653a2055524920736574206f66206e6f6e60448201526d32bc34b9ba32b73a103a37b5b2b760911b60648201526084016200081a565b6000828152600b6020908152604090912082516200095b9284019062003381565b6127106001600160601b0382161115620029df5760405162461bcd60e51b815260206004820152602a60248201527f455243323938313a20726f79616c7479206665652077696c6c206578636565646044820152692073616c65507269636560b01b60648201526084016200081a565b6001600160a01b03821662002a375760405162461bcd60e51b815260206004820152601b60248201527f455243323938313a20496e76616c696420706172616d6574657273000000000060448201526064016200081a565b6040805180820182526001600160a01b0393841681526001600160601b0392831660208083019182526000968752600290529190942093519051909116600160a01b029116179055565b600082600001828154811062002a9b5762002a9b62003a0e565b9060005260206000200154905092915050565b60006001600160a01b0384163b1562002bae57604051630a85bd0160e11b81526001600160a01b0385169063150b7a029062002af590339089908890889060040162003cc4565b6020604051808303816000875af192505050801562002b33575060408051601f3d908101601f1916820190925262002b309181019062003d03565b60015b62002b93573d80801562002b64576040519150601f19603f3d011682016040523d82523d6000602084013e62002b69565b606091505b50805162002b8b5760405162461bcd60e51b81526004016200081a9062003bbc565b805181602001fd5b6001600160e01b031916630a85bd0160e11b14905062001cbf565b506001949350505050565b606062002bc562002e04565b5090565b606062002bd68262001b46565b62002c3c5760405162461bcd60e51b815260206004820152602f60248201527f4552433732314d657461646174613a2055524920717565727920666f72206e6f60448201526e3732bc34b9ba32b73a103a37b5b2b760891b60648201526084016200081a565b600062002c4862002bb9565b9050600081511162002c6a576040518060200160405280600081525062001486565b8062002c768462002e15565b60405160200162002c8992919062003c0e565b6040516020818303038152906040529392505050565b6000620006e18262002f2b565b6200095b83838362002f6f565b6000818152600183016020526040812054801562002db257600062002ce060018362003b0e565b855490915060009062002cf69060019062003b0e565b905081811462002d6257600086600001828154811062002d1a5762002d1a62003a0e565b906000526020600020015490508087600001848154811062002d405762002d4062003a0e565b6000918252602080832090910192909255918252600188019052604090208390555b855486908062002d765762002d7662003d23565b600190038181906000526020600020016000905590558560010160008681526020019081526020016000206000905560019350505050620006e1565b6000915050620006e1565b62002dc88162002fe5565b6000818152600b60205260409020805462002de390620038c0565b15905062000e36576000818152600b6020526040812062000e36916200341a565b6060601280546200072690620038c0565b60608162002e3a5750506040805180820190915260018152600360fc1b602082015290565b8160005b811562002e6a578062002e518162003af0565b915062002e629050600a836200399c565b915062002e3e565b60008167ffffffffffffffff81111562002e885762002e886200360b565b6040519080825280601f01601f19166020018201604052801562002eb3576020820181803683370190505b5090505b841562001cbf5762002ecb60018362003b0e565b915062002eda600a8662003cad565b62002ee790603062003b28565b60f81b81838151811062002eff5762002eff62003a0e565b60200101906001600160f81b031916908160001a90535062002f23600a866200399c565b945062002eb7565b60006001600160e01b031982166380ac58cd60e01b148062002f5d57506001600160e01b03198216635b5e139f60e01b145b80620006e15750620006e18262003094565b62002f7c838383620030bc565b60105460ff16156200095b5760405162461bcd60e51b815260206004820152602b60248201527f4552433732315061757361626c653a20746f6b656e207472616e73666572207760448201526a1a1a5b19481c185d5cd95960aa1b60648201526084016200081a565b600062002ff28262001121565b90506200300281600084620024be565b6200300f60008362001b63565b6001600160a01b03811660009081526008602052604081208054600192906200303a90849062003b0e565b909155505060008281526007602052604080822080546001600160a01b0319169055518391906001600160a01b038416907fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef908390a45050565b60006001600160e01b03198216635a05180f60e01b1480620006e15750620006e18262003180565b6001600160a01b0383166200311a576200311481600e80546000838152600f60205260408120829055600182018355919091527fbb7b4a454dc3493923482f07822329ed19e8244eff582cc204f8554c3620c3fd0155565b62003140565b816001600160a01b0316836001600160a01b0316146200314057620031408382620031a8565b6001600160a01b0382166200315a576200095b816200324a565b826001600160a01b0316826001600160a01b0316146200095b576200095b828262003304565b60006001600160e01b03198216637965db0b60e01b1480620006e15750620006e1826200334a565b60006001620031b7846200125e565b620031c3919062003b0e565b6000838152600d602052604090205490915080821462003217576001600160a01b0384166000908152600c602090815260408083208584528252808320548484528184208190558352600d90915290208190555b506000918252600d602090815260408084208490556001600160a01b039094168352600c81528383209183525290812055565b600e546000906200325e9060019062003b0e565b6000838152600f6020526040812054600e805493945090928490811062003289576200328962003a0e565b9060005260206000200154905080600e8381548110620032ad57620032ad62003a0e565b6000918252602080832090910192909255828152600f9091526040808220849055858252812055600e805480620032e857620032e862003d23565b6001900381819060005260206000200160009055905550505050565b600062003311836200125e565b6001600160a01b039093166000908152600c602090815260408083208684528252808320859055938252600d9052919091209190915550565b60006001600160e01b0319821663152a902d60e11b1480620006e157506301ffc9a760e01b6001600160e01b0319831614620006e1565b8280546200338f90620038c0565b90600052602060002090601f016020900481019282620033b35760008555620033fe565b82601f10620033ce57805160ff1916838001178555620033fe565b82800160010185558215620033fe579182015b82811115620033fe578251825591602001919060010190620033e1565b5062002bc592915062003454565b610ea18062003d3a83390190565b5080546200342890620038c0565b6000825580601f1062003439575050565b601f01602090049060005260206000209081019062000e3691905b5b8082111562002bc5576000815560010162003455565b6001600160e01b03198116811462000e3657600080fd5b6000602082840312156200349557600080fd5b813562001486816200346b565b60005b83811015620034bf578181015183820152602001620034a5565b838111156200150f5750506000910152565b60008151808452620034eb816020860160208601620034a2565b601f01601f19169290920160200192915050565b602081526000620014866020830184620034d1565b6000602082840312156200352757600080fd5b5035919050565b80356001600160a01b03811681146200354657600080fd5b919050565b600080604083850312156200355f57600080fd5b6200356a836200352e565b946020939093013593505050565b6000806000606084860312156200358e57600080fd5b62003599846200352e565b9250620035a9602085016200352e565b9150604084013590509250925092565b60008060408385031215620035cd57600080fd5b50508035926020909101359150565b60008060408385031215620035f057600080fd5b8235915062003602602084016200352e565b90509250929050565b634e487b7160e01b600052604160045260246000fd5b600067ffffffffffffffff808411156200363f576200363f6200360b565b604051601f8501601f19908116603f011681019082821181831017156200366a576200366a6200360b565b816040528093508581528686860111156200368457600080fd5b858560208301376000602087830101525050509392505050565b60008060408385031215620036b257600080fd5b620036bd836200352e565b9150602083013567ffffffffffffffff811115620036da57600080fd5b8301601f81018513620036ec57600080fd5b620036fd8582356020840162003621565b9150509250929050565b6000806000606084860312156200371d57600080fd5b62003728846200352e565b925062003738602085016200352e565b915062003748604085016200352e565b90509250925092565b6000602082840312156200376457600080fd5b62001486826200352e565b600080604083850312156200378357600080fd5b6200378e836200352e565b915060208301358015158114620037a457600080fd5b809150509250929050565b60008060008060808587031215620037c657600080fd5b620037d1856200352e565b9350620037e1602086016200352e565b925060408501359150606085013567ffffffffffffffff8111156200380557600080fd5b8501601f810187136200381757600080fd5b620038288782356020840162003621565b91505092959194509250565b600080604083850312156200384857600080fd5b62003853836200352e565b915062003602602084016200352e565b600080600080608085870312156200387a57600080fd5b62003885856200352e565b935062003895602086016200352e565b9250620038a5604086016200352e565b9150620038b5606086016200352e565b905092959194509250565b600181811c90821680620038d557607f821691505b60208210811415620038f757634e487b7160e01b600052602260045260246000fd5b50919050565b60208082526031908201527f4552433732313a207472616e736665722063616c6c6572206973206e6f74206f6040820152701ddb995c881b9bdc88185c1c1c9bdd9959607a1b606082015260800190565b634e487b7160e01b600052601160045260246000fd5b60008160001904831182151516156200398157620039816200394e565b500290565b634e487b7160e01b600052601260045260246000fd5b600082620039ae57620039ae62003986565b500490565b6020808252818101527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e6572604082015260600190565b6001600160a01b038316815260406020820181905260009062001cbf90830184620034d1565b634e487b7160e01b600052603260045260246000fd5b60208082526024908201527f42757474686f6c65733a2063616c6c6572206d75737420626520612062757474604082015263686f6c6560e01b606082015260800190565b604080825283519082018190526000906020906060840190828701845b8281101562003aac5781516001600160a01b03168452928401929084019060010162003a85565b5050508381038285015284518082528583019183019060005b8181101562003ae35783518352928401929184019160010162003ac5565b5090979650505050505050565b600060001982141562003b075762003b076200394e565b5060010190565b60008282101562003b235762003b236200394e565b500390565b6000821982111562003b3e5762003b3e6200394e565b500190565b7f416363657373436f6e74726f6c3a206163636f756e742000000000000000000081526000835162003b7d816017850160208801620034a2565b7001034b99036b4b9b9b4b733903937b6329607d1b601791840191820152835162003bb0816028840160208801620034a2565b01602801949350505050565b60208082526032908201527f4552433732313a207472616e7366657220746f206e6f6e20455243373231526560408201527131b2b4bb32b91034b6b83632b6b2b73a32b960711b606082015260800190565b6000835162003c22818460208801620034a2565b83519083019062003c38818360208801620034a2565b01949350505050565b60008162003c535762003c536200394e565b506000190190565b838152600060208481840152604083018454856000528260002060005b8281101562003c9f5781546001600160a01b03168452928401926001918201910162003c78565b509198975050505050505050565b60008262003cbf5762003cbf62003986565b500690565b6001600160a01b038581168252841660208201526040810183905260806060820181905260009062003cf990830184620034d1565b9695505050505050565b60006020828403121562003d1657600080fd5b815162001486816200346b565b634e487b7160e01b600052603160045260246000fdfe608060405260405162000ea138038062000ea18339810160408190526200002691620004f7565b8051825114620000bd576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152603060248201527f436865656b53707265616465723a2070617965657320616e642073686172657360448201527f206c656e677468206d69736d617463680000000000000000000000000000000060648201526084015b60405180910390fd5b60008251116200012a576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601860248201527f436865656b53707265616465723a206e6f2070617965657300000000000000006044820152606401620000b4565b60005b8251811015620001965762000181838281518110620001505762000150620005d5565b60200260200101518383815181106200016d576200016d620005d5565b60200260200101516200019f60201b60201c565b806200018d8162000633565b9150506200012d565b5050506200066c565b6001600160a01b03821662000237576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602a60248201527f436865656b53707265616465723a206163636f756e7420697320746865207a6560448201527f726f2061646472657373000000000000000000000000000000000000000000006064820152608401620000b4565b60008111620002a3576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601b60248201527f436865656b53707265616465723a2073686172657320617265203000000000006044820152606401620000b4565b6001600160a01b038216600090815260026020526040902054156200034b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152602960248201527f436865656b53707265616465723a206163636f756e7420616c7265616479206860448201527f61732073686172657300000000000000000000000000000000000000000000006064820152608401620000b4565b60048054600181019091557f8a35acfbc15ff81a39ae7d344fd709f28e8600b4aa8c65c6b64bfe7fe36bd19b0180546001600160a01b0319166001600160a01b038416908117909155600090815260026020526040812082905554620003b390829062000651565b600055604080516001600160a01b0384168152602081018390527f40c340f65e17194d14ddddb073d3c9f888e3cb52b5aae0c6c7706b4fbc905fac910160405180910390a15050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fd5b604051601f8201601f191681016001600160401b0381118282101715620004565762000456620003fc565b604052919050565b60006001600160401b038211156200047a576200047a620003fc565b5060051b60200190565b600082601f8301126200049657600080fd5b81516020620004af620004a9836200045e565b6200042b565b82815260059290921b84018101918181019086841115620004cf57600080fd5b8286015b84811015620004ec5780518352918301918301620004d3565b509695505050505050565b600080604083850312156200050b57600080fd5b82516001600160401b03808211156200052357600080fd5b818501915085601f8301126200053857600080fd5b815160206200054b620004a9836200045e565b82815260059290921b840181019181810190898411156200056b57600080fd5b948201945b83861015620005a25785516001600160a01b0381168114620005925760008081fd5b8252948201949082019062000570565b91880151919650909350505080821115620005bc57600080fd5b50620005cb8582860162000484565b9150509250929050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052603260045260246000fd5b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b60006000198214156200064a576200064a62000604565b5060010190565b6000821982111562000667576200066762000604565b500190565b610825806200067c6000396000f3fe60806040526004361061007f5760003560e01c80639852595c1161004e5780639852595c14610186578063ce7c2ac2146101bc578063d79779b2146101f2578063e33b7de31461022857600080fd5b80633a98ef39146100cd578063406072a9146100f15780635be7fde8146101375780638b83209b1461014e57600080fd5b366100c8577f6ef95f06320e7a25a04a175ca677b7052bdd97131872c2192525a629f51be77033604080516001600160a01b0390921682523460208301520160405180910390a1005b600080fd5b3480156100d957600080fd5b506000545b6040519081526020015b60405180910390f35b3480156100fd57600080fd5b506100de61010c3660046106c2565b6001600160a01b03918216600090815260066020908152604080832093909416825291909152205490565b34801561014357600080fd5b5061014c61023d565b005b34801561015a57600080fd5b5061016e6101693660046106fb565b61036e565b6040516001600160a01b0390911681526020016100e8565b34801561019257600080fd5b506100de6101a1366004610714565b6001600160a01b031660009081526003602052604090205490565b3480156101c857600080fd5b506100de6101d7366004610714565b6001600160a01b031660009081526002602052604090205490565b3480156101fe57600080fd5b506100de61020d366004610714565b6001600160a01b031660009081526005602052604090205490565b34801561023457600080fd5b506001546100de565b60005b60045481101561036b57600260006004838154811061026157610261610738565b60009182526020808320909101546001600160a01b0316835282019290925260400190205461028f57610359565b600061029a60015490565b6102a5903031610764565b9050600061031e600484815481106102bf576102bf610738565b9060005260206000200160009054906101000a90046001600160a01b031683610319600487815481106102f4576102f4610738565b60009182526020808320909101546001600160a01b0316825260039052604090205490565b61039e565b90508015610356576103566004848154811061033c5761033c610738565b6000918252602090912001546001600160a01b03166103e1565b50505b806103638161077c565b915050610240565b50565b60006004828154811061038357610383610738565b6000918252602090912001546001600160a01b031692915050565b600080546001600160a01b0385168252600260205260408220548391906103c59086610797565b6103cf91906107b6565b6103d991906107d8565b949350505050565b6001600160a01b0381166000908152600260205260409020546104575760405162461bcd60e51b8152602060048201526024808201527f436865656b53707265616465723a206163636f756e7420686173206e6f2073686044820152636172657360e01b60648201526084015b60405180910390fd5b600061046260015490565b61046d903031610764565b905060006104958383610319866001600160a01b031660009081526003602052604090205490565b9050806104f65760405162461bcd60e51b815260206004820152602960248201527f436865656b53707265616465723a206163636f756e74206973206e6f7420647560448201526819481c185e5b595b9d60ba1b606482015260840161044e565b6001600160a01b0383166000908152600360205260408120805483929061051e908490610764565b9250508190555080600160008282546105379190610764565b909155506105479050838261058e565b604080516001600160a01b0385168152602081018390527fdf20fd1e76bc69d672e4814fafb2c449bba3a5369d8359adf9e05e6fde87b056910160405180910390a1505050565b30318111156105df5760405162461bcd60e51b815260206004820152601d60248201527f416464726573733a20696e73756666696369656e742062616c616e6365000000604482015260640161044e565b6000826001600160a01b03168260405160006040518083038185875af1925050503d806000811461062c576040519150601f19603f3d011682016040523d82523d6000602084013e610631565b606091505b50509050806106a85760405162461bcd60e51b815260206004820152603a60248201527f416464726573733a20756e61626c6520746f2073656e642076616c75652c207260448201527f6563697069656e74206d61792068617665207265766572746564000000000000606482015260840161044e565b505050565b6001600160a01b038116811461036b57600080fd5b600080604083850312156106d557600080fd5b82356106e0816106ad565b915060208301356106f0816106ad565b809150509250929050565b60006020828403121561070d57600080fd5b5035919050565b60006020828403121561072657600080fd5b8135610731816106ad565b9392505050565b634e487b7160e01b600052603260045260246000fd5b634e487b7160e01b600052601160045260246000fd5b600082198211156107775761077761074e565b500190565b60006000198214156107905761079061074e565b5060010190565b60008160001904831182151516156107b1576107b161074e565b500290565b6000826107d357634e487b7160e01b600052601260045260246000fd5b500490565b6000828210156107ea576107ea61074e565b50039056fea2646970667358221220dabdae72bd4960b5045f12072912cb62fba0a06ef61af232757d40621623cda164736f6c634300080b0033a2646970667358221220dbe4c3d47c43d4d5e2e252a7c247b2914b07338477ada405d4313a213d87e4e764736f6c634300080b0033",
   "immutableReferences": {},
   "generatedSources": [
     {
@@ -21309,9 +23904,9 @@ module.exports={
       "name": "#utility.yul"
     }
   ],
-  "sourceMap": "479:5918:29:-:0;;;1110:99;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;1806:328:20;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;1197:8:29;1925:4:20;1931:6;921:32:4;940:12;:10;;;:12;;:::i;:::-;921:18;:32::i;:::-;1456:13:10;;;;:5;;:13;;;;;:::i;:::-;-1:-1:-1;1479:17:10;;;;:7;;:17;;;;;:::i;:::-;-1:-1:-1;;981:7:7;:15;;-1:-1:-1;;981:15:7;;;-1:-1:-1;1949:28:20;;::::1;::::0;:13:::1;::::0;:28:::1;::::0;::::1;::::0;::::1;:::i;:::-;-1:-1:-1::0;1988:44:20::1;2072:4:0;719:10:23::0;1988::20::1;:44::i;:::-;2043:37;1370:24;719:10:23::0;1988::20::1;:44::i;2043:37::-;2090;1438:24;719:10:23::0;1988::20::1;:44::i;2090:37::-;1806:328:::0;;;1110:99:29;479:5918;;640:96:23;719:10;;640:96::o;2270:187:4:-;2343:16;2362:6;;-1:-1:-1;;;;;2378:17:4;;;-1:-1:-1;;;;;;2378:17:4;;;;;;2410:40;;2362:6;;;;;;;2410:40;;2343:16;2410:40;2333:124;2270:187;:::o;6257:110:0:-;6335:25;6346:4;6352:7;6335:10;:25::i;:::-;6257:110;;:::o;1978:166:1:-;2065:31;2082:4;2088:7;2065:16;;;;;:31;;:::i;:::-;2106:18;;;;:12;:18;;;;;;;;:31;;2129:7;;2106:22;;;;;:31;;:::i;:::-;;1978:166;;:::o;6861:233:0:-;2995:4;3018:12;;;:6;:12;;;;;;;;-1:-1:-1;;;;;3018:29:0;;;;;;;;;;;;6939:149;;6982:12;;;;:6;:12;;;;;;;;-1:-1:-1;;;;;6982:29:0;;;;;;;;;:36;;-1:-1:-1;;6982:36:0;7014:4;6982:36;;;7064:12;719:10:23;;640:96;7064:12:0;-1:-1:-1;;;;;7037:40:0;7055:7;-1:-1:-1;;;;;7037:40:0;7049:4;7037:40;;;;;;;;;;6861:233;;:::o;7612:150:28:-;7682:4;7705:50;7710:3;-1:-1:-1;;;;;7730:23:28;;7705:4;:50::i;:::-;7698:57;;7612:150;;;;;:::o;1697:404::-;1760:4;3834:19;;;:12;;;:19;;;;;;1776:319;;-1:-1:-1;1818:23:28;;;;;;;;:11;:23;;;;;;;;;;;;;1998:18;;1976:19;;;:12;;;:19;;;;;;:40;;;;2030:11;;1776:319;-1:-1:-1;2079:5:28;2072:12;;479:5918:29;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;479:5918:29;;;-1:-1:-1;479:5918:29;:::i;:::-;;;:::o;:::-;;;;;;;;;;;;;;;14:184:32;66:77;63:1;56:88;163:4;160:1;153:15;187:4;184:1;177:15;203:1087;283:6;314:2;357;345:9;336:7;332:23;328:32;325:52;;;373:1;370;363:12;325:52;400:16;;-1:-1:-1;;;;;465:14:32;;;462:34;;;492:1;489;482:12;462:34;530:6;519:9;515:22;505:32;;575:7;568:4;564:2;560:13;556:27;546:55;;597:1;594;587:12;546:55;626:2;620:9;648:2;644;641:10;638:36;;;654:18;;:::i;:::-;729:2;723:9;697:2;783:13;;-1:-1:-1;;779:22:32;;;803:2;775:31;771:40;759:53;;;827:18;;;847:22;;;824:46;821:72;;;873:18;;:::i;:::-;913:10;909:2;902:22;948:2;940:6;933:18;988:7;983:2;978;974;970:11;966:20;963:33;960:53;;;1009:1;1006;999:12;960:53;1031:1;1022:10;;1041:129;1055:2;1052:1;1049:9;1041:129;;;1143:10;;;1139:19;;1133:26;1112:14;;;1108:23;;1101:59;1066:10;;;;1041:129;;;1188:2;1185:1;1182:9;1179:80;;;1247:1;1242:2;1237;1229:6;1225:15;1221:24;1214:35;1179:80;1278:6;203:1087;-1:-1:-1;;;;;;;;203:1087:32:o;1295:437::-;1374:1;1370:12;;;;1417;;;1438:61;;1492:4;1484:6;1480:17;1470:27;;1438:61;1545:2;1537:6;1534:14;1514:18;1511:38;1508:218;;;1582:77;1579:1;1572:88;1683:4;1680:1;1673:15;1711:4;1708:1;1701:15;1508:218;;1295:437;;;:::o;:::-;479:5918:29;;;;;;",
-  "deployedSourceMap": "479:5918:29:-:0;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;3045:200;;;;;;:::i;:::-;;:::i;:::-;;;565:14:32;;558:22;540:41;;528:2;513:18;3045:200:29;;;;;;;;1370:76;;;:::i;:::-;;2488:98:10;;;:::i;:::-;;;;;;;:::i;3999:217::-;;;;;;:::i;:::-;;:::i;:::-;;;-1:-1:-1;;;;;1692:32:32;;;1674:51;;1662:2;1647:18;3999:217:10;1528:203:32;3537:401:10;;;;;;:::i;:::-;;:::i;1615:111:14:-;1702:10;:17;1615:111;;;2319:25:32;;;2307:2;2292:18;1615:111:14;2173:177:32;4726:330:10;;;;;;:::i;:::-;;:::i;4008:129:0:-;;;;;;:::i;:::-;4082:7;4108:12;;;:6;:12;;;;;:22;;;;4008:129;1671:478:21;;;;;;:::i;:::-;;:::i;:::-;;;;-1:-1:-1;;;;;3500:32:32;;;3482:51;;3564:2;3549:18;;3542:34;;;;3455:18;1671:478:21;3308:274:32;4387:145:0;;;;;;:::i;:::-;;:::i;1291:253:14:-;;;;;;:::i;:::-;;:::i;5404:214:0:-;;;;;;:::i;:::-;;:::i;3744:374:29:-;;;;;;:::i;:::-;;:::i;3615:182:20:-;;;:::i;5122:179:10:-;;;;;;:::i;:::-;;:::i;529:241:13:-;;;;;;:::i;:::-;;:::i;1798:230:14:-;;;;;;:::i;:::-;;:::i;1098:84:7:-;1168:7;;;;1098:84;;4211:548:29;;;;;;:::i;:::-;;:::i;975:41::-;;1013:3;975:41;;;;;-1:-1:-1;;;;;5646:39:32;;;5628:58;;5616:2;5601:18;975:41:29;5484:208:32;2191:235:10;;;;;;:::i;:::-;;:::i;2627:400:20:-;;;;;;:::i;:::-;;:::i;1929:205:10:-;;;;;;:::i;:::-;;:::i;1668:101:4:-;;;:::i;782:43:29:-;;;;;;:::i;:::-;;;;;;;;;;;;;;;;708;;;;;;:::i;:::-;;:::i;3231:176:20:-;;;:::i;1036:85:4:-;1082:7;1108:6;-1:-1:-1;;;;;1108:6:4;1036:85;;1431:151:1;;;;;;:::i;:::-;;:::i;2909:145:0:-;;;;;;:::i;:::-;;:::i;2650:102:10:-;;;:::i;2027:49:0:-;;2072:4;2027:49;;4283:153:10;;;;;;:::i;:::-;;:::i;5367:320::-;;;;;;:::i;:::-;;:::i;5962:432:29:-;;;:::i;3329:155::-;;;;;;:::i;:::-;;:::i;1750:140:1:-;;;;;;:::i;:::-;;:::i;1332:62:20:-;;1370:24;1332:62;;4766:147:0;;;;;;:::i;:::-;;:::i;1400:62:20:-;;1438:24;1400:62;;4502:162:10;;;;;;:::i;:::-;-1:-1:-1;;;;;4622:25:10;;;4599:4;4622:25;;;:18;:25;;;;;;;;:35;;;;;;;;;;;;;;;4502:162;1918:198:4;;;;;;:::i;:::-;;:::i;4874:701:29:-;;;;;;:::i;:::-;;:::i;3045:200::-;3185:4;3204:36;3228:11;3204:23;:36::i;:::-;3197:43;3045:200;-1:-1:-1;;3045:200:29:o;1370:76::-;1404:37;1370:24:20;719:10:23;1404::29;:37::i;:::-;1370:76::o;2488:98:10:-;2542:13;2574:5;2567:12;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;2488:98;:::o;3999:217::-;4075:7;4102:16;4110:7;4102;:16::i;:::-;4094:73;;;;-1:-1:-1;;;4094:73:10;;8431:2:32;4094:73:10;;;8413:21:32;8470:2;8450:18;;;8443:30;8509:34;8489:18;;;8482:62;-1:-1:-1;;;8560:18:32;;;8553:42;8612:19;;4094:73:10;;;;;;;;;-1:-1:-1;4185:24:10;;;;:15;:24;;;;;;-1:-1:-1;;;;;4185:24:10;;3999:217::o;3537:401::-;3617:13;3633:23;3648:7;3633:14;:23::i;:::-;3617:39;;3680:5;-1:-1:-1;;;;;3674:11:10;:2;-1:-1:-1;;;;;3674:11:10;;;3666:57;;;;-1:-1:-1;;;3666:57:10;;8844:2:32;3666:57:10;;;8826:21:32;8883:2;8863:18;;;8856:30;8922:34;8902:18;;;8895:62;-1:-1:-1;;;8973:18:32;;;8966:31;9014:19;;3666:57:10;8642:397:32;3666:57:10;719:10:23;-1:-1:-1;;;;;3755:21:10;;;;:62;;-1:-1:-1;3780:37:10;3797:5;719:10:23;4502:162:10;:::i;3780:37::-;3734:165;;;;-1:-1:-1;;;3734:165:10;;9246:2:32;3734:165:10;;;9228:21:32;9285:2;9265:18;;;9258:30;9324:34;9304:18;;;9297:62;9395:26;9375:18;;;9368:54;9439:19;;3734:165:10;9044:420:32;3734:165:10;3910:21;3919:2;3923:7;3910:8;:21::i;:::-;3607:331;3537:401;;:::o;4726:330::-;4915:41;719:10:23;4934:12:10;4948:7;4915:18;:41::i;:::-;4907:103;;;;-1:-1:-1;;;4907:103:10;;;;;;;:::i;:::-;5021:28;5031:4;5037:2;5041:7;5021:9;:28::i;1671:478:21:-;1810:7;1871:27;;;:17;:27;;;;;;;;1842:56;;;;;;;;;-1:-1:-1;;;;;1842:56:21;;;;;-1:-1:-1;;;1842:56:21;;;-1:-1:-1;;;;;1842:56:21;;;;;;;;1810:7;;1909:90;;-1:-1:-1;1959:29:21;;;;;;;;;1969:19;1959:29;-1:-1:-1;;;;;1959:29:21;;;;-1:-1:-1;;;1959:29:21;;-1:-1:-1;;;;;1959:29:21;;;;;1909:90;2047:23;;;;2009:21;;2507:5;;2034:36;;-1:-1:-1;;;;;2034:36:21;:10;:36;:::i;:::-;2033:58;;;;:::i;:::-;2110:16;;;;;-1:-1:-1;1671:478:21;;-1:-1:-1;;;;1671:478:21:o;4387:145:0:-;4082:7;4108:12;;;:6;:12;;;;;:22;;;2505:30;2516:4;719:10:23;2505::0;:30::i;:::-;4500:25:::1;4511:4;4517:7;4500:10;:25::i;1291:253:14:-:0;1388:7;1423:23;1440:5;1423:16;:23::i;:::-;1415:5;:31;1407:87;;;;-1:-1:-1;;;1407:87:14;;10651:2:32;1407:87:14;;;10633:21:32;10690:2;10670:18;;;10663:30;10729:34;10709:18;;;10702:62;-1:-1:-1;;;10780:18:32;;;10773:41;10831:19;;1407:87:14;10449:407:32;1407:87:14;-1:-1:-1;;;;;;1511:19:14;;;;;;;;:12;:19;;;;;;;;:26;;;;;;;;;1291:253::o;5404:214:0:-;-1:-1:-1;;;;;5499:23:0;;719:10:23;5499:23:0;5491:83;;;;-1:-1:-1;;;5491:83:0;;11063:2:32;5491:83:0;;;11045:21:32;11102:2;11082:18;;;11075:30;11141:34;11121:18;;;11114:62;-1:-1:-1;;;11192:18:32;;;11185:45;11247:19;;5491:83:0;10861:411:32;5491:83:0;5585:26;5597:4;5603:7;5585:11;:26::i;:::-;5404:214;;:::o;3744:374:29:-;1082:7:4;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;-1:-1:-1;;;;;3843:24:29;::::1;;::::0;;;:11:::1;:24;::::0;;;;;::::1;;3842:25;3834:71;;;::::0;-1:-1:-1;;;3834:71:29;;11840:2:32;3834:71:29::1;::::0;::::1;11822:21:32::0;11879:2;11859:18;;;11852:30;11918:34;11898:18;;;11891:62;-1:-1:-1;;;11969:18:32;;;11962:31;12010:19;;3834:71:29::1;11638:397:32::0;3834:71:29::1;-1:-1:-1::0;;;;;3911:24:29;::::1;;::::0;;;:11:::1;:24;::::0;;;;;;;:31;;-1:-1:-1;;3911:31:29::1;3938:4;3911:31:::0;;::::1;::::0;;;3948:14:::1;:32:::0;;;;::::1;::::0;;;::::1;::::0;;-1:-1:-1;;;;;;3948:32:29::1;::::0;::::1;::::0;;3986:22;;;:9:::1;:22:::0;;;;;:34;;::::1;::::0;;::::1;::::0;::::1;:::i;:::-;;4081:32;4090:11;4103:9;4081:32;;;;;;;:::i;:::-;;;;;;;;3744:374:::0;;:::o;3615:182:20:-;3667:34;1438:24;719:10:23;2909:145:0;:::i;3667:34:20:-;3659:111;;;;;-1:-1:-1;;;3659:111:20;;12564:2:32;3659:111:20;;;12546:21:32;12583:18;;;12576:30;;;;12642:34;12622:18;;;12615:62;12713:34;12693:18;;;12686:62;12765:19;;3659:111:20;12362:428:32;3659:111:20;3780:10;:8;:10::i;5122:179:10:-;5255:39;5272:4;5278:2;5282:7;5255:39;;;;;;;;;;;;:16;:39::i;529:241:13:-;645:41;719:10:23;664:12:13;640:96:23;645:41:13;637:102;;;;-1:-1:-1;;;637:102:13;;12997:2:32;637:102:13;;;12979:21:32;13036:2;13016:18;;;13009:30;13075:34;13055:18;;;13048:62;-1:-1:-1;;;13126:18:32;;;13119:46;13182:19;;637:102:13;12795:412:32;637:102:13;749:14;755:7;749:5;:14::i;:::-;529:241;:::o;1798:230:14:-;1873:7;1908:30;1702:10;:17;;1615:111;1908:30;1900:5;:38;1892:95;;;;-1:-1:-1;;;1892:95:14;;13414:2:32;1892:95:14;;;13396:21:32;13453:2;13433:18;;;13426:30;13492:34;13472:18;;;13465:62;-1:-1:-1;;;13543:18:32;;;13536:42;13595:19;;1892:95:14;13212:408:32;1892:95:14;2004:10;2015:5;2004:17;;;;;;;;:::i;:::-;;;;;;;;;1997:24;;1798:230;;;:::o;4211:548:29:-;719:10:23;4309:25:29;;;;:11;:25;;;;;;;;4301:74;;;;-1:-1:-1;;;4301:74:29;;;;;;;:::i;:::-;4407:16;;;4421:1;4407:16;;;;;;;;;4381:23;;4407:16;;;;;;;;;;-1:-1:-1;;4381:42:29;-1:-1:-1;719:10:23;4429:6:29;4436:1;4429:9;;;;;;;;:::i;:::-;;;;;;:24;-1:-1:-1;;;;;4429:24:29;;;-1:-1:-1;;;;;4429:24:29;;;;;4471:6;4459;4466:1;4459:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1;;;;;4459:18:29;;;-1:-1:-1;;;;;4459:18:29;;;;;4495:6;4483;4490:1;4483:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1;;;;;4483:18:29;;;-1:-1:-1;;;;;4483:18:29;;;;;4519:6;4507;4514:1;4507:9;;;;;;;;:::i;:::-;-1:-1:-1;;;;;4507:18:29;;;;:9;;;;;;;;;;:18;4557:16;;;4571:1;4557:16;;;;;;;;;4531:23;;4557:16;;4571:1;4557:16;;;;;;;;;-1:-1:-1;4557:16:29;4531:42;;4591:2;4579:6;4586:1;4579:9;;;;;;;;:::i;:::-;;;;;;:14;;;;;4611:1;4599:6;4606:1;4599:9;;;;;;;;:::i;:::-;;;;;;:13;;;;;4630:1;4618:6;4625:1;4618:9;;;;;;;;:::i;:::-;;;;;;:13;;;;;4649:1;4637:6;4644:1;4637:9;;;;;;;;:::i;:::-;;;;;;:13;;;;;4656:15;4692:6;4700;4674:33;;;;;:::i;:::-;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;719:10:23;4713:28:29;;;;:14;:28;;;;;:41;;-1:-1:-1;;;;;;4713:41:29;-1:-1:-1;;;;;4713:41:29;;;;;;;;;;-1:-1:-1;;;;;;4211:548:29:o;2191:235:10:-;2263:7;2298:16;;;:7;:16;;;;;;-1:-1:-1;;;;;2298:16:10;2332:19;2324:73;;;;-1:-1:-1;;;2324:73:10;;15547:2:32;2324:73:10;;;15529:21:32;15586:2;15566:18;;;15559:30;15625:34;15605:18;;;15598:62;-1:-1:-1;;;15676:18:32;;;15669:39;15725:19;;2324:73:10;15345:405:32;2627:400:20;2686:34;1370:24;719:10:23;2909:145:0;:::i;2686:34:20:-;2678:108;;;;-1:-1:-1;;;2678:108:20;;15957:2:32;2678:108:20;;;15939:21:32;15996:2;15976:18;;;15969:30;16035:34;16015:18;;;16008:62;16106:31;16086:18;;;16079:59;16155:19;;2678:108:20;15755:425:32;2678:108:20;2947:36;2953:2;2957:25;:15;918:14:24;;827:112;2957:25:20;2947:5;:36::i;:::-;2993:27;:15;1032:19:24;;1050:1;1032:19;;;945:123;1929:205:10;2001:7;-1:-1:-1;;;;;2028:19:10;;2020:74;;;;-1:-1:-1;;;2020:74:10;;16387:2:32;2020:74:10;;;16369:21:32;16426:2;16406:18;;;16399:30;16465:34;16445:18;;;16438:62;-1:-1:-1;;;16516:18:32;;;16509:40;16566:19;;2020:74:10;16185:406:32;2020:74:10;-1:-1:-1;;;;;;2111:16:10;;;;;:9;:16;;;;;;;1929:205::o;1668:101:4:-;1082:7;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;1732:30:::1;1759:1;1732:18;:30::i;708:43:29:-:0;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::o;3231:176:20:-;3281:34;1438:24;719:10:23;2909:145:0;:::i;3281:34:20:-;3273:109;;;;-1:-1:-1;;;3273:109:20;;16798:2:32;3273:109:20;;;16780:21:32;16837:2;16817:18;;;16810:30;16876:34;16856:18;;;16849:62;16947:32;16927:18;;;16920:60;16997:19;;3273:109:20;16596:426:32;3273:109:20;3392:8;:6;:8::i;1431:151:1:-;1521:7;1547:18;;;:12;:18;;;;;:28;;1569:5;1547:21;:28::i;:::-;1540:35;1431:151;-1:-1:-1;;;1431:151:1:o;2909:145:0:-;2995:4;3018:12;;;:6;:12;;;;;;;;-1:-1:-1;;;;;3018:29:0;;;;;;;;;;;;;;;2909:145::o;2650:102:10:-;2706:13;2738:7;2731:14;;;;;:::i;4283:153::-;4377:52;719:10:23;4410:8:10;4420;4377:18;:52::i;5367:320::-;5536:41;719:10:23;5569:7:10;5536:18;:41::i;:::-;5528:103;;;;-1:-1:-1;;;5528:103:10;;;;;;;:::i;:::-;5641:39;5655:4;5661:2;5665:7;5674:5;5641:13;:39::i;:::-;5367:320;;;;:::o;5962:432:29:-;719:10:23;6011:25:29;;;;:11;:25;;;;;;;;6003:74;;;;-1:-1:-1;;;6003:74:29;;;;;;;:::i;:::-;719:10:23;6090:23:29;;;;:9;:23;;;;;6083:30;;;:::i;:::-;719:10:23;6126:28:29;;;;:14;:28;;;;;;;;6119:35;;-1:-1:-1;;;;;;6119:35:29;;;6160:11;:25;;;;;:33;;-1:-1:-1;;6160:33:29;;;6234:120;6250:14;:21;6248:23;;6234:120;;;719:10:23;-1:-1:-1;;;;;6287:33:29;:14;6302:1;6287:17;;;;;;;;:::i;:::-;;;;;;;;;;;-1:-1:-1;;;;;6287:17:29;:33;6283:71;;;6337:14;6352:1;6337:17;;;;;;;;:::i;:::-;;;;;;;;;;6330:24;;-1:-1:-1;;;;;;6330:24:29;;;6283:71;6272:3;;;;:::i;:::-;;;;6234:120;;;-1:-1:-1;6365:24:29;719:10:23;6376:12:29;6365:24;;-1:-1:-1;;;;;1692:32:32;;;1674:51;;1662:2;1647:18;6365:24:29;;;;;;;5962:432::o;3329:155::-;3428:13;3456:23;3471:7;3456:14;:23::i;1750:140:1:-;1830:7;1856:18;;;:12;:18;;;;;:27;;:25;:27::i;4766:147:0:-;4082:7;4108:12;;;:6;:12;;;;;:22;;;2505:30;2516:4;719:10:23;2505::0;:30::i;:::-;4880:26:::1;4892:4;4898:7;4880:11;:26::i;1918:198:4:-:0;1082:7;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;-1:-1:-1;;;;;2006:22:4;::::1;1998:73;;;::::0;-1:-1:-1;;;1998:73:4;;17369:2:32;1998:73:4::1;::::0;::::1;17351:21:32::0;17408:2;17388:18;;;17381:30;17447:34;17427:18;;;17420:62;-1:-1:-1;;;17498:18:32;;;17491:36;17544:19;;1998:73:4::1;17167:402:32::0;1998:73:4::1;2081:28;2100:8;2081:18;:28::i;4874:701:29:-:0;1082:7:4;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;-1:-1:-1;;;;;5007:28:29;::::1;;::::0;;;:11:::1;:28;::::0;;;;;::::1;;4999:78;;;::::0;-1:-1:-1;;;4999:78:29;;17776:2:32;4999:78:29::1;::::0;::::1;17758:21:32::0;17815:2;17795:18;;;17788:30;17854:34;17834:18;;;17827:62;-1:-1:-1;;;17905:18:32;;;17898:35;17950:19;;4999:78:29::1;17574:401:32::0;4999:78:29::1;-1:-1:-1::0;;;;;5091:31:29;;::::1;5134:3;5091:31:::0;;;:14:::1;:31;::::0;;;;;::::1;:47:::0;5083:102:::1;;;::::0;-1:-1:-1;;;5083:102:29;;18182:2:32;5083:102:29::1;::::0;::::1;18164:21:32::0;18221:2;18201:18;;;18194:30;18260:34;18240:18;;;18233:62;-1:-1:-1;;;18311:18:32;;;18304:40;18361:19;;5083:102:29::1;17980:406:32::0;5083:102:29::1;5217:16;::::0;;5231:1:::1;5217:16:::0;;;;;::::1;::::0;;;5191:23:::1;::::0;5217:16:::1;::::0;::::1;::::0;;::::1;::::0;::::1;;::::0;-1:-1:-1;5217:16:29::1;5191:42;;5251:15;5239:6;5246:1;5239:9;;;;;;;;:::i;:::-;;;;;;:27;-1:-1:-1::0;;;;;5239:27:29::1;;;-1:-1:-1::0;;;;;5239:27:29::1;;;::::0;::::1;5284:6;5272;5279:1;5272:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1::0;;;;;5272:18:29::1;;;-1:-1:-1::0;;;;;5272:18:29::1;;;::::0;::::1;5308:6;5296;5303:1;5296:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1::0;;;;;5296:18:29::1;;;-1:-1:-1::0;;;;;5296:18:29::1;;;::::0;::::1;5332:6;5320;5327:1;5320:9;;;;;;;;:::i;:::-;-1:-1:-1::0;;;;;5320:18:29;;;::::1;:9;::::0;;::::1;::::0;;;;;;:18;5370:16:::1;::::0;;5384:1:::1;5370:16:::0;;;;;::::1;::::0;;;5344:23:::1;::::0;5370:16;;5384:1;5370:16;::::1;::::0;;::::1;::::0;::::1;;::::0;-1:-1:-1;5370:16:29::1;5344:42;;5404:2;5392:6;5399:1;5392:9;;;;;;;;:::i;:::-;;;;;;:14;;;::::0;::::1;5424:1;5412:6;5419:1;5412:9;;;;;;;;:::i;:::-;;;;;;:13;;;::::0;::::1;5443:1;5431:6;5438:1;5431:9;;;;;;;;:::i;:::-;;;;;;:13;;;::::0;::::1;5462:1;5450:6;5457:1;5450:9;;;;;;;;:::i;:::-;;;;;;:13;;;::::0;::::1;5469:15;5505:6;5513;5487:33;;;;;:::i;:::-;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;::::0;::::1;;;;;-1:-1:-1::0;;;;;;5526:31:29;;::::1;;::::0;;;:14:::1;:31;::::0;;;;:44;;-1:-1:-1;;;;;;5526:44:29::1;::::0;;;::::1;;::::0;;;-1:-1:-1;;;;;;4874:701:29:o;6861:233:0:-;6944:22;6952:4;6958:7;6944;:22::i;:::-;6939:149;;6982:12;;;;:6;:12;;;;;;;;-1:-1:-1;;;;;6982:29:0;;;;;;;;;:36;;-1:-1:-1;;6982:36:0;7014:4;6982:36;;;7064:12;719:10:23;;640:96;7064:12:0;-1:-1:-1;;;;;7037:40:0;7055:7;-1:-1:-1;;;;;7037:40:0;7049:4;7037:40;;;;;;;;;;6861:233;;:::o;7612:150:28:-;7682:4;7705:50;7710:3;-1:-1:-1;;;;;7730:23:28;;7705:4;:50::i;4103:246:20:-;4279:4;4306:36;4330:11;4306:23;:36::i;6257:110:0:-;6335:25;6346:4;6352:7;6335:10;:25::i;7159:125:10:-;7224:4;7247:16;;;:7;:16;;;;;;-1:-1:-1;;;;;7247:16:10;:30;;;7159:125::o;11168:171::-;11242:24;;;;:15;:24;;;;;:29;;-1:-1:-1;;;;;;11242:29:10;-1:-1:-1;;;;;11242:29:10;;;;;;;;:24;;11295:23;11242:24;11295:14;:23::i;:::-;-1:-1:-1;;;;;11286:46:10;;;;;;;;;;;11168:171;;:::o;7442:344::-;7535:4;7559:16;7567:7;7559;:16::i;:::-;7551:73;;;;-1:-1:-1;;;7551:73:10;;18593:2:32;7551:73:10;;;18575:21:32;18632:2;18612:18;;;18605:30;18671:34;18651:18;;;18644:62;-1:-1:-1;;;18722:18:32;;;18715:42;18774:19;;7551:73:10;18391:408:32;7551:73:10;7634:13;7650:23;7665:7;7650:14;:23::i;:::-;7634:39;;7702:5;-1:-1:-1;;;;;7691:16:10;:7;-1:-1:-1;;;;;7691:16:10;;:51;;;;7735:7;-1:-1:-1;;;;;7711:31:10;:20;7723:7;7711:11;:20::i;:::-;-1:-1:-1;;;;;7711:31:10;;7691:51;:87;;;-1:-1:-1;;;;;;4622:25:10;;;4599:4;4622:25;;;:18;:25;;;;;;;;:35;;;;;;;;;;;;7746:32;7683:96;7442:344;-1:-1:-1;;;;7442:344:10:o;10452:605::-;10606:4;-1:-1:-1;;;;;10579:31:10;:23;10594:7;10579:14;:23::i;:::-;-1:-1:-1;;;;;10579:31:10;;10571:81;;;;-1:-1:-1;;;10571:81:10;;19006:2:32;10571:81:10;;;18988:21:32;19045:2;19025:18;;;19018:30;19084:34;19064:18;;;19057:62;-1:-1:-1;;;19135:18:32;;;19128:35;19180:19;;10571:81:10;18804:401:32;10571:81:10;-1:-1:-1;;;;;10670:16:10;;10662:65;;;;-1:-1:-1;;;10662:65:10;;19412:2:32;10662:65:10;;;19394:21:32;19451:2;19431:18;;;19424:30;19490:34;19470:18;;;19463:62;-1:-1:-1;;;19541:18:32;;;19534:34;19585:19;;10662:65:10;19210:400:32;10662:65:10;10738:39;10759:4;10765:2;10769:7;10738:20;:39::i;:::-;10839:29;10856:1;10860:7;10839:8;:29::i;:::-;-1:-1:-1;;;;;10879:15:10;;;;;;:9;:15;;;;;:20;;10898:1;;10879:15;:20;;10898:1;;10879:20;:::i;:::-;;;;-1:-1:-1;;;;;;;10909:13:10;;;;;;:9;:13;;;;;:18;;10926:1;;10909:13;:18;;10926:1;;10909:18;:::i;:::-;;;;-1:-1:-1;;10937:16:10;;;;:7;:16;;;;;;:21;;-1:-1:-1;;;;;;10937:21:10;-1:-1:-1;;;;;10937:21:10;;;;;;;;;10974:27;;10937:16;;10974:27;;;;;;;3607:331;3537:401;;:::o;3335:492:0:-;3423:22;3431:4;3437:7;3423;:22::i;:::-;3418:403;;3606:41;3634:7;-1:-1:-1;;;;;3606:41:0;3644:2;3606:19;:41::i;:::-;3718:38;3746:4;3753:2;3718:19;:38::i;:::-;3513:265;;;;;;;;;:::i;:::-;;;;-1:-1:-1;;3513:265:0;;;;;;;;;;-1:-1:-1;;;3461:349:0;;;;;;;:::i;1978:166:1:-;2065:31;2082:4;2088:7;2065:16;:31::i;:::-;2106:18;;;;:12;:18;;;;;:31;;2129:7;2106:22;:31::i;2233:171::-;2321:32;2339:4;2345:7;2321:17;:32::i;:::-;2363:18;;;;:12;:18;;;;;:34;;2389:7;2363:25;:34::i;2110:117:7:-;1168:7;;;;1669:41;;;;-1:-1:-1;;;1669:41:7;;20871:2:32;1669:41:7;;;20853:21:32;20910:2;20890:18;;;20883:30;-1:-1:-1;;;20929:18:32;;;20922:50;20989:18;;1669:41:7;20669:344:32;1669:41:7;2168:7:::1;:15:::0;;-1:-1:-1;;2168:15:7::1;::::0;;2198:22:::1;719:10:23::0;2207:12:7::1;640:96:23::0;2242:130:29;2347:20;2359:7;2347:11;:20::i;2433:553::-;2517:24;2529:2;2533:7;2517:11;:24::i;:::-;2585:21;2609:14;:12;:14::i;:::-;-1:-1:-1;;;;;2707:24:29;;;;;;:9;:24;;;;;2685:47;;2585:38;;-1:-1:-1;2685:47:29;;2698:7;;2707:24;2685:47;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:12;:47::i;:::-;-1:-1:-1;;;;;2825:29:29;;;2864:3;2825:29;;;:14;:29;;;;;;;:43;2821:100;;-1:-1:-1;;;;;2892:29:29;;;;;;;:14;:29;;;;;;;2821:100;2927:54;2944:7;2953:13;1013:3;2927:16;:54::i;2270:187:4:-;2343:16;2362:6;;-1:-1:-1;;;;;2378:17:4;;;-1:-1:-1;;;;;;2378:17:4;;;;;;2410:40;;2362:6;;;;;;;2410:40;;2343:16;2410:40;2333:124;2270:187;:::o;1863:115:7:-;1168:7;;;;1411:9;1403:38;;;;-1:-1:-1;;;1403:38:7;;21220:2:32;1403:38:7;;;21202:21:32;21259:2;21239:18;;;21232:30;-1:-1:-1;;;21278:18:32;;;21271:46;21334:18;;1403:38:7;21018:340:32;1403:38:7;1922:7:::1;:14:::0;;-1:-1:-1;;1922:14:7::1;1932:4;1922:14;::::0;;1951:20:::1;1958:12;719:10:23::0;;640:96;8870:156:28;8944:7;8994:22;8998:3;9010:5;8994:3;:22::i;11474:307:10:-;11624:8;-1:-1:-1;;;;;11615:17:10;:5;-1:-1:-1;;;;;11615:17:10;;;11607:55;;;;-1:-1:-1;;;11607:55:10;;21565:2:32;11607:55:10;;;21547:21:32;21604:2;21584:18;;;21577:30;21643:27;21623:18;;;21616:55;21688:18;;11607:55:10;21363:349:32;11607:55:10;-1:-1:-1;;;;;11672:25:10;;;;;;;:18;:25;;;;;;;;:35;;;;;;;;;;;;;:46;;-1:-1:-1;;11672:46:10;;;;;;;;;;11733:41;;540::32;;;11733::10;;513:18:32;11733:41:10;;;;;;;11474:307;;;:::o;6549:::-;6700:28;6710:4;6716:2;6720:7;6700:9;:28::i;:::-;6746:48;6769:4;6775:2;6779:7;6788:5;6746:22;:48::i;:::-;6738:111;;;;-1:-1:-1;;;6738:111:10;;;;;;;:::i;467:663:17:-;540:13;573:16;581:7;573;:16::i;:::-;565:78;;;;-1:-1:-1;;;565:78:17;;22338:2:32;565:78:17;;;22320:21:32;22377:2;22357:18;;;22350:30;22416:34;22396:18;;;22389:62;-1:-1:-1;;;22467:18:32;;;22460:47;22524:19;;565:78:17;22136:413:32;565:78:17;654:23;680:19;;;:10;:19;;;;;654:45;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;709:18;730:10;:8;:10::i;:::-;709:31;;819:4;813:18;835:1;813:23;809:70;;;-1:-1:-1;859:9:17;467:663;-1:-1:-1;;467:663:17:o;809:70::-;981:23;;:27;977:106;;1055:4;1061:9;1038:33;;;;;;;;;:::i;:::-;;;;;;;;;;;;;1024:48;;;;467:663;;;:::o;977:106::-;1100:23;1115:7;1100:14;:23::i;8413:115:28:-;8476:7;8502:19;8510:3;4028:18;;3946:107;1697:404;1760:4;3834:19;;;:12;;;:19;;;;;;1776:319;;-1:-1:-1;1818:23:28;;;;;;;;:11;:23;;;;;;;;;;;;;1998:18;;1976:19;;;:12;;;:19;;;;;;:40;;;;2030:11;;1776:319;-1:-1:-1;2079:5:28;2072:12;;990:222:14;1092:4;-1:-1:-1;;;;;;1115:50:14;;-1:-1:-1;;;1115:50:14;;:90;;;1169:36;1193:11;1169:23;:36::i;1930:211:29:-;2091:45;2118:4;2124:2;2128:7;2091:26;:45::i;1588:441:25:-;1663:13;1688:19;1720:10;1724:6;1720:1;:10;:::i;:::-;:14;;1733:1;1720:14;:::i;:::-;1710:25;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;1710:25:25;;1688:47;;-1:-1:-1;;;1745:6:25;1752:1;1745:9;;;;;;;;:::i;:::-;;;;:15;-1:-1:-1;;;;;1745:15:25;;;;;;;;;-1:-1:-1;;;1770:6:25;1777:1;1770:9;;;;;;;;:::i;:::-;;;;:15;-1:-1:-1;;;;;1770:15:25;;;;;;;;-1:-1:-1;1800:9:25;1812:10;1816:6;1812:1;:10;:::i;:::-;:14;;1825:1;1812:14;:::i;:::-;1800:26;;1795:132;1832:1;1828;:5;1795:132;;;-1:-1:-1;;;1879:5:25;1887:3;1879:11;1866:25;;;;;;;:::i;:::-;;;;1854:6;1861:1;1854:9;;;;;;;;:::i;:::-;;;;:37;-1:-1:-1;;;;;1854:37:25;;;;;;;;-1:-1:-1;1915:1:25;1905:11;;;;;1835:3;;;:::i;:::-;;;1795:132;;;-1:-1:-1;1944:10:25;;1936:55;;;;-1:-1:-1;;;1936:55:25;;23372:2:32;1936:55:25;;;23354:21:32;;;23391:18;;;23384:30;23450:34;23430:18;;;23423:62;23502:18;;1936:55:25;23170:356:32;7219:234:0;7302:22;7310:4;7316:7;7302;:22::i;:::-;7298:149;;;7372:5;7340:12;;;:6;:12;;;;;;;;-1:-1:-1;;;;;7340:29:0;;;;;;;;;;:37;;-1:-1:-1;;7340:37:0;;;7396:40;719:10:23;;7340:12:0;;7396:40;;7372:5;7396:40;7219:234;;:::o;7930:156:28:-;8003:4;8026:53;8034:3;-1:-1:-1;;;;;8054:23:28;;8026:7;:53::i;1394:132:16:-;1462:20;1474:7;1462:11;:20::i;:::-;4150:26:21;;;;:17;:26;;;;;4143:33;529:241:13:o;9078:427:10:-;-1:-1:-1;;;;;9157:16:10;;9149:61;;;;-1:-1:-1;;;9149:61:10;;23733:2:32;9149:61:10;;;23715:21:32;;;23752:18;;;23745:30;23811:34;23791:18;;;23784:62;23863:18;;9149:61:10;23531:356:32;9149:61:10;9229:16;9237:7;9229;:16::i;:::-;9228:17;9220:58;;;;-1:-1:-1;;;9220:58:10;;24094:2:32;9220:58:10;;;24076:21:32;24133:2;24113:18;;;24106:30;24172;24152:18;;;24145:58;24220:18;;9220:58:10;23892:352:32;9220:58:10;9289:45;9318:1;9322:2;9326:7;9289:20;:45::i;:::-;-1:-1:-1;;;;;9345:13:10;;;;;;:9;:13;;;;;:18;;9362:1;;9345:13;:18;;9362:1;;9345:18;:::i;:::-;;;;-1:-1:-1;;9373:16:10;;;;:7;:16;;;;;;:21;;-1:-1:-1;;;;;;9373:21:10;-1:-1:-1;;;;;9373:21:10;;;;;;;;9410:33;;9373:16;;;9410:33;;9373:16;;9410:33;5404:214:0;;:::o;5622:198:29:-;5669:7;5691:14;5793;:21;;;;5738:16;5756:15;5773:14;5721:67;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;5711:78;;;;;;5706:84;;:108;;;;:::i;:::-;5691:124;;;;;;;;:::i;:::-;;;;;;;;;;;-1:-1:-1;;;;;5691:124:29;;5622:198;-1:-1:-1;5622:198:29:o;1277:214:17:-;1376:16;1384:7;1376;:16::i;:::-;1368:75;;;;-1:-1:-1;;;1368:75:17;;25295:2:32;1368:75:17;;;25277:21:32;25334:2;25314:18;;;25307:30;25373:34;25353:18;;;25346:62;-1:-1:-1;;;25424:18:32;;;25417:44;25478:19;;1368:75:17;25093:410:32;1368:75:17;1453:19;;;;:10;:19;;;;;;;;:31;;;;;;;;:::i;3584:381:21:-;2507:5;-1:-1:-1;;;;;3731:33:21;;;;3723:88;;;;-1:-1:-1;;;3723:88:21;;25710:2:32;3723:88:21;;;25692:21:32;25749:2;25729:18;;;25722:30;25788:34;25768:18;;;25761:62;-1:-1:-1;;;25839:18:32;;;25832:40;25889:19;;3723:88:21;25508:406:32;3723:88:21;-1:-1:-1;;;;;3829:22:21;;3821:62;;;;-1:-1:-1;;;3821:62:21;;26121:2:32;3821:62:21;;;26103:21:32;26160:2;26140:18;;;26133:30;26199:29;26179:18;;;26172:57;26246:18;;3821:62:21;25919:351:32;3821:62:21;3923:35;;;;;;;;-1:-1:-1;;;;;3923:35:21;;;;;-1:-1:-1;;;;;3923:35:21;;;;;;;;;;-1:-1:-1;3894:26:21;;;:17;:26;;;;;;:64;;;;;;;-1:-1:-1;;;3894:64:21;;;;;;3584:381::o;4395:118:28:-;4462:7;4488:3;:11;;4500:5;4488:18;;;;;;;;:::i;:::-;;;;;;;;;4481:25;;4395:118;;;;:::o;12334:778:10:-;12484:4;-1:-1:-1;;;;;12504:13:10;;1465:19:22;:23;12500:606:10;;12539:72;;-1:-1:-1;;;12539:72:10;;-1:-1:-1;;;;;12539:36:10;;;;;:72;;719:10:23;;12590:4:10;;12596:7;;12605:5;;12539:72;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;-1:-1:-1;12539:72:10;;;;;;;;-1:-1:-1;;12539:72:10;;;;;;;;;;;;:::i;:::-;;;12535:519;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;12778:13:10;;12774:266;;12820:60;;-1:-1:-1;;;12820:60:10;;;;;;;:::i;12774:266::-;12992:6;12986:13;12977:6;12973:2;12969:15;12962:38;12535:519;-1:-1:-1;;;;;;12661:51:10;-1:-1:-1;;;12661:51:10;;-1:-1:-1;12654:58:10;;12500:606;-1:-1:-1;13091:4:10;12334:778;;;;;;:::o;1675:142:29:-;1775:13;1796:16;:14;:16::i;:::-;;1675:142;:::o;2818:329:10:-;2891:13;2924:16;2932:7;2924;:16::i;:::-;2916:76;;;;-1:-1:-1;;;2916:76:10;;27225:2:32;2916:76:10;;;27207:21:32;27264:2;27244:18;;;27237:30;27303:34;27283:18;;;27276:62;-1:-1:-1;;;27354:18:32;;;27347:45;27409:19;;2916:76:10;27023:411:32;2916:76:10;3003:21;3027:10;:8;:10::i;:::-;3003:34;;3078:1;3060:7;3054:21;:25;:86;;;;;;;;;;;;;;;;;3106:7;3115:18;:7;:16;:18::i;:::-;3089:45;;;;;;;;;:::i;:::-;;;;;;;;;;;;;3047:93;2818:329;-1:-1:-1;;;2818:329:10:o;1099:168:16:-;1201:4;1224:36;1248:11;1224:23;:36::i;3803:233:20:-;3984:45;4011:4;4017:2;4021:7;3984:26;:45::i;2269:1388:28:-;2335:4;2472:19;;;:12;;;:19;;;;;;2506:15;;2502:1149;;2875:21;2899:14;2912:1;2899:10;:14;:::i;:::-;2947:18;;2875:38;;-1:-1:-1;2927:17:28;;2947:22;;2968:1;;2947:22;:::i;:::-;2927:42;;3001:13;2988:9;:26;2984:398;;3034:17;3054:3;:11;;3066:9;3054:22;;;;;;;;:::i;:::-;;;;;;;;;3034:42;;3205:9;3176:3;:11;;3188:13;3176:26;;;;;;;;:::i;:::-;;;;;;;;;;;;:38;;;;3288:23;;;:12;;;:23;;;;;:36;;;2984:398;3460:17;;:3;;:17;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;3552:3;:12;;:19;3565:5;3552:19;;;;;;;;;;;3545:26;;;3593:4;3586:11;;;;;;;2502:1149;3635:5;3628:12;;;;;1708:200:17;1776:20;1788:7;1776:11;:20::i;:::-;1817:19;;;;:10;:19;;;;;1811:33;;;;;:::i;:::-;:38;;-1:-1:-1;1807:95:17;;1872:19;;;;:10;:19;;;;;1865:26;;;:::i;2140:112:20:-;2200:13;2232;2225:20;;;;;:::i;328:703:25:-;384:13;601:10;597:51;;-1:-1:-1;;627:10:25;;;;;;;;;;;;-1:-1:-1;;;627:10:25;;;;;328:703::o;597:51::-;672:5;657:12;711:75;718:9;;711:75;;743:8;;;;:::i;:::-;;-1:-1:-1;765:10:25;;-1:-1:-1;773:2:25;765:10;;:::i;:::-;;;711:75;;;795:19;827:6;817:17;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;817:17:25;;795:39;;844:150;851:10;;844:150;;877:11;887:1;877:11;;:::i;:::-;;-1:-1:-1;945:10:25;953:2;945:5;:10;:::i;:::-;932:24;;:2;:24;:::i;:::-;919:39;;902:6;909;902:14;;;;;;;;:::i;:::-;;;;:56;-1:-1:-1;;;;;902:56:25;;;;;;;;-1:-1:-1;972:11:25;981:2;972:11;;:::i;:::-;;;844:150;;1570:300:10;1672:4;-1:-1:-1;;;;;;1707:40:10;;-1:-1:-1;;;1707:40:10;;:104;;-1:-1:-1;;;;;;;1763:48:10;;-1:-1:-1;;;1763:48:10;1707:104;:156;;;;1827:36;1851:11;1827:23;:36::i;672:267:15:-;811:45;838:4;844:2;848:7;811:26;:45::i;:::-;1168:7:7;;;;875:9:15;867:65;;;;-1:-1:-1;;;867:65:15;;27773:2:32;867:65:15;;;27755:21:32;27812:2;27792:18;;;27785:30;27851:34;27831:18;;;27824:62;-1:-1:-1;;;27902:18:32;;;27895:41;27953:19;;867:65:15;27571:407:32;9722:406:10;9781:13;9797:23;9812:7;9797:14;:23::i;:::-;9781:39;;9831:48;9852:5;9867:1;9871:7;9831:20;:48::i;:::-;9917:29;9934:1;9938:7;9917:8;:29::i;:::-;-1:-1:-1;;;;;9957:16:10;;;;;;:9;:16;;;;;:21;;9977:1;;9957:16;:21;;9977:1;;9957:21;:::i;:::-;;;;-1:-1:-1;;9995:16:10;;;;:7;:16;;;;;;9988:23;;-1:-1:-1;;;;;;9988:23:10;;;10027:36;10003:7;;9995:16;-1:-1:-1;;;;;10027:36:10;;;;;9995:16;;10027:36;5404:214:0;;:::o;634:212:1:-;719:4;-1:-1:-1;;;;;;742:57:1;;-1:-1:-1;;;742:57:1;;:97;;;803:36;827:11;803:23;:36::i;2624:572:14:-;-1:-1:-1;;;;;2823:18:14;;2819:183;;2857:40;2889:7;4005:10;:17;;3978:24;;;;:15;:24;;;;;:44;;;4032:24;;;;;;;;;;;;3902:161;2857:40;2819:183;;;2926:2;-1:-1:-1;;;;;2918:10:14;:4;-1:-1:-1;;;;;2918:10:14;;2914:88;;2944:47;2977:4;2983:7;2944:32;:47::i;:::-;-1:-1:-1;;;;;3015:16:14;;3011:179;;3047:45;3084:7;3047:36;:45::i;3011:179::-;3119:4;-1:-1:-1;;;;;3113:10:14;:2;-1:-1:-1;;;;;3113:10:14;;3109:81;;3139:40;3167:2;3171:7;3139:27;:40::i;2620:202:0:-;2705:4;-1:-1:-1;;;;;;2728:47:0;;-1:-1:-1;;;2728:47:0;;:87;;;2779:36;2803:11;2779:23;:36::i;4680:970:14:-;4942:22;4992:1;4967:22;4984:4;4967:16;:22::i;:::-;:26;;;;:::i;:::-;5003:18;5024:26;;;:17;:26;;;;;;4942:51;;-1:-1:-1;5154:28:14;;;5150:323;;-1:-1:-1;;;;;5220:18:14;;5198:19;5220:18;;;:12;:18;;;;;;;;:34;;;;;;;;;5269:30;;;;;;:44;;;5385:30;;:17;:30;;;;;:43;;;5150:323;-1:-1:-1;5566:26:14;;;;:17;:26;;;;;;;;5559:33;;;-1:-1:-1;;;;;5609:18:14;;;;;:12;:18;;;;;:34;;;;;;;5602:41;4680:970::o;5938:1061::-;6212:10;:17;6187:22;;6212:21;;6232:1;;6212:21;:::i;:::-;6243:18;6264:24;;;:15;:24;;;;;;6632:10;:26;;6187:46;;-1:-1:-1;6264:24:14;;6187:46;;6632:26;;;;;;:::i;:::-;;;;;;;;;6610:48;;6694:11;6669:10;6680;6669:22;;;;;;;;:::i;:::-;;;;;;;;;;;;:36;;;;6773:28;;;:15;:28;;;;;;;:41;;;6942:24;;;;;6935:31;6976:10;:16;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;6009:990;;;5938:1061;:::o;3490:217::-;3574:14;3591:20;3608:2;3591:16;:20::i;:::-;-1:-1:-1;;;;;3621:16:14;;;;;;;:12;:16;;;;;;;;:24;;;;;;;;:34;;;3665:26;;;:17;:26;;;;;;:35;;;;-1:-1:-1;3490:217:14:o;1408:213:21:-;1510:4;-1:-1:-1;;;;;;1533:41:21;;-1:-1:-1;;;1533:41:21;;:81;;-1:-1:-1;;;;;;;;;;937:40:26;;;1578:36:21;829:155:26;-1:-1:-1;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;:::o;:::-;;;;;;;:::i;:::-;;;;;;;;;;;:::o;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;14:131:32;-1:-1:-1;;;;;;88:32:32;;78:43;;68:71;;135:1;132;125:12;150:245;208:6;261:2;249:9;240:7;236:23;232:32;229:52;;;277:1;274;267:12;229:52;316:9;303:23;335:30;359:5;335:30;:::i;592:258::-;664:1;674:113;688:6;685:1;682:13;674:113;;;764:11;;;758:18;745:11;;;738:39;710:2;703:10;674:113;;;805:6;802:1;799:13;796:48;;;-1:-1:-1;;840:1:32;822:16;;815:27;592:258::o;855:::-;897:3;935:5;929:12;962:6;957:3;950:19;978:63;1034:6;1027:4;1022:3;1018:14;1011:4;1004:5;1000:16;978:63;:::i;:::-;1095:2;1074:15;-1:-1:-1;;1070:29:32;1061:39;;;;1102:4;1057:50;;855:258;-1:-1:-1;;855:258:32:o;1118:220::-;1267:2;1256:9;1249:21;1230:4;1287:45;1328:2;1317:9;1313:18;1305:6;1287:45;:::i;1343:180::-;1402:6;1455:2;1443:9;1434:7;1430:23;1426:32;1423:52;;;1471:1;1468;1461:12;1423:52;-1:-1:-1;1494:23:32;;1343:180;-1:-1:-1;1343:180:32:o;1736:173::-;1804:20;;-1:-1:-1;;;;;1853:31:32;;1843:42;;1833:70;;1899:1;1896;1889:12;1833:70;1736:173;;;:::o;1914:254::-;1982:6;1990;2043:2;2031:9;2022:7;2018:23;2014:32;2011:52;;;2059:1;2056;2049:12;2011:52;2082:29;2101:9;2082:29;:::i;:::-;2072:39;2158:2;2143:18;;;;2130:32;;-1:-1:-1;;;1914:254:32:o;2355:328::-;2432:6;2440;2448;2501:2;2489:9;2480:7;2476:23;2472:32;2469:52;;;2517:1;2514;2507:12;2469:52;2540:29;2559:9;2540:29;:::i;:::-;2530:39;;2588:38;2622:2;2611:9;2607:18;2588:38;:::i;:::-;2578:48;;2673:2;2662:9;2658:18;2645:32;2635:42;;2355:328;;;;;:::o;3055:248::-;3123:6;3131;3184:2;3172:9;3163:7;3159:23;3155:32;3152:52;;;3200:1;3197;3190:12;3152:52;-1:-1:-1;;3223:23:32;;;3293:2;3278:18;;;3265:32;;-1:-1:-1;3055:248:32:o;3587:254::-;3655:6;3663;3716:2;3704:9;3695:7;3691:23;3687:32;3684:52;;;3732:1;3729;3722:12;3684:52;3768:9;3755:23;3745:33;;3797:38;3831:2;3820:9;3816:18;3797:38;:::i;:::-;3787:48;;3587:254;;;;;:::o;3846:127::-;3907:10;3902:3;3898:20;3895:1;3888:31;3938:4;3935:1;3928:15;3962:4;3959:1;3952:15;3978:632;4043:5;4073:18;4114:2;4106:6;4103:14;4100:40;;;4120:18;;:::i;:::-;4195:2;4189:9;4163:2;4249:15;;-1:-1:-1;;4245:24:32;;;4271:2;4241:33;4237:42;4225:55;;;4295:18;;;4315:22;;;4292:46;4289:72;;;4341:18;;:::i;:::-;4381:10;4377:2;4370:22;4410:6;4401:15;;4440:6;4432;4425:22;4480:3;4471:6;4466:3;4462:16;4459:25;4456:45;;;4497:1;4494;4487:12;4456:45;4547:6;4542:3;4535:4;4527:6;4523:17;4510:44;4602:1;4595:4;4586:6;4578;4574:19;4570:30;4563:41;;;;3978:632;;;;;:::o;4615:525::-;4693:6;4701;4754:2;4742:9;4733:7;4729:23;4725:32;4722:52;;;4770:1;4767;4760:12;4722:52;4793:29;4812:9;4793:29;:::i;:::-;4783:39;;4873:2;4862:9;4858:18;4845:32;4900:18;4892:6;4889:30;4886:50;;;4932:1;4929;4922:12;4886:50;4955:22;;5008:4;5000:13;;4996:27;-1:-1:-1;4986:55:32;;5037:1;5034;5027:12;4986:55;5060:74;5126:7;5121:2;5108:16;5103:2;5099;5095:11;5060:74;:::i;:::-;5050:84;;;4615:525;;;;;:::o;5145:334::-;5222:6;5230;5238;5291:2;5279:9;5270:7;5266:23;5262:32;5259:52;;;5307:1;5304;5297:12;5259:52;5330:29;5349:9;5330:29;:::i;:::-;5320:39;;5378:38;5412:2;5401:9;5397:18;5378:38;:::i;:::-;5368:48;;5435:38;5469:2;5458:9;5454:18;5435:38;:::i;:::-;5425:48;;5145:334;;;;;:::o;5697:186::-;5756:6;5809:2;5797:9;5788:7;5784:23;5780:32;5777:52;;;5825:1;5822;5815:12;5777:52;5848:29;5867:9;5848:29;:::i;6141:347::-;6206:6;6214;6267:2;6255:9;6246:7;6242:23;6238:32;6235:52;;;6283:1;6280;6273:12;6235:52;6306:29;6325:9;6306:29;:::i;:::-;6296:39;;6385:2;6374:9;6370:18;6357:32;6432:5;6425:13;6418:21;6411:5;6408:32;6398:60;;6454:1;6451;6444:12;6398:60;6477:5;6467:15;;;6141:347;;;;;:::o;6493:667::-;6588:6;6596;6604;6612;6665:3;6653:9;6644:7;6640:23;6636:33;6633:53;;;6682:1;6679;6672:12;6633:53;6705:29;6724:9;6705:29;:::i;:::-;6695:39;;6753:38;6787:2;6776:9;6772:18;6753:38;:::i;:::-;6743:48;;6838:2;6827:9;6823:18;6810:32;6800:42;;6893:2;6882:9;6878:18;6865:32;6920:18;6912:6;6909:30;6906:50;;;6952:1;6949;6942:12;6906:50;6975:22;;7028:4;7020:13;;7016:27;-1:-1:-1;7006:55:32;;7057:1;7054;7047:12;7006:55;7080:74;7146:7;7141:2;7128:16;7123:2;7119;7115:11;7080:74;:::i;:::-;7070:84;;;6493:667;;;;;;;:::o;7165:260::-;7233:6;7241;7294:2;7282:9;7273:7;7269:23;7265:32;7262:52;;;7310:1;7307;7300:12;7262:52;7333:29;7352:9;7333:29;:::i;:::-;7323:39;;7381:38;7415:2;7404:9;7400:18;7381:38;:::i;7430:409::-;7516:6;7524;7532;7540;7593:3;7581:9;7572:7;7568:23;7564:33;7561:53;;;7610:1;7607;7600:12;7561:53;7633:29;7652:9;7633:29;:::i;:::-;7623:39;;7681:38;7715:2;7704:9;7700:18;7681:38;:::i;:::-;7671:48;;7738:38;7772:2;7761:9;7757:18;7738:38;:::i;:::-;7728:48;;7795:38;7829:2;7818:9;7814:18;7795:38;:::i;:::-;7785:48;;7430:409;;;;;;;:::o;7844:380::-;7923:1;7919:12;;;;7966;;;7987:61;;8041:4;8033:6;8029:17;8019:27;;7987:61;8094:2;8086:6;8083:14;8063:18;8060:38;8057:161;;;8140:10;8135:3;8131:20;8128:1;8121:31;8175:4;8172:1;8165:15;8203:4;8200:1;8193:15;8057:161;;7844:380;;;:::o;9469:413::-;9671:2;9653:21;;;9710:2;9690:18;;;9683:30;9749:34;9744:2;9729:18;;9722:62;-1:-1:-1;;;9815:2:32;9800:18;;9793:47;9872:3;9857:19;;9469:413::o;9887:127::-;9948:10;9943:3;9939:20;9936:1;9929:31;9979:4;9976:1;9969:15;10003:4;10000:1;9993:15;10019:168;10059:7;10125:1;10121;10117:6;10113:14;10110:1;10107:21;10102:1;10095:9;10088:17;10084:45;10081:71;;;10132:18;;:::i;:::-;-1:-1:-1;10172:9:32;;10019:168::o;10192:127::-;10253:10;10248:3;10244:20;10241:1;10234:31;10284:4;10281:1;10274:15;10308:4;10305:1;10298:15;10324:120;10364:1;10390;10380:35;;10395:18;;:::i;:::-;-1:-1:-1;10429:9:32;;10324:120::o;11277:356::-;11479:2;11461:21;;;11498:18;;;11491:30;11557:34;11552:2;11537:18;;11530:62;11624:2;11609:18;;11277:356::o;12040:317::-;-1:-1:-1;;;;;12217:32:32;;12199:51;;12286:2;12281;12266:18;;12259:30;;;-1:-1:-1;;12306:45:32;;12332:18;;12324:6;12306:45;:::i;13625:127::-;13686:10;13681:3;13677:20;13674:1;13667:31;13717:4;13714:1;13707:15;13741:4;13738:1;13731:15;13757:400;13959:2;13941:21;;;13998:2;13978:18;;;13971:30;14037:34;14032:2;14017:18;;14010:62;-1:-1:-1;;;14103:2:32;14088:18;;14081:34;14147:3;14132:19;;13757:400::o;14162:1178::-;14430:2;14442:21;;;14512:13;;14415:18;;;14534:22;;;14382:4;;14609;;14587:2;14572:18;;;14636:15;;;14382:4;14679:195;14693:6;14690:1;14687:13;14679:195;;;14758:13;;-1:-1:-1;;;;;14754:39:32;14742:52;;14814:12;;;;14849:15;;;;14790:1;14708:9;14679:195;;;-1:-1:-1;;;14910:19:32;;;14890:18;;;14883:47;14980:13;;15002:21;;;15078:15;;;;15041:12;;;15113:1;15123:189;15139:8;15134:3;15131:17;15123:189;;;15208:15;;15194:30;;15285:17;;;;15246:14;;;;15167:1;15158:11;15123:189;;;-1:-1:-1;15329:5:32;;14162:1178;-1:-1:-1;;;;;;;14162:1178:32:o;17027:135::-;17066:3;-1:-1:-1;;17087:17:32;;17084:43;;;17107:18;;:::i;:::-;-1:-1:-1;17154:1:32;17143:13;;17027:135::o;19615:125::-;19655:4;19683:1;19680;19677:8;19674:34;;;19688:18;;:::i;:::-;-1:-1:-1;19725:9:32;;19615:125::o;19745:128::-;19785:3;19816:1;19812:6;19809:1;19806:13;19803:39;;;19822:18;;:::i;:::-;-1:-1:-1;19858:9:32;;19745:128::o;19878:786::-;20289:25;20284:3;20277:38;20259:3;20344:6;20338:13;20360:62;20415:6;20410:2;20405:3;20401:12;20394:4;20386:6;20382:17;20360:62;:::i;:::-;-1:-1:-1;;;20481:2:32;20441:16;;;20473:11;;;20466:40;20531:13;;20553:63;20531:13;20602:2;20594:11;;20587:4;20575:17;;20553:63;:::i;:::-;20636:17;20655:2;20632:26;;19878:786;-1:-1:-1;;;;19878:786:32:o;21717:414::-;21919:2;21901:21;;;21958:2;21938:18;;;21931:30;21997:34;21992:2;21977:18;;21970:62;-1:-1:-1;;;22063:2:32;22048:18;;22041:48;22121:3;22106:19;;21717:414::o;22554:470::-;22733:3;22771:6;22765:13;22787:53;22833:6;22828:3;22821:4;22813:6;22809:17;22787:53;:::i;:::-;22903:13;;22862:16;;;;22925:57;22903:13;22862:16;22959:4;22947:17;;22925:57;:::i;:::-;22998:20;;22554:470;-1:-1:-1;;;;22554:470:32:o;23029:136::-;23068:3;23096:5;23086:39;;23105:18;;:::i;:::-;-1:-1:-1;;;23141:18:32;;23029:136::o;24249:722::-;24493:6;24488:3;24481:19;24463:3;24519:2;24551:6;24546:2;24541:3;24537:12;24530:28;24589:2;24584:3;24580:12;24621:6;24615:13;24670:6;24667:1;24660:17;24713:2;24710:1;24700:16;24734:1;24744:200;24758:6;24755:1;24752:13;24744:200;;;24825:13;;-1:-1:-1;;;;;24821:39:32;24807:54;;24883:14;;;;24857:1;24920:14;;;;24773:9;24744:200;;;-1:-1:-1;24960:5:32;;24249:722;-1:-1:-1;;;;;;;;24249:722:32:o;24976:112::-;25008:1;25034;25024:35;;25039:18;;:::i;:::-;-1:-1:-1;25073:9:32;;24976:112::o;26275:489::-;-1:-1:-1;;;;;26544:15:32;;;26526:34;;26596:15;;26591:2;26576:18;;26569:43;26643:2;26628:18;;26621:34;;;26691:3;26686:2;26671:18;;26664:31;;;26469:4;;26712:46;;26738:19;;26730:6;26712:46;:::i;:::-;26704:54;26275:489;-1:-1:-1;;;;;;26275:489:32:o;26769:249::-;26838:6;26891:2;26879:9;26870:7;26866:23;26862:32;26859:52;;;26907:1;26904;26897:12;26859:52;26939:9;26933:16;26958:30;26982:5;26958:30;:::i;27439:127::-;27500:10;27495:3;27491:20;27488:1;27481:31;27531:4;27528:1;27521:15;27555:4;27552:1;27545:15",
-  "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport \"@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol\";\nimport \"@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol\";\nimport \"@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol\";\n//\nimport \"./CheekSpreader.sol\";\n\n/**\n * @title Buttholes\n * @author Skeetzo\n * @dev Stupid (non-Solana) butthole nfts.\n */\ncontract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMinterPauserAutoId {\n\n  event PuckerUp(address addedButthole, string buttholeHash);\n  event PuckerDown(address removedButthole);\n\n  // butthole hashes\n  mapping(address => string) public buttholes;\n  // account quick mapping\n  mapping(address => bool) public buttholeMap;\n  // unique butthole owners\n  address[] buttholeOwners;\n  // paymentsplitters\n  mapping(address => address) CheekSpreaders;\n  // royalty fee - 5%\n  uint96 public constant royaltyValue = 200;\n\n  /**\n   * @dev Contract constructor. Sets metadata extension `name` and `symbol`.\n   */\n  constructor(string memory baseURI_) ERC721PresetMinterPauserAutoId(\"Butthole\", \"BUTT\", baseURI_) {}\n\n  ////////////////////////////////////////////////////////////////////////////////////\n\n  // ERC721 //\n\n  /**\n   * @dev 18+ confirm to enable minting.\n   */\n  function addMinter() public {\n    _setupRole(MINTER_ROLE, _msgSender());\n  }\n\n  /**\n   * @dev Base URI for computing {tokenURI}. If set, the resulting URI for each\n   * token will be the concatenation of the `baseURI` and the `tokenId`. Empty\n   * by default, can be overriden in child contracts.\n   */\n  function _baseURI() internal view virtual override(ERC721, ERC721PresetMinterPauserAutoId) returns (string memory) {\n    super._baseURI();\n  }\n\n  /**\n   * @dev Hook that is called before any token transfer. This includes minting\n   * and burning.\n   */\n  function _beforeTokenTransfer(\n    address from,\n    address to,\n    uint256 tokenId\n  ) internal virtual override(ERC721, ERC721PresetMinterPauserAutoId) {\n    super._beforeTokenTransfer(from, to, tokenId);\n  }\n\n  /**\n   * @dev Destroys `tokenId`.\n   * The approval is cleared when the token is burned.\n   */\n  function _burn(uint256 tokenId) internal virtual override(ERC721, ERC721URIStorage, ERC721Royalty) {\n    super._burn(tokenId);\n  }\n\n  /**\n   * @dev Set proper token data for minting.\n   */\n  function _mint(address to, uint256 tokenId) internal virtual override(ERC721) {\n    super._mint(to, tokenId);\n    // get random owner of a butthole\n    address buttholeOwner = _getButthole();\n    // set token uri to be butthole uri of random owner\n    _setTokenURI(tokenId, buttholes[buttholeOwner]);\n    // set royalty for token id and butthole owner's splitter contract (if exists)\n    if (CheekSpreaders[buttholeOwner]!=address(0x0))\n      buttholeOwner = CheekSpreaders[buttholeOwner];\n    _setTokenRoyalty(tokenId, buttholeOwner, royaltyValue);\n  }\n\n  /**\n   * @dev See {IERC165-supportsInterface}.\n   */\n  function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, ERC721Royalty, ERC721PresetMinterPauserAutoId) returns (bool) {\n    return super.supportsInterface(interfaceId);\n  }\n\n  // ERC721URIStorage //\n\n  /**\n   * @dev See {IERC721Metadata-tokenURI}.\n   */\n  function tokenURI(uint256 tokenId) public view virtual override(ERC721, ERC721URIStorage) returns (string memory) {\n    return super.tokenURI(tokenId);\n  }\n\n  ////////////////////////////////////////////////////////////////////////////////////\n\n  // Buttholes //\n\n  /**\n   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.\n   *\n   * Requirements:\n   *\n   * - `newButthole` must not exist as a butthole.\n   */\n  function addButthole(address newButthole, string memory _tokenURI) public onlyOwner {\n    require(!buttholeMap[newButthole], \"Buttholes: account must not exist\");\n    buttholeMap[newButthole] = true;\n    buttholeOwners.push(newButthole);\n    buttholes[newButthole] = _tokenURI;\n    // CheekSpreaders[newButthole] = newButthole;\n    emit PuckerUp(newButthole, _tokenURI);\n  }\n\n  /**\n   * @dev Create a new CheekSpreader contract for handling royalty payments.\n   */\n  function createCheekSpreader(address donor1, address donor2, address donor3) public {\n    require(buttholeMap[_msgSender()], \"Buttholes: caller must be a butthole\");\n    address[] memory payees = new address[](4);\n    payees[0] = _msgSender();\n    payees[1] = donor1;\n    payees[2] = donor2;\n    payees[3] = donor3;\n    uint256[] memory shares = new uint256[](4);\n    shares[0] = 91;\n    shares[1] = 3;\n    shares[2] = 3;\n    shares[3] = 3;\n    CheekSpreader c = new CheekSpreader(payees, shares);\n    CheekSpreaders[_msgSender()] = address(c);\n  }\n\n  /**\n   * @dev Create a new CheekSpreader contract for handling royalty payments for an unset butthole.\n   */\n  function updateCheekSpreader(address buttholeAddress, address donor1, address donor2, address donor3) public onlyOwner {\n    require(buttholeMap[buttholeAddress], \"Buttholes: address must be a butthole\");\n    require(CheekSpreaders[buttholeAddress] == address(0x0), \"Buttholes: address must not already be set\");\n    address[] memory payees = new address[](4);\n    payees[0] = buttholeAddress;\n    payees[1] = donor1;\n    payees[2] = donor2;\n    payees[3] = donor3;\n    uint256[] memory shares = new uint256[](4);\n    shares[0] = 91;\n    shares[1] = 3;\n    shares[2] = 3;\n    shares[3] = 3;\n    CheekSpreader c = new CheekSpreader(payees, shares);\n    CheekSpreaders[buttholeAddress] = address(c);\n  }\n\n  /**\n   * @dev Return a random uri.\n   */\n  function _getButthole() internal view returns (address) {\n    return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholeOwners.length];\n  }\n\n  /**\n   * @dev Renounce ownership of your own butthole.\n   *\n   * Requirements:\n   *\n   * - `_msgSender` must exist as a butthole.\n   */\n  function renounceButthole() public {\n    require(buttholeMap[_msgSender()], \"Buttholes: caller must be a butthole\");\n    delete buttholes[_msgSender()];\n    delete CheekSpreaders[_msgSender()];\n    buttholeMap[_msgSender()] = false;\n    // delete from array of owners\n    for (uint i=0;i<buttholeOwners.length;i++)\n      if (buttholeOwners[i] == _msgSender())\n        delete buttholeOwners[i];\n    emit PuckerDown(_msgSender());\n  }\n\n}\n",
+  "sourceMap": "479:5934:29:-:0;;;1126:99;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;1806:328:20;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;1213:8:29;1925:4:20;1931:6;921:32:4;940:12;:10;;;:12;;:::i;:::-;921:18;:32::i;:::-;1456:13:10;;;;:5;;:13;;;;;:::i;:::-;-1:-1:-1;1479:17:10;;;;:7;;:17;;;;;:::i;:::-;-1:-1:-1;;981:7:7;:15;;-1:-1:-1;;981:15:7;;;-1:-1:-1;1949:28:20;;::::1;::::0;:13:::1;::::0;:28:::1;::::0;::::1;::::0;::::1;:::i;:::-;-1:-1:-1::0;1988:44:20::1;2072:4:0;719:10:23::0;1988::20::1;:44::i;:::-;2043:37;1370:24;719:10:23::0;1988::20::1;:44::i;2043:37::-;2090;1438:24;719:10:23::0;1988::20::1;:44::i;2090:37::-;1806:328:::0;;;1126:99:29;479:5934;;640:96:23;719:10;;640:96::o;2270:187:4:-;2343:16;2362:6;;-1:-1:-1;;;;;2378:17:4;;;-1:-1:-1;;;;;;2378:17:4;;;;;;2410:40;;2362:6;;;;;;;2410:40;;2343:16;2410:40;2333:124;2270:187;:::o;6257:110:0:-;6335:25;6346:4;6352:7;6335:10;:25::i;:::-;6257:110;;:::o;1978:166:1:-;2065:31;2082:4;2088:7;2065:16;;;;;:31;;:::i;:::-;2106:18;;;;:12;:18;;;;;;;;:31;;2129:7;;2106:22;;;;;:31;;:::i;:::-;;1978:166;;:::o;6861:233:0:-;2995:4;3018:12;;;:6;:12;;;;;;;;-1:-1:-1;;;;;3018:29:0;;;;;;;;;;;;6939:149;;6982:12;;;;:6;:12;;;;;;;;-1:-1:-1;;;;;6982:29:0;;;;;;;;;:36;;-1:-1:-1;;6982:36:0;7014:4;6982:36;;;7064:12;719:10:23;;640:96;7064:12:0;-1:-1:-1;;;;;7037:40:0;7055:7;-1:-1:-1;;;;;7037:40:0;7049:4;7037:40;;;;;;;;;;6861:233;;:::o;7612:150:28:-;7682:4;7705:50;7710:3;-1:-1:-1;;;;;7730:23:28;;7705:4;:50::i;:::-;7698:57;;7612:150;;;;;:::o;1697:404::-;1760:4;3834:19;;;:12;;;:19;;;;;;1776:319;;-1:-1:-1;1818:23:28;;;;;;;;:11;:23;;;;;;;;;;;;;1998:18;;1976:19;;;:12;;;:19;;;;;;:40;;;;2030:11;;1776:319;-1:-1:-1;2079:5:28;2072:12;;479:5934:29;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;479:5934:29;;;-1:-1:-1;479:5934:29;:::i;:::-;;;:::o;:::-;;;;;;;;;;;;;;;14:184:32;66:77;63:1;56:88;163:4;160:1;153:15;187:4;184:1;177:15;203:1087;283:6;314:2;357;345:9;336:7;332:23;328:32;325:52;;;373:1;370;363:12;325:52;400:16;;-1:-1:-1;;;;;465:14:32;;;462:34;;;492:1;489;482:12;462:34;530:6;519:9;515:22;505:32;;575:7;568:4;564:2;560:13;556:27;546:55;;597:1;594;587:12;546:55;626:2;620:9;648:2;644;641:10;638:36;;;654:18;;:::i;:::-;729:2;723:9;697:2;783:13;;-1:-1:-1;;779:22:32;;;803:2;775:31;771:40;759:53;;;827:18;;;847:22;;;824:46;821:72;;;873:18;;:::i;:::-;913:10;909:2;902:22;948:2;940:6;933:18;988:7;983:2;978;974;970:11;966:20;963:33;960:53;;;1009:1;1006;999:12;960:53;1031:1;1022:10;;1041:129;1055:2;1052:1;1049:9;1041:129;;;1143:10;;;1139:19;;1133:26;1112:14;;;1108:23;;1101:59;1066:10;;;;1041:129;;;1188:2;1185:1;1182:9;1179:80;;;1247:1;1242:2;1237;1229:6;1225:15;1221:24;1214:35;1179:80;1278:6;203:1087;-1:-1:-1;;;;;;;;203:1087:32:o;1295:437::-;1374:1;1370:12;;;;1417;;;1438:61;;1492:4;1484:6;1480:17;1470:27;;1438:61;1545:2;1537:6;1534:14;1514:18;1511:38;1508:218;;;1582:77;1579:1;1572:88;1683:4;1680:1;1673:15;1711:4;1708:1;1701:15;1508:218;;1295:437;;;:::o;:::-;479:5934:29;;;;;;",
+  "deployedSourceMap": "479:5934:29:-:0;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;3061:200;;;;;;:::i;:::-;;:::i;:::-;;;565:14:32;;558:22;540:41;;528:2;513:18;3061:200:29;;;;;;;;1386:76;;;:::i;:::-;;2488:98:10;;;:::i;:::-;;;;;;;:::i;3999:217::-;;;;;;:::i;:::-;;:::i;:::-;;;-1:-1:-1;;;;;1692:32:32;;;1674:51;;1662:2;1647:18;3999:217:10;1528:203:32;3537:401:10;;;;;;:::i;:::-;;:::i;1615:111:14:-;1702:10;:17;1615:111;;;2319:25:32;;;2307:2;2292:18;1615:111:14;2173:177:32;4726:330:10;;;;;;:::i;:::-;;:::i;4008:129:0:-;;;;;;:::i;:::-;4082:7;4108:12;;;:6;:12;;;;;:22;;;;4008:129;1671:478:21;;;;;;:::i;:::-;;:::i;:::-;;;;-1:-1:-1;;;;;3500:32:32;;;3482:51;;3564:2;3549:18;;3542:34;;;;3455:18;1671:478:21;3308:274:32;4387:145:0;;;;;;:::i;:::-;;:::i;1291:253:14:-;;;;;;:::i;:::-;;:::i;5404:214:0:-;;;;;;:::i;:::-;;:::i;3760:374:29:-;;;;;;:::i;:::-;;:::i;3615:182:20:-;;;:::i;5122:179:10:-;;;;;;:::i;:::-;;:::i;529:241:13:-;;;;;;:::i;:::-;;:::i;1798:230:14:-;;;;;;:::i;:::-;;:::i;1098:84:7:-;1168:7;;;;1098:84;;4227:548:29;;;;;;:::i;:::-;;:::i;991:41::-;;1029:3;991:41;;;;;-1:-1:-1;;;;;5646:39:32;;;5628:58;;5616:2;5601:18;991:41:29;5484:208:32;2191:235:10;;;;;;:::i;:::-;;:::i;2627:400:20:-;;;;;;:::i;:::-;;:::i;1929:205:10:-;;;;;;:::i;:::-;;:::i;1668:101:4:-;;;:::i;782:43:29:-;;;;;;:::i;:::-;;;;;;;;;;;;;;;;708;;;;;;:::i;:::-;;:::i;3231:176:20:-;;;:::i;1036:85:4:-;1082:7;1108:6;-1:-1:-1;;;;;1108:6:4;1036:85;;1431:151:1;;;;;;:::i;:::-;;:::i;2909:145:0:-;;;;;;:::i;:::-;;:::i;2650:102:10:-;;;:::i;2027:49:0:-;;2072:4;2027:49;;4283:153:10;;;;;;:::i;:::-;;:::i;5367:320::-;;;;;;:::i;:::-;;:::i;5978:432:29:-;;;:::i;3345:155::-;;;;;;:::i;:::-;;:::i;1750:140:1:-;;;;;;:::i;:::-;;:::i;1332:62:20:-;;1370:24;1332:62;;4766:147:0;;;;;;:::i;:::-;;:::i;1400:62:20:-;;1438:24;1400:62;;4502:162:10;;;;;;:::i;:::-;-1:-1:-1;;;;;4622:25:10;;;4599:4;4622:25;;;:18;:25;;;;;;;;:35;;;;;;;;;;;;;;;4502:162;1918:198:4;;;;;;:::i;:::-;;:::i;4890:701:29:-;;;;;;:::i;:::-;;:::i;3061:200::-;3201:4;3220:36;3244:11;3220:23;:36::i;:::-;3213:43;3061:200;-1:-1:-1;;3061:200:29:o;1386:76::-;1420:37;1370:24:20;719:10:23;1420::29;:37::i;:::-;1386:76::o;2488:98:10:-;2542:13;2574:5;2567:12;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;2488:98;:::o;3999:217::-;4075:7;4102:16;4110:7;4102;:16::i;:::-;4094:73;;;;-1:-1:-1;;;4094:73:10;;8431:2:32;4094:73:10;;;8413:21:32;8470:2;8450:18;;;8443:30;8509:34;8489:18;;;8482:62;-1:-1:-1;;;8560:18:32;;;8553:42;8612:19;;4094:73:10;;;;;;;;;-1:-1:-1;4185:24:10;;;;:15;:24;;;;;;-1:-1:-1;;;;;4185:24:10;;3999:217::o;3537:401::-;3617:13;3633:23;3648:7;3633:14;:23::i;:::-;3617:39;;3680:5;-1:-1:-1;;;;;3674:11:10;:2;-1:-1:-1;;;;;3674:11:10;;;3666:57;;;;-1:-1:-1;;;3666:57:10;;8844:2:32;3666:57:10;;;8826:21:32;8883:2;8863:18;;;8856:30;8922:34;8902:18;;;8895:62;-1:-1:-1;;;8973:18:32;;;8966:31;9014:19;;3666:57:10;8642:397:32;3666:57:10;719:10:23;-1:-1:-1;;;;;3755:21:10;;;;:62;;-1:-1:-1;3780:37:10;3797:5;719:10:23;4502:162:10;:::i;3780:37::-;3734:165;;;;-1:-1:-1;;;3734:165:10;;9246:2:32;3734:165:10;;;9228:21:32;9285:2;9265:18;;;9258:30;9324:34;9304:18;;;9297:62;9395:26;9375:18;;;9368:54;9439:19;;3734:165:10;9044:420:32;3734:165:10;3910:21;3919:2;3923:7;3910:8;:21::i;:::-;3607:331;3537:401;;:::o;4726:330::-;4915:41;719:10:23;4934:12:10;4948:7;4915:18;:41::i;:::-;4907:103;;;;-1:-1:-1;;;4907:103:10;;;;;;;:::i;:::-;5021:28;5031:4;5037:2;5041:7;5021:9;:28::i;1671:478:21:-;1810:7;1871:27;;;:17;:27;;;;;;;;1842:56;;;;;;;;;-1:-1:-1;;;;;1842:56:21;;;;;-1:-1:-1;;;1842:56:21;;;-1:-1:-1;;;;;1842:56:21;;;;;;;;1810:7;;1909:90;;-1:-1:-1;1959:29:21;;;;;;;;;1969:19;1959:29;-1:-1:-1;;;;;1959:29:21;;;;-1:-1:-1;;;1959:29:21;;-1:-1:-1;;;;;1959:29:21;;;;;1909:90;2047:23;;;;2009:21;;2507:5;;2034:36;;-1:-1:-1;;;;;2034:36:21;:10;:36;:::i;:::-;2033:58;;;;:::i;:::-;2110:16;;;;;-1:-1:-1;1671:478:21;;-1:-1:-1;;;;1671:478:21:o;4387:145:0:-;4082:7;4108:12;;;:6;:12;;;;;:22;;;2505:30;2516:4;719:10:23;2505::0;:30::i;:::-;4500:25:::1;4511:4;4517:7;4500:10;:25::i;1291:253:14:-:0;1388:7;1423:23;1440:5;1423:16;:23::i;:::-;1415:5;:31;1407:87;;;;-1:-1:-1;;;1407:87:14;;10651:2:32;1407:87:14;;;10633:21:32;10690:2;10670:18;;;10663:30;10729:34;10709:18;;;10702:62;-1:-1:-1;;;10780:18:32;;;10773:41;10831:19;;1407:87:14;10449:407:32;1407:87:14;-1:-1:-1;;;;;;1511:19:14;;;;;;;;:12;:19;;;;;;;;:26;;;;;;;;;1291:253::o;5404:214:0:-;-1:-1:-1;;;;;5499:23:0;;719:10:23;5499:23:0;5491:83;;;;-1:-1:-1;;;5491:83:0;;11063:2:32;5491:83:0;;;11045:21:32;11102:2;11082:18;;;11075:30;11141:34;11121:18;;;11114:62;-1:-1:-1;;;11192:18:32;;;11185:45;11247:19;;5491:83:0;10861:411:32;5491:83:0;5585:26;5597:4;5603:7;5585:11;:26::i;:::-;5404:214;;:::o;3760:374:29:-;1082:7:4;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;-1:-1:-1;;;;;3859:24:29;::::1;;::::0;;;:11:::1;:24;::::0;;;;;::::1;;3858:25;3850:71;;;::::0;-1:-1:-1;;;3850:71:29;;11840:2:32;3850:71:29::1;::::0;::::1;11822:21:32::0;11879:2;11859:18;;;11852:30;11918:34;11898:18;;;11891:62;-1:-1:-1;;;11969:18:32;;;11962:31;12010:19;;3850:71:29::1;11638:397:32::0;3850:71:29::1;-1:-1:-1::0;;;;;3927:24:29;::::1;;::::0;;;:11:::1;:24;::::0;;;;;;;:31;;-1:-1:-1;;3927:31:29::1;3954:4;3927:31:::0;;::::1;::::0;;;3964:14:::1;:32:::0;;;;::::1;::::0;;;::::1;::::0;;-1:-1:-1;;;;;;3964:32:29::1;::::0;::::1;::::0;;4002:22;;;:9:::1;:22:::0;;;;;:34;;::::1;::::0;;::::1;::::0;::::1;:::i;:::-;;4097:32;4106:11;4119:9;4097:32;;;;;;;:::i;:::-;;;;;;;;3760:374:::0;;:::o;3615:182:20:-;3667:34;1438:24;719:10:23;2909:145:0;:::i;3667:34:20:-;3659:111;;;;;-1:-1:-1;;;3659:111:20;;12564:2:32;3659:111:20;;;12546:21:32;12583:18;;;12576:30;;;;12642:34;12622:18;;;12615:62;12713:34;12693:18;;;12686:62;12765:19;;3659:111:20;12362:428:32;3659:111:20;3780:10;:8;:10::i;5122:179:10:-;5255:39;5272:4;5278:2;5282:7;5255:39;;;;;;;;;;;;:16;:39::i;529:241:13:-;645:41;719:10:23;664:12:13;640:96:23;645:41:13;637:102;;;;-1:-1:-1;;;637:102:13;;12997:2:32;637:102:13;;;12979:21:32;13036:2;13016:18;;;13009:30;13075:34;13055:18;;;13048:62;-1:-1:-1;;;13126:18:32;;;13119:46;13182:19;;637:102:13;12795:412:32;637:102:13;749:14;755:7;749:5;:14::i;:::-;529:241;:::o;1798:230:14:-;1873:7;1908:30;1702:10;:17;;1615:111;1908:30;1900:5;:38;1892:95;;;;-1:-1:-1;;;1892:95:14;;13414:2:32;1892:95:14;;;13396:21:32;13453:2;13433:18;;;13426:30;13492:34;13472:18;;;13465:62;-1:-1:-1;;;13543:18:32;;;13536:42;13595:19;;1892:95:14;13212:408:32;1892:95:14;2004:10;2015:5;2004:17;;;;;;;;:::i;:::-;;;;;;;;;1997:24;;1798:230;;;:::o;4227:548:29:-;719:10:23;4325:25:29;;;;:11;:25;;;;;;;;4317:74;;;;-1:-1:-1;;;4317:74:29;;;;;;;:::i;:::-;4423:16;;;4437:1;4423:16;;;;;;;;;4397:23;;4423:16;;;;;;;;;;-1:-1:-1;;4397:42:29;-1:-1:-1;719:10:23;4445:6:29;4452:1;4445:9;;;;;;;;:::i;:::-;;;;;;:24;-1:-1:-1;;;;;4445:24:29;;;-1:-1:-1;;;;;4445:24:29;;;;;4487:6;4475;4482:1;4475:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1;;;;;4475:18:29;;;-1:-1:-1;;;;;4475:18:29;;;;;4511:6;4499;4506:1;4499:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1;;;;;4499:18:29;;;-1:-1:-1;;;;;4499:18:29;;;;;4535:6;4523;4530:1;4523:9;;;;;;;;:::i;:::-;-1:-1:-1;;;;;4523:18:29;;;;:9;;;;;;;;;;:18;4573:16;;;4587:1;4573:16;;;;;;;;;4547:23;;4573:16;;4587:1;4573:16;;;;;;;;;-1:-1:-1;4573:16:29;4547:42;;4607:2;4595:6;4602:1;4595:9;;;;;;;;:::i;:::-;;;;;;:14;;;;;4627:1;4615:6;4622:1;4615:9;;;;;;;;:::i;:::-;;;;;;:13;;;;;4646:1;4634:6;4641:1;4634:9;;;;;;;;:::i;:::-;;;;;;:13;;;;;4665:1;4653:6;4660:1;4653:9;;;;;;;;:::i;:::-;;;;;;:13;;;;;4672:15;4708:6;4716;4690:33;;;;;:::i;:::-;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;719:10:23;4729:28:29;;;;:14;:28;;;;;:41;;-1:-1:-1;;;;;;4729:41:29;-1:-1:-1;;;;;4729:41:29;;;;;;;;;;-1:-1:-1;;;;;;4227:548:29:o;2191:235:10:-;2263:7;2298:16;;;:7;:16;;;;;;-1:-1:-1;;;;;2298:16:10;2332:19;2324:73;;;;-1:-1:-1;;;2324:73:10;;15547:2:32;2324:73:10;;;15529:21:32;15586:2;15566:18;;;15559:30;15625:34;15605:18;;;15598:62;-1:-1:-1;;;15676:18:32;;;15669:39;15725:19;;2324:73:10;15345:405:32;2627:400:20;2686:34;1370:24;719:10:23;2909:145:0;:::i;2686:34:20:-;2678:108;;;;-1:-1:-1;;;2678:108:20;;15957:2:32;2678:108:20;;;15939:21:32;15996:2;15976:18;;;15969:30;16035:34;16015:18;;;16008:62;16106:31;16086:18;;;16079:59;16155:19;;2678:108:20;15755:425:32;2678:108:20;2947:36;2953:2;2957:25;:15;918:14:24;;827:112;2957:25:20;2947:5;:36::i;:::-;2993:27;:15;1032:19:24;;1050:1;1032:19;;;945:123;1929:205:10;2001:7;-1:-1:-1;;;;;2028:19:10;;2020:74;;;;-1:-1:-1;;;2020:74:10;;16387:2:32;2020:74:10;;;16369:21:32;16426:2;16406:18;;;16399:30;16465:34;16445:18;;;16438:62;-1:-1:-1;;;16516:18:32;;;16509:40;16566:19;;2020:74:10;16185:406:32;2020:74:10;-1:-1:-1;;;;;;2111:16:10;;;;;:9;:16;;;;;;;1929:205::o;1668:101:4:-;1082:7;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;1732:30:::1;1759:1;1732:18;:30::i;708:43:29:-:0;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::o;3231:176:20:-;3281:34;1438:24;719:10:23;2909:145:0;:::i;3281:34:20:-;3273:109;;;;-1:-1:-1;;;3273:109:20;;16798:2:32;3273:109:20;;;16780:21:32;16837:2;16817:18;;;16810:30;16876:34;16856:18;;;16849:62;16947:32;16927:18;;;16920:60;16997:19;;3273:109:20;16596:426:32;3273:109:20;3392:8;:6;:8::i;1431:151:1:-;1521:7;1547:18;;;:12;:18;;;;;:28;;1569:5;1547:21;:28::i;:::-;1540:35;1431:151;-1:-1:-1;;;1431:151:1:o;2909:145:0:-;2995:4;3018:12;;;:6;:12;;;;;;;;-1:-1:-1;;;;;3018:29:0;;;;;;;;;;;;;;;2909:145::o;2650:102:10:-;2706:13;2738:7;2731:14;;;;;:::i;4283:153::-;4377:52;719:10:23;4410:8:10;4420;4377:18;:52::i;5367:320::-;5536:41;719:10:23;5569:7:10;5536:18;:41::i;:::-;5528:103;;;;-1:-1:-1;;;5528:103:10;;;;;;;:::i;:::-;5641:39;5655:4;5661:2;5665:7;5674:5;5641:13;:39::i;:::-;5367:320;;;;:::o;5978:432:29:-;719:10:23;6027:25:29;;;;:11;:25;;;;;;;;6019:74;;;;-1:-1:-1;;;6019:74:29;;;;;;;:::i;:::-;719:10:23;6106:23:29;;;;:9;:23;;;;;6099:30;;;:::i;:::-;719:10:23;6142:28:29;;;;:14;:28;;;;;;;;6135:35;;-1:-1:-1;;;;;;6135:35:29;;;6176:11;:25;;;;;:33;;-1:-1:-1;;6176:33:29;;;6250:120;6266:14;:21;6264:23;;6250:120;;;719:10:23;-1:-1:-1;;;;;6303:33:29;:14;6318:1;6303:17;;;;;;;;:::i;:::-;;;;;;;;;;;-1:-1:-1;;;;;6303:17:29;:33;6299:71;;;6353:14;6368:1;6353:17;;;;;;;;:::i;:::-;;;;;;;;;;6346:24;;-1:-1:-1;;;;;;6346:24:29;;;6299:71;6288:3;;;;:::i;:::-;;;;6250:120;;;-1:-1:-1;6381:24:29;719:10:23;6392:12:29;6381:24;;-1:-1:-1;;;;;1692:32:32;;;1674:51;;1662:2;1647:18;6381:24:29;;;;;;;5978:432::o;3345:155::-;3444:13;3472:23;3487:7;3472:14;:23::i;1750:140:1:-;1830:7;1856:18;;;:12;:18;;;;;:27;;:25;:27::i;4766:147:0:-;4082:7;4108:12;;;:6;:12;;;;;:22;;;2505:30;2516:4;719:10:23;2505::0;:30::i;:::-;4880:26:::1;4892:4;4898:7;4880:11;:26::i;1918:198:4:-:0;1082:7;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;-1:-1:-1;;;;;2006:22:4;::::1;1998:73;;;::::0;-1:-1:-1;;;1998:73:4;;17369:2:32;1998:73:4::1;::::0;::::1;17351:21:32::0;17408:2;17388:18;;;17381:30;17447:34;17427:18;;;17420:62;-1:-1:-1;;;17498:18:32;;;17491:36;17544:19;;1998:73:4::1;17167:402:32::0;1998:73:4::1;2081:28;2100:8;2081:18;:28::i;4890:701:29:-:0;1082:7:4;1108:6;-1:-1:-1;;;;;1108:6:4;719:10:23;1248:23:4;1240:68;;;;-1:-1:-1;;;1240:68:4;;;;;;;:::i;:::-;-1:-1:-1;;;;;5023:28:29;::::1;;::::0;;;:11:::1;:28;::::0;;;;;::::1;;5015:78;;;::::0;-1:-1:-1;;;5015:78:29;;17776:2:32;5015:78:29::1;::::0;::::1;17758:21:32::0;17815:2;17795:18;;;17788:30;17854:34;17834:18;;;17827:62;-1:-1:-1;;;17905:18:32;;;17898:35;17950:19;;5015:78:29::1;17574:401:32::0;5015:78:29::1;-1:-1:-1::0;;;;;5107:31:29;;::::1;5150:3;5107:31:::0;;;:14:::1;:31;::::0;;;;;::::1;:47:::0;5099:102:::1;;;::::0;-1:-1:-1;;;5099:102:29;;18182:2:32;5099:102:29::1;::::0;::::1;18164:21:32::0;18221:2;18201:18;;;18194:30;18260:34;18240:18;;;18233:62;-1:-1:-1;;;18311:18:32;;;18304:40;18361:19;;5099:102:29::1;17980:406:32::0;5099:102:29::1;5233:16;::::0;;5247:1:::1;5233:16:::0;;;;;::::1;::::0;;;5207:23:::1;::::0;5233:16:::1;::::0;::::1;::::0;;::::1;::::0;::::1;;::::0;-1:-1:-1;5233:16:29::1;5207:42;;5267:15;5255:6;5262:1;5255:9;;;;;;;;:::i;:::-;;;;;;:27;-1:-1:-1::0;;;;;5255:27:29::1;;;-1:-1:-1::0;;;;;5255:27:29::1;;;::::0;::::1;5300:6;5288;5295:1;5288:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1::0;;;;;5288:18:29::1;;;-1:-1:-1::0;;;;;5288:18:29::1;;;::::0;::::1;5324:6;5312;5319:1;5312:9;;;;;;;;:::i;:::-;;;;;;:18;-1:-1:-1::0;;;;;5312:18:29::1;;;-1:-1:-1::0;;;;;5312:18:29::1;;;::::0;::::1;5348:6;5336;5343:1;5336:9;;;;;;;;:::i;:::-;-1:-1:-1::0;;;;;5336:18:29;;;::::1;:9;::::0;;::::1;::::0;;;;;;:18;5386:16:::1;::::0;;5400:1:::1;5386:16:::0;;;;;::::1;::::0;;;5360:23:::1;::::0;5386:16;;5400:1;5386:16;::::1;::::0;;::::1;::::0;::::1;;::::0;-1:-1:-1;5386:16:29::1;5360:42;;5420:2;5408:6;5415:1;5408:9;;;;;;;;:::i;:::-;;;;;;:14;;;::::0;::::1;5440:1;5428:6;5435:1;5428:9;;;;;;;;:::i;:::-;;;;;;:13;;;::::0;::::1;5459:1;5447:6;5454:1;5447:9;;;;;;;;:::i;:::-;;;;;;:13;;;::::0;::::1;5478:1;5466:6;5473:1;5466:9;;;;;;;;:::i;:::-;;;;;;:13;;;::::0;::::1;5485:15;5521:6;5529;5503:33;;;;;:::i;:::-;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;::::0;::::1;;;;;-1:-1:-1::0;;;;;;5542:31:29;;::::1;;::::0;;;:14:::1;:31;::::0;;;;:44;;-1:-1:-1;;;;;;5542:44:29::1;::::0;;;::::1;;::::0;;;-1:-1:-1;;;;;;4890:701:29:o;6861:233:0:-;6944:22;6952:4;6958:7;6944;:22::i;:::-;6939:149;;6982:12;;;;:6;:12;;;;;;;;-1:-1:-1;;;;;6982:29:0;;;;;;;;;:36;;-1:-1:-1;;6982:36:0;7014:4;6982:36;;;7064:12;719:10:23;;640:96;7064:12:0;-1:-1:-1;;;;;7037:40:0;7055:7;-1:-1:-1;;;;;7037:40:0;7049:4;7037:40;;;;;;;;;;6861:233;;:::o;7612:150:28:-;7682:4;7705:50;7710:3;-1:-1:-1;;;;;7730:23:28;;7705:4;:50::i;4103:246:20:-;4279:4;4306:36;4330:11;4306:23;:36::i;6257:110:0:-;6335:25;6346:4;6352:7;6335:10;:25::i;7159:125:10:-;7224:4;7247:16;;;:7;:16;;;;;;-1:-1:-1;;;;;7247:16:10;:30;;;7159:125::o;11168:171::-;11242:24;;;;:15;:24;;;;;:29;;-1:-1:-1;;;;;;11242:29:10;-1:-1:-1;;;;;11242:29:10;;;;;;;;:24;;11295:23;11242:24;11295:14;:23::i;:::-;-1:-1:-1;;;;;11286:46:10;;;;;;;;;;;11168:171;;:::o;7442:344::-;7535:4;7559:16;7567:7;7559;:16::i;:::-;7551:73;;;;-1:-1:-1;;;7551:73:10;;18593:2:32;7551:73:10;;;18575:21:32;18632:2;18612:18;;;18605:30;18671:34;18651:18;;;18644:62;-1:-1:-1;;;18722:18:32;;;18715:42;18774:19;;7551:73:10;18391:408:32;7551:73:10;7634:13;7650:23;7665:7;7650:14;:23::i;:::-;7634:39;;7702:5;-1:-1:-1;;;;;7691:16:10;:7;-1:-1:-1;;;;;7691:16:10;;:51;;;;7735:7;-1:-1:-1;;;;;7711:31:10;:20;7723:7;7711:11;:20::i;:::-;-1:-1:-1;;;;;7711:31:10;;7691:51;:87;;;-1:-1:-1;;;;;;4622:25:10;;;4599:4;4622:25;;;:18;:25;;;;;;;;:35;;;;;;;;;;;;7746:32;7683:96;7442:344;-1:-1:-1;;;;7442:344:10:o;10452:605::-;10606:4;-1:-1:-1;;;;;10579:31:10;:23;10594:7;10579:14;:23::i;:::-;-1:-1:-1;;;;;10579:31:10;;10571:81;;;;-1:-1:-1;;;10571:81:10;;19006:2:32;10571:81:10;;;18988:21:32;19045:2;19025:18;;;19018:30;19084:34;19064:18;;;19057:62;-1:-1:-1;;;19135:18:32;;;19128:35;19180:19;;10571:81:10;18804:401:32;10571:81:10;-1:-1:-1;;;;;10670:16:10;;10662:65;;;;-1:-1:-1;;;10662:65:10;;19412:2:32;10662:65:10;;;19394:21:32;19451:2;19431:18;;;19424:30;19490:34;19470:18;;;19463:62;-1:-1:-1;;;19541:18:32;;;19534:34;19585:19;;10662:65:10;19210:400:32;10662:65:10;10738:39;10759:4;10765:2;10769:7;10738:20;:39::i;:::-;10839:29;10856:1;10860:7;10839:8;:29::i;:::-;-1:-1:-1;;;;;10879:15:10;;;;;;:9;:15;;;;;:20;;10898:1;;10879:15;:20;;10898:1;;10879:20;:::i;:::-;;;;-1:-1:-1;;;;;;;10909:13:10;;;;;;:9;:13;;;;;:18;;10926:1;;10909:13;:18;;10926:1;;10909:18;:::i;:::-;;;;-1:-1:-1;;10937:16:10;;;;:7;:16;;;;;;:21;;-1:-1:-1;;;;;;10937:21:10;-1:-1:-1;;;;;10937:21:10;;;;;;;;;10974:27;;10937:16;;10974:27;;;;;;;3607:331;3537:401;;:::o;3335:492:0:-;3423:22;3431:4;3437:7;3423;:22::i;:::-;3418:403;;3606:41;3634:7;-1:-1:-1;;;;;3606:41:0;3644:2;3606:19;:41::i;:::-;3718:38;3746:4;3753:2;3718:19;:38::i;:::-;3513:265;;;;;;;;;:::i;:::-;;;;-1:-1:-1;;3513:265:0;;;;;;;;;;-1:-1:-1;;;3461:349:0;;;;;;;:::i;1978:166:1:-;2065:31;2082:4;2088:7;2065:16;:31::i;:::-;2106:18;;;;:12;:18;;;;;:31;;2129:7;2106:22;:31::i;2233:171::-;2321:32;2339:4;2345:7;2321:17;:32::i;:::-;2363:18;;;;:12;:18;;;;;:34;;2389:7;2363:25;:34::i;2110:117:7:-;1168:7;;;;1669:41;;;;-1:-1:-1;;;1669:41:7;;20871:2:32;1669:41:7;;;20853:21:32;20910:2;20890:18;;;20883:30;-1:-1:-1;;;20929:18:32;;;20922:50;20989:18;;1669:41:7;20669:344:32;1669:41:7;2168:7:::1;:15:::0;;-1:-1:-1;;2168:15:7::1;::::0;;2198:22:::1;719:10:23::0;2207:12:7::1;640:96:23::0;2258:130:29;2363:20;2375:7;2363:11;:20::i;2449:553::-;2533:24;2545:2;2549:7;2533:11;:24::i;:::-;2601:21;2625:14;:12;:14::i;:::-;-1:-1:-1;;;;;2723:24:29;;;;;;:9;:24;;;;;2701:47;;2601:38;;-1:-1:-1;2701:47:29;;2714:7;;2723:24;2701:47;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:12;:47::i;:::-;-1:-1:-1;;;;;2841:29:29;;;2880:3;2841:29;;;:14;:29;;;;;;;:43;2837:100;;-1:-1:-1;;;;;2908:29:29;;;;;;;:14;:29;;;;;;;2837:100;2943:54;2960:7;2969:13;1029:3;2943:16;:54::i;2270:187:4:-;2343:16;2362:6;;-1:-1:-1;;;;;2378:17:4;;;-1:-1:-1;;;;;;2378:17:4;;;;;;2410:40;;2362:6;;;;;;;2410:40;;2343:16;2410:40;2333:124;2270:187;:::o;1863:115:7:-;1168:7;;;;1411:9;1403:38;;;;-1:-1:-1;;;1403:38:7;;21220:2:32;1403:38:7;;;21202:21:32;21259:2;21239:18;;;21232:30;-1:-1:-1;;;21278:18:32;;;21271:46;21334:18;;1403:38:7;21018:340:32;1403:38:7;1922:7:::1;:14:::0;;-1:-1:-1;;1922:14:7::1;1932:4;1922:14;::::0;;1951:20:::1;1958:12;719:10:23::0;;640:96;8870:156:28;8944:7;8994:22;8998:3;9010:5;8994:3;:22::i;11474:307:10:-;11624:8;-1:-1:-1;;;;;11615:17:10;:5;-1:-1:-1;;;;;11615:17:10;;;11607:55;;;;-1:-1:-1;;;11607:55:10;;21565:2:32;11607:55:10;;;21547:21:32;21604:2;21584:18;;;21577:30;21643:27;21623:18;;;21616:55;21688:18;;11607:55:10;21363:349:32;11607:55:10;-1:-1:-1;;;;;11672:25:10;;;;;;;:18;:25;;;;;;;;:35;;;;;;;;;;;;;:46;;-1:-1:-1;;11672:46:10;;;;;;;;;;11733:41;;540::32;;;11733::10;;513:18:32;11733:41:10;;;;;;;11474:307;;;:::o;6549:::-;6700:28;6710:4;6716:2;6720:7;6700:9;:28::i;:::-;6746:48;6769:4;6775:2;6779:7;6788:5;6746:22;:48::i;:::-;6738:111;;;;-1:-1:-1;;;6738:111:10;;;;;;;:::i;467:663:17:-;540:13;573:16;581:7;573;:16::i;:::-;565:78;;;;-1:-1:-1;;;565:78:17;;22338:2:32;565:78:17;;;22320:21:32;22377:2;22357:18;;;22350:30;22416:34;22396:18;;;22389:62;-1:-1:-1;;;22467:18:32;;;22460:47;22524:19;;565:78:17;22136:413:32;565:78:17;654:23;680:19;;;:10;:19;;;;;654:45;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;709:18;730:10;:8;:10::i;:::-;709:31;;819:4;813:18;835:1;813:23;809:70;;;-1:-1:-1;859:9:17;467:663;-1:-1:-1;;467:663:17:o;809:70::-;981:23;;:27;977:106;;1055:4;1061:9;1038:33;;;;;;;;;:::i;:::-;;;;;;;;;;;;;1024:48;;;;467:663;;;:::o;977:106::-;1100:23;1115:7;1100:14;:23::i;8413:115:28:-;8476:7;8502:19;8510:3;4028:18;;3946:107;1697:404;1760:4;3834:19;;;:12;;;:19;;;;;;1776:319;;-1:-1:-1;1818:23:28;;;;;;;;:11;:23;;;;;;;;;;;;;1998:18;;1976:19;;;:12;;;:19;;;;;;:40;;;;2030:11;;1776:319;-1:-1:-1;2079:5:28;2072:12;;990:222:14;1092:4;-1:-1:-1;;;;;;1115:50:14;;-1:-1:-1;;;1115:50:14;;:90;;;1169:36;1193:11;1169:23;:36::i;1946:211:29:-;2107:45;2134:4;2140:2;2144:7;2107:26;:45::i;1588:441:25:-;1663:13;1688:19;1720:10;1724:6;1720:1;:10;:::i;:::-;:14;;1733:1;1720:14;:::i;:::-;1710:25;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;1710:25:25;;1688:47;;-1:-1:-1;;;1745:6:25;1752:1;1745:9;;;;;;;;:::i;:::-;;;;:15;-1:-1:-1;;;;;1745:15:25;;;;;;;;;-1:-1:-1;;;1770:6:25;1777:1;1770:9;;;;;;;;:::i;:::-;;;;:15;-1:-1:-1;;;;;1770:15:25;;;;;;;;-1:-1:-1;1800:9:25;1812:10;1816:6;1812:1;:10;:::i;:::-;:14;;1825:1;1812:14;:::i;:::-;1800:26;;1795:132;1832:1;1828;:5;1795:132;;;-1:-1:-1;;;1879:5:25;1887:3;1879:11;1866:25;;;;;;;:::i;:::-;;;;1854:6;1861:1;1854:9;;;;;;;;:::i;:::-;;;;:37;-1:-1:-1;;;;;1854:37:25;;;;;;;;-1:-1:-1;1915:1:25;1905:11;;;;;1835:3;;;:::i;:::-;;;1795:132;;;-1:-1:-1;1944:10:25;;1936:55;;;;-1:-1:-1;;;1936:55:25;;23372:2:32;1936:55:25;;;23354:21:32;;;23391:18;;;23384:30;23450:34;23430:18;;;23423:62;23502:18;;1936:55:25;23170:356:32;7219:234:0;7302:22;7310:4;7316:7;7302;:22::i;:::-;7298:149;;;7372:5;7340:12;;;:6;:12;;;;;;;;-1:-1:-1;;;;;7340:29:0;;;;;;;;;;:37;;-1:-1:-1;;7340:37:0;;;7396:40;719:10:23;;7340:12:0;;7396:40;;7372:5;7396:40;7219:234;;:::o;7930:156:28:-;8003:4;8026:53;8034:3;-1:-1:-1;;;;;8054:23:28;;8026:7;:53::i;1394:132:16:-;1462:20;1474:7;1462:11;:20::i;:::-;4150:26:21;;;;:17;:26;;;;;4143:33;529:241:13:o;9078:427:10:-;-1:-1:-1;;;;;9157:16:10;;9149:61;;;;-1:-1:-1;;;9149:61:10;;23733:2:32;9149:61:10;;;23715:21:32;;;23752:18;;;23745:30;23811:34;23791:18;;;23784:62;23863:18;;9149:61:10;23531:356:32;9149:61:10;9229:16;9237:7;9229;:16::i;:::-;9228:17;9220:58;;;;-1:-1:-1;;;9220:58:10;;24094:2:32;9220:58:10;;;24076:21:32;24133:2;24113:18;;;24106:30;24172;24152:18;;;24145:58;24220:18;;9220:58:10;23892:352:32;9220:58:10;9289:45;9318:1;9322:2;9326:7;9289:20;:45::i;:::-;-1:-1:-1;;;;;9345:13:10;;;;;;:9;:13;;;;;:18;;9362:1;;9345:13;:18;;9362:1;;9345:18;:::i;:::-;;;;-1:-1:-1;;9373:16:10;;;;:7;:16;;;;;;:21;;-1:-1:-1;;;;;;9373:21:10;-1:-1:-1;;;;;9373:21:10;;;;;;;;9410:33;;9373:16;;;9410:33;;9373:16;;9410:33;5404:214:0;;:::o;5638:198:29:-;5685:7;5707:14;5809;:21;;;;5754:16;5772:15;5789:14;5737:67;;;;;;;;;;:::i;:::-;;;;;;;;;;;;;5727:78;;;;;;5722:84;;:108;;;;:::i;:::-;5707:124;;;;;;;;:::i;:::-;;;;;;;;;;;-1:-1:-1;;;;;5707:124:29;;5638:198;-1:-1:-1;5638:198:29:o;1277:214:17:-;1376:16;1384:7;1376;:16::i;:::-;1368:75;;;;-1:-1:-1;;;1368:75:17;;25295:2:32;1368:75:17;;;25277:21:32;25334:2;25314:18;;;25307:30;25373:34;25353:18;;;25346:62;-1:-1:-1;;;25424:18:32;;;25417:44;25478:19;;1368:75:17;25093:410:32;1368:75:17;1453:19;;;;:10;:19;;;;;;;;:31;;;;;;;;:::i;3584:381:21:-;2507:5;-1:-1:-1;;;;;3731:33:21;;;;3723:88;;;;-1:-1:-1;;;3723:88:21;;25710:2:32;3723:88:21;;;25692:21:32;25749:2;25729:18;;;25722:30;25788:34;25768:18;;;25761:62;-1:-1:-1;;;25839:18:32;;;25832:40;25889:19;;3723:88:21;25508:406:32;3723:88:21;-1:-1:-1;;;;;3829:22:21;;3821:62;;;;-1:-1:-1;;;3821:62:21;;26121:2:32;3821:62:21;;;26103:21:32;26160:2;26140:18;;;26133:30;26199:29;26179:18;;;26172:57;26246:18;;3821:62:21;25919:351:32;3821:62:21;3923:35;;;;;;;;-1:-1:-1;;;;;3923:35:21;;;;;-1:-1:-1;;;;;3923:35:21;;;;;;;;;;-1:-1:-1;3894:26:21;;;:17;:26;;;;;;:64;;;;;;;-1:-1:-1;;;3894:64:21;;;;;;3584:381::o;4395:118:28:-;4462:7;4488:3;:11;;4500:5;4488:18;;;;;;;;:::i;:::-;;;;;;;;;4481:25;;4395:118;;;;:::o;12334:778:10:-;12484:4;-1:-1:-1;;;;;12504:13:10;;1465:19:22;:23;12500:606:10;;12539:72;;-1:-1:-1;;;12539:72:10;;-1:-1:-1;;;;;12539:36:10;;;;;:72;;719:10:23;;12590:4:10;;12596:7;;12605:5;;12539:72;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;-1:-1:-1;12539:72:10;;;;;;;;-1:-1:-1;;12539:72:10;;;;;;;;;;;;:::i;:::-;;;12535:519;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;12778:13:10;;12774:266;;12820:60;;-1:-1:-1;;;12820:60:10;;;;;;;:::i;12774:266::-;12992:6;12986:13;12977:6;12973:2;12969:15;12962:38;12535:519;-1:-1:-1;;;;;;12661:51:10;-1:-1:-1;;;12661:51:10;;-1:-1:-1;12654:58:10;;12500:606;-1:-1:-1;13091:4:10;12334:778;;;;;;:::o;1691:142:29:-;1791:13;1812:16;:14;:16::i;:::-;;1691:142;:::o;2818:329:10:-;2891:13;2924:16;2932:7;2924;:16::i;:::-;2916:76;;;;-1:-1:-1;;;2916:76:10;;27225:2:32;2916:76:10;;;27207:21:32;27264:2;27244:18;;;27237:30;27303:34;27283:18;;;27276:62;-1:-1:-1;;;27354:18:32;;;27347:45;27409:19;;2916:76:10;27023:411:32;2916:76:10;3003:21;3027:10;:8;:10::i;:::-;3003:34;;3078:1;3060:7;3054:21;:25;:86;;;;;;;;;;;;;;;;;3106:7;3115:18;:7;:16;:18::i;:::-;3089:45;;;;;;;;;:::i;:::-;;;;;;;;;;;;;3047:93;2818:329;-1:-1:-1;;;2818:329:10:o;1099:168:16:-;1201:4;1224:36;1248:11;1224:23;:36::i;3803:233:20:-;3984:45;4011:4;4017:2;4021:7;3984:26;:45::i;2269:1388:28:-;2335:4;2472:19;;;:12;;;:19;;;;;;2506:15;;2502:1149;;2875:21;2899:14;2912:1;2899:10;:14;:::i;:::-;2947:18;;2875:38;;-1:-1:-1;2927:17:28;;2947:22;;2968:1;;2947:22;:::i;:::-;2927:42;;3001:13;2988:9;:26;2984:398;;3034:17;3054:3;:11;;3066:9;3054:22;;;;;;;;:::i;:::-;;;;;;;;;3034:42;;3205:9;3176:3;:11;;3188:13;3176:26;;;;;;;;:::i;:::-;;;;;;;;;;;;:38;;;;3288:23;;;:12;;;:23;;;;;:36;;;2984:398;3460:17;;:3;;:17;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;3552:3;:12;;:19;3565:5;3552:19;;;;;;;;;;;3545:26;;;3593:4;3586:11;;;;;;;2502:1149;3635:5;3628:12;;;;;1708:200:17;1776:20;1788:7;1776:11;:20::i;:::-;1817:19;;;;:10;:19;;;;;1811:33;;;;;:::i;:::-;:38;;-1:-1:-1;1807:95:17;;1872:19;;;;:10;:19;;;;;1865:26;;;:::i;2140:112:20:-;2200:13;2232;2225:20;;;;;:::i;328:703:25:-;384:13;601:10;597:51;;-1:-1:-1;;627:10:25;;;;;;;;;;;;-1:-1:-1;;;627:10:25;;;;;328:703::o;597:51::-;672:5;657:12;711:75;718:9;;711:75;;743:8;;;;:::i;:::-;;-1:-1:-1;765:10:25;;-1:-1:-1;773:2:25;765:10;;:::i;:::-;;;711:75;;;795:19;827:6;817:17;;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;-1:-1:-1;817:17:25;;795:39;;844:150;851:10;;844:150;;877:11;887:1;877:11;;:::i;:::-;;-1:-1:-1;945:10:25;953:2;945:5;:10;:::i;:::-;932:24;;:2;:24;:::i;:::-;919:39;;902:6;909;902:14;;;;;;;;:::i;:::-;;;;:56;-1:-1:-1;;;;;902:56:25;;;;;;;;-1:-1:-1;972:11:25;981:2;972:11;;:::i;:::-;;;844:150;;1570:300:10;1672:4;-1:-1:-1;;;;;;1707:40:10;;-1:-1:-1;;;1707:40:10;;:104;;-1:-1:-1;;;;;;;1763:48:10;;-1:-1:-1;;;1763:48:10;1707:104;:156;;;;1827:36;1851:11;1827:23;:36::i;672:267:15:-;811:45;838:4;844:2;848:7;811:26;:45::i;:::-;1168:7:7;;;;875:9:15;867:65;;;;-1:-1:-1;;;867:65:15;;27773:2:32;867:65:15;;;27755:21:32;27812:2;27792:18;;;27785:30;27851:34;27831:18;;;27824:62;-1:-1:-1;;;27902:18:32;;;27895:41;27953:19;;867:65:15;27571:407:32;9722:406:10;9781:13;9797:23;9812:7;9797:14;:23::i;:::-;9781:39;;9831:48;9852:5;9867:1;9871:7;9831:20;:48::i;:::-;9917:29;9934:1;9938:7;9917:8;:29::i;:::-;-1:-1:-1;;;;;9957:16:10;;;;;;:9;:16;;;;;:21;;9977:1;;9957:16;:21;;9977:1;;9957:21;:::i;:::-;;;;-1:-1:-1;;9995:16:10;;;;:7;:16;;;;;;9988:23;;-1:-1:-1;;;;;;9988:23:10;;;10027:36;10003:7;;9995:16;-1:-1:-1;;;;;10027:36:10;;;;;9995:16;;10027:36;5404:214:0;;:::o;634:212:1:-;719:4;-1:-1:-1;;;;;;742:57:1;;-1:-1:-1;;;742:57:1;;:97;;;803:36;827:11;803:23;:36::i;2624:572:14:-;-1:-1:-1;;;;;2823:18:14;;2819:183;;2857:40;2889:7;4005:10;:17;;3978:24;;;;:15;:24;;;;;:44;;;4032:24;;;;;;;;;;;;3902:161;2857:40;2819:183;;;2926:2;-1:-1:-1;;;;;2918:10:14;:4;-1:-1:-1;;;;;2918:10:14;;2914:88;;2944:47;2977:4;2983:7;2944:32;:47::i;:::-;-1:-1:-1;;;;;3015:16:14;;3011:179;;3047:45;3084:7;3047:36;:45::i;3011:179::-;3119:4;-1:-1:-1;;;;;3113:10:14;:2;-1:-1:-1;;;;;3113:10:14;;3109:81;;3139:40;3167:2;3171:7;3139:27;:40::i;2620:202:0:-;2705:4;-1:-1:-1;;;;;;2728:47:0;;-1:-1:-1;;;2728:47:0;;:87;;;2779:36;2803:11;2779:23;:36::i;4680:970:14:-;4942:22;4992:1;4967:22;4984:4;4967:16;:22::i;:::-;:26;;;;:::i;:::-;5003:18;5024:26;;;:17;:26;;;;;;4942:51;;-1:-1:-1;5154:28:14;;;5150:323;;-1:-1:-1;;;;;5220:18:14;;5198:19;5220:18;;;:12;:18;;;;;;;;:34;;;;;;;;;5269:30;;;;;;:44;;;5385:30;;:17;:30;;;;;:43;;;5150:323;-1:-1:-1;5566:26:14;;;;:17;:26;;;;;;;;5559:33;;;-1:-1:-1;;;;;5609:18:14;;;;;:12;:18;;;;;:34;;;;;;;5602:41;4680:970::o;5938:1061::-;6212:10;:17;6187:22;;6212:21;;6232:1;;6212:21;:::i;:::-;6243:18;6264:24;;;:15;:24;;;;;;6632:10;:26;;6187:46;;-1:-1:-1;6264:24:14;;6187:46;;6632:26;;;;;;:::i;:::-;;;;;;;;;6610:48;;6694:11;6669:10;6680;6669:22;;;;;;;;:::i;:::-;;;;;;;;;;;;:36;;;;6773:28;;;:15;:28;;;;;;;:41;;;6942:24;;;;;6935:31;6976:10;:16;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;6009:990;;;5938:1061;:::o;3490:217::-;3574:14;3591:20;3608:2;3591:16;:20::i;:::-;-1:-1:-1;;;;;3621:16:14;;;;;;;:12;:16;;;;;;;;:24;;;;;;;;:34;;;3665:26;;;:17;:26;;;;;;:35;;;;-1:-1:-1;3490:217:14:o;1408:213:21:-;1510:4;-1:-1:-1;;;;;;1533:41:21;;-1:-1:-1;;;1533:41:21;;:81;;-1:-1:-1;;;;;;;;;;937:40:26;;;1578:36:21;829:155:26;-1:-1:-1;;;;;;;:::i;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;;;;;;;:::o;:::-;;;;;;;:::i;:::-;;;;;;;;;;;:::o;:::-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;14:131:32;-1:-1:-1;;;;;;88:32:32;;78:43;;68:71;;135:1;132;125:12;150:245;208:6;261:2;249:9;240:7;236:23;232:32;229:52;;;277:1;274;267:12;229:52;316:9;303:23;335:30;359:5;335:30;:::i;592:258::-;664:1;674:113;688:6;685:1;682:13;674:113;;;764:11;;;758:18;745:11;;;738:39;710:2;703:10;674:113;;;805:6;802:1;799:13;796:48;;;-1:-1:-1;;840:1:32;822:16;;815:27;592:258::o;855:::-;897:3;935:5;929:12;962:6;957:3;950:19;978:63;1034:6;1027:4;1022:3;1018:14;1011:4;1004:5;1000:16;978:63;:::i;:::-;1095:2;1074:15;-1:-1:-1;;1070:29:32;1061:39;;;;1102:4;1057:50;;855:258;-1:-1:-1;;855:258:32:o;1118:220::-;1267:2;1256:9;1249:21;1230:4;1287:45;1328:2;1317:9;1313:18;1305:6;1287:45;:::i;1343:180::-;1402:6;1455:2;1443:9;1434:7;1430:23;1426:32;1423:52;;;1471:1;1468;1461:12;1423:52;-1:-1:-1;1494:23:32;;1343:180;-1:-1:-1;1343:180:32:o;1736:173::-;1804:20;;-1:-1:-1;;;;;1853:31:32;;1843:42;;1833:70;;1899:1;1896;1889:12;1833:70;1736:173;;;:::o;1914:254::-;1982:6;1990;2043:2;2031:9;2022:7;2018:23;2014:32;2011:52;;;2059:1;2056;2049:12;2011:52;2082:29;2101:9;2082:29;:::i;:::-;2072:39;2158:2;2143:18;;;;2130:32;;-1:-1:-1;;;1914:254:32:o;2355:328::-;2432:6;2440;2448;2501:2;2489:9;2480:7;2476:23;2472:32;2469:52;;;2517:1;2514;2507:12;2469:52;2540:29;2559:9;2540:29;:::i;:::-;2530:39;;2588:38;2622:2;2611:9;2607:18;2588:38;:::i;:::-;2578:48;;2673:2;2662:9;2658:18;2645:32;2635:42;;2355:328;;;;;:::o;3055:248::-;3123:6;3131;3184:2;3172:9;3163:7;3159:23;3155:32;3152:52;;;3200:1;3197;3190:12;3152:52;-1:-1:-1;;3223:23:32;;;3293:2;3278:18;;;3265:32;;-1:-1:-1;3055:248:32:o;3587:254::-;3655:6;3663;3716:2;3704:9;3695:7;3691:23;3687:32;3684:52;;;3732:1;3729;3722:12;3684:52;3768:9;3755:23;3745:33;;3797:38;3831:2;3820:9;3816:18;3797:38;:::i;:::-;3787:48;;3587:254;;;;;:::o;3846:127::-;3907:10;3902:3;3898:20;3895:1;3888:31;3938:4;3935:1;3928:15;3962:4;3959:1;3952:15;3978:632;4043:5;4073:18;4114:2;4106:6;4103:14;4100:40;;;4120:18;;:::i;:::-;4195:2;4189:9;4163:2;4249:15;;-1:-1:-1;;4245:24:32;;;4271:2;4241:33;4237:42;4225:55;;;4295:18;;;4315:22;;;4292:46;4289:72;;;4341:18;;:::i;:::-;4381:10;4377:2;4370:22;4410:6;4401:15;;4440:6;4432;4425:22;4480:3;4471:6;4466:3;4462:16;4459:25;4456:45;;;4497:1;4494;4487:12;4456:45;4547:6;4542:3;4535:4;4527:6;4523:17;4510:44;4602:1;4595:4;4586:6;4578;4574:19;4570:30;4563:41;;;;3978:632;;;;;:::o;4615:525::-;4693:6;4701;4754:2;4742:9;4733:7;4729:23;4725:32;4722:52;;;4770:1;4767;4760:12;4722:52;4793:29;4812:9;4793:29;:::i;:::-;4783:39;;4873:2;4862:9;4858:18;4845:32;4900:18;4892:6;4889:30;4886:50;;;4932:1;4929;4922:12;4886:50;4955:22;;5008:4;5000:13;;4996:27;-1:-1:-1;4986:55:32;;5037:1;5034;5027:12;4986:55;5060:74;5126:7;5121:2;5108:16;5103:2;5099;5095:11;5060:74;:::i;:::-;5050:84;;;4615:525;;;;;:::o;5145:334::-;5222:6;5230;5238;5291:2;5279:9;5270:7;5266:23;5262:32;5259:52;;;5307:1;5304;5297:12;5259:52;5330:29;5349:9;5330:29;:::i;:::-;5320:39;;5378:38;5412:2;5401:9;5397:18;5378:38;:::i;:::-;5368:48;;5435:38;5469:2;5458:9;5454:18;5435:38;:::i;:::-;5425:48;;5145:334;;;;;:::o;5697:186::-;5756:6;5809:2;5797:9;5788:7;5784:23;5780:32;5777:52;;;5825:1;5822;5815:12;5777:52;5848:29;5867:9;5848:29;:::i;6141:347::-;6206:6;6214;6267:2;6255:9;6246:7;6242:23;6238:32;6235:52;;;6283:1;6280;6273:12;6235:52;6306:29;6325:9;6306:29;:::i;:::-;6296:39;;6385:2;6374:9;6370:18;6357:32;6432:5;6425:13;6418:21;6411:5;6408:32;6398:60;;6454:1;6451;6444:12;6398:60;6477:5;6467:15;;;6141:347;;;;;:::o;6493:667::-;6588:6;6596;6604;6612;6665:3;6653:9;6644:7;6640:23;6636:33;6633:53;;;6682:1;6679;6672:12;6633:53;6705:29;6724:9;6705:29;:::i;:::-;6695:39;;6753:38;6787:2;6776:9;6772:18;6753:38;:::i;:::-;6743:48;;6838:2;6827:9;6823:18;6810:32;6800:42;;6893:2;6882:9;6878:18;6865:32;6920:18;6912:6;6909:30;6906:50;;;6952:1;6949;6942:12;6906:50;6975:22;;7028:4;7020:13;;7016:27;-1:-1:-1;7006:55:32;;7057:1;7054;7047:12;7006:55;7080:74;7146:7;7141:2;7128:16;7123:2;7119;7115:11;7080:74;:::i;:::-;7070:84;;;6493:667;;;;;;;:::o;7165:260::-;7233:6;7241;7294:2;7282:9;7273:7;7269:23;7265:32;7262:52;;;7310:1;7307;7300:12;7262:52;7333:29;7352:9;7333:29;:::i;:::-;7323:39;;7381:38;7415:2;7404:9;7400:18;7381:38;:::i;7430:409::-;7516:6;7524;7532;7540;7593:3;7581:9;7572:7;7568:23;7564:33;7561:53;;;7610:1;7607;7600:12;7561:53;7633:29;7652:9;7633:29;:::i;:::-;7623:39;;7681:38;7715:2;7704:9;7700:18;7681:38;:::i;:::-;7671:48;;7738:38;7772:2;7761:9;7757:18;7738:38;:::i;:::-;7728:48;;7795:38;7829:2;7818:9;7814:18;7795:38;:::i;:::-;7785:48;;7430:409;;;;;;;:::o;7844:380::-;7923:1;7919:12;;;;7966;;;7987:61;;8041:4;8033:6;8029:17;8019:27;;7987:61;8094:2;8086:6;8083:14;8063:18;8060:38;8057:161;;;8140:10;8135:3;8131:20;8128:1;8121:31;8175:4;8172:1;8165:15;8203:4;8200:1;8193:15;8057:161;;7844:380;;;:::o;9469:413::-;9671:2;9653:21;;;9710:2;9690:18;;;9683:30;9749:34;9744:2;9729:18;;9722:62;-1:-1:-1;;;9815:2:32;9800:18;;9793:47;9872:3;9857:19;;9469:413::o;9887:127::-;9948:10;9943:3;9939:20;9936:1;9929:31;9979:4;9976:1;9969:15;10003:4;10000:1;9993:15;10019:168;10059:7;10125:1;10121;10117:6;10113:14;10110:1;10107:21;10102:1;10095:9;10088:17;10084:45;10081:71;;;10132:18;;:::i;:::-;-1:-1:-1;10172:9:32;;10019:168::o;10192:127::-;10253:10;10248:3;10244:20;10241:1;10234:31;10284:4;10281:1;10274:15;10308:4;10305:1;10298:15;10324:120;10364:1;10390;10380:35;;10395:18;;:::i;:::-;-1:-1:-1;10429:9:32;;10324:120::o;11277:356::-;11479:2;11461:21;;;11498:18;;;11491:30;11557:34;11552:2;11537:18;;11530:62;11624:2;11609:18;;11277:356::o;12040:317::-;-1:-1:-1;;;;;12217:32:32;;12199:51;;12286:2;12281;12266:18;;12259:30;;;-1:-1:-1;;12306:45:32;;12332:18;;12324:6;12306:45;:::i;13625:127::-;13686:10;13681:3;13677:20;13674:1;13667:31;13717:4;13714:1;13707:15;13741:4;13738:1;13731:15;13757:400;13959:2;13941:21;;;13998:2;13978:18;;;13971:30;14037:34;14032:2;14017:18;;14010:62;-1:-1:-1;;;14103:2:32;14088:18;;14081:34;14147:3;14132:19;;13757:400::o;14162:1178::-;14430:2;14442:21;;;14512:13;;14415:18;;;14534:22;;;14382:4;;14609;;14587:2;14572:18;;;14636:15;;;14382:4;14679:195;14693:6;14690:1;14687:13;14679:195;;;14758:13;;-1:-1:-1;;;;;14754:39:32;14742:52;;14814:12;;;;14849:15;;;;14790:1;14708:9;14679:195;;;-1:-1:-1;;;14910:19:32;;;14890:18;;;14883:47;14980:13;;15002:21;;;15078:15;;;;15041:12;;;15113:1;15123:189;15139:8;15134:3;15131:17;15123:189;;;15208:15;;15194:30;;15285:17;;;;15246:14;;;;15167:1;15158:11;15123:189;;;-1:-1:-1;15329:5:32;;14162:1178;-1:-1:-1;;;;;;;14162:1178:32:o;17027:135::-;17066:3;-1:-1:-1;;17087:17:32;;17084:43;;;17107:18;;:::i;:::-;-1:-1:-1;17154:1:32;17143:13;;17027:135::o;19615:125::-;19655:4;19683:1;19680;19677:8;19674:34;;;19688:18;;:::i;:::-;-1:-1:-1;19725:9:32;;19615:125::o;19745:128::-;19785:3;19816:1;19812:6;19809:1;19806:13;19803:39;;;19822:18;;:::i;:::-;-1:-1:-1;19858:9:32;;19745:128::o;19878:786::-;20289:25;20284:3;20277:38;20259:3;20344:6;20338:13;20360:62;20415:6;20410:2;20405:3;20401:12;20394:4;20386:6;20382:17;20360:62;:::i;:::-;-1:-1:-1;;;20481:2:32;20441:16;;;20473:11;;;20466:40;20531:13;;20553:63;20531:13;20602:2;20594:11;;20587:4;20575:17;;20553:63;:::i;:::-;20636:17;20655:2;20632:26;;19878:786;-1:-1:-1;;;;19878:786:32:o;21717:414::-;21919:2;21901:21;;;21958:2;21938:18;;;21931:30;21997:34;21992:2;21977:18;;21970:62;-1:-1:-1;;;22063:2:32;22048:18;;22041:48;22121:3;22106:19;;21717:414::o;22554:470::-;22733:3;22771:6;22765:13;22787:53;22833:6;22828:3;22821:4;22813:6;22809:17;22787:53;:::i;:::-;22903:13;;22862:16;;;;22925:57;22903:13;22862:16;22959:4;22947:17;;22925:57;:::i;:::-;22998:20;;22554:470;-1:-1:-1;;;;22554:470:32:o;23029:136::-;23068:3;23096:5;23086:39;;23105:18;;:::i;:::-;-1:-1:-1;;;23141:18:32;;23029:136::o;24249:722::-;24493:6;24488:3;24481:19;24463:3;24519:2;24551:6;24546:2;24541:3;24537:12;24530:28;24589:2;24584:3;24580:12;24621:6;24615:13;24670:6;24667:1;24660:17;24713:2;24710:1;24700:16;24734:1;24744:200;24758:6;24755:1;24752:13;24744:200;;;24825:13;;-1:-1:-1;;;;;24821:39:32;24807:54;;24883:14;;;;24857:1;24920:14;;;;24773:9;24744:200;;;-1:-1:-1;24960:5:32;;24249:722;-1:-1:-1;;;;;;;;24249:722:32:o;24976:112::-;25008:1;25034;25024:35;;25039:18;;:::i;:::-;-1:-1:-1;25073:9:32;;24976:112::o;26275:489::-;-1:-1:-1;;;;;26544:15:32;;;26526:34;;26596:15;;26591:2;26576:18;;26569:43;26643:2;26628:18;;26621:34;;;26691:3;26686:2;26671:18;;26664:31;;;26469:4;;26712:46;;26738:19;;26730:6;26712:46;:::i;:::-;26704:54;26275:489;-1:-1:-1;;;;;;26275:489:32:o;26769:249::-;26838:6;26891:2;26879:9;26870:7;26866:23;26862:32;26859:52;;;26907:1;26904;26897:12;26859:52;26939:9;26933:16;26958:30;26982:5;26958:30;:::i;27439:127::-;27500:10;27495:3;27491:20;27488:1;27481:31;27531:4;27528:1;27521:15;27555:4;27552:1;27545:15",
+  "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\nimport \"@openzeppelin/contracts/token/ERC721/presets/ERC721PresetMinterPauserAutoId.sol\";\nimport \"@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol\";\nimport \"@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol\";\n//\nimport \"./CheekSpreader.sol\";\n\n/**\n * @title Buttholes\n * @author Skeetzo\n * @dev Stupid (non-Solana) butthole nfts.\n */\ncontract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMinterPauserAutoId {\n\n  event PuckerUp(address addedButthole, string buttholeHash);\n  event PuckerDown(address removedButthole);\n\n  // butthole hashes\n  mapping(address => string) public buttholes;\n  // account quick mapping\n  mapping(address => bool) public buttholeMap;\n  // unique butthole owners\n  address[] private buttholeOwners;\n  // paymentsplitters\n  mapping(address => address) private CheekSpreaders;\n  // royalty fee - 5%\n  uint96 public constant royaltyValue = 200;\n\n  /**\n   * @dev Contract constructor. Sets metadata extension `name` and `symbol`.\n   */\n  constructor(string memory baseURI_) ERC721PresetMinterPauserAutoId(\"Butthole\", \"BUTT\", baseURI_) {}\n\n  ////////////////////////////////////////////////////////////////////////////////////\n\n  // ERC721 //\n\n  /**\n   * @dev 18+ confirm to enable minting.\n   */\n  function addMinter() public {\n    _setupRole(MINTER_ROLE, _msgSender());\n  }\n\n  /**\n   * @dev Base URI for computing {tokenURI}. If set, the resulting URI for each\n   * token will be the concatenation of the `baseURI` and the `tokenId`. Empty\n   * by default, can be overriden in child contracts.\n   */\n  function _baseURI() internal view virtual override(ERC721, ERC721PresetMinterPauserAutoId) returns (string memory) {\n    super._baseURI();\n  }\n\n  /**\n   * @dev Hook that is called before any token transfer. This includes minting\n   * and burning.\n   */\n  function _beforeTokenTransfer(\n    address from,\n    address to,\n    uint256 tokenId\n  ) internal virtual override(ERC721, ERC721PresetMinterPauserAutoId) {\n    super._beforeTokenTransfer(from, to, tokenId);\n  }\n\n  /**\n   * @dev Destroys `tokenId`.\n   * The approval is cleared when the token is burned.\n   */\n  function _burn(uint256 tokenId) internal virtual override(ERC721, ERC721URIStorage, ERC721Royalty) {\n    super._burn(tokenId);\n  }\n\n  /**\n   * @dev Set proper token data for minting.\n   */\n  function _mint(address to, uint256 tokenId) internal virtual override(ERC721) {\n    super._mint(to, tokenId);\n    // get random owner of a butthole\n    address buttholeOwner = _getButthole();\n    // set token uri to be butthole uri of random owner\n    _setTokenURI(tokenId, buttholes[buttholeOwner]);\n    // set royalty for token id and butthole owner's splitter contract (if exists)\n    if (CheekSpreaders[buttholeOwner]!=address(0x0))\n      buttholeOwner = CheekSpreaders[buttholeOwner];\n    _setTokenRoyalty(tokenId, buttholeOwner, royaltyValue);\n  }\n\n  /**\n   * @dev See {IERC165-supportsInterface}.\n   */\n  function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721, ERC721Royalty, ERC721PresetMinterPauserAutoId) returns (bool) {\n    return super.supportsInterface(interfaceId);\n  }\n\n  // ERC721URIStorage //\n\n  /**\n   * @dev See {IERC721Metadata-tokenURI}.\n   */\n  function tokenURI(uint256 tokenId) public view virtual override(ERC721, ERC721URIStorage) returns (string memory) {\n    return super.tokenURI(tokenId);\n  }\n\n  ////////////////////////////////////////////////////////////////////////////////////\n\n  // Buttholes //\n\n  /**\n   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.\n   *\n   * Requirements:\n   *\n   * - `newButthole` must not exist as a butthole.\n   */\n  function addButthole(address newButthole, string memory _tokenURI) public onlyOwner {\n    require(!buttholeMap[newButthole], \"Buttholes: account must not exist\");\n    buttholeMap[newButthole] = true;\n    buttholeOwners.push(newButthole);\n    buttholes[newButthole] = _tokenURI;\n    // CheekSpreaders[newButthole] = newButthole;\n    emit PuckerUp(newButthole, _tokenURI);\n  }\n\n  /**\n   * @dev Create a new CheekSpreader contract for handling royalty payments.\n   */\n  function createCheekSpreader(address donor1, address donor2, address donor3) public {\n    require(buttholeMap[_msgSender()], \"Buttholes: caller must be a butthole\");\n    address[] memory payees = new address[](4);\n    payees[0] = _msgSender();\n    payees[1] = donor1;\n    payees[2] = donor2;\n    payees[3] = donor3;\n    uint256[] memory shares = new uint256[](4);\n    shares[0] = 91;\n    shares[1] = 3;\n    shares[2] = 3;\n    shares[3] = 3;\n    CheekSpreader c = new CheekSpreader(payees, shares);\n    CheekSpreaders[_msgSender()] = address(c);\n  }\n\n  /**\n   * @dev Create a new CheekSpreader contract for handling royalty payments for an unset butthole.\n   */\n  function updateCheekSpreader(address buttholeAddress, address donor1, address donor2, address donor3) public onlyOwner {\n    require(buttholeMap[buttholeAddress], \"Buttholes: address must be a butthole\");\n    require(CheekSpreaders[buttholeAddress] == address(0x0), \"Buttholes: address must not already be set\");\n    address[] memory payees = new address[](4);\n    payees[0] = buttholeAddress;\n    payees[1] = donor1;\n    payees[2] = donor2;\n    payees[3] = donor3;\n    uint256[] memory shares = new uint256[](4);\n    shares[0] = 91;\n    shares[1] = 3;\n    shares[2] = 3;\n    shares[3] = 3;\n    CheekSpreader c = new CheekSpreader(payees, shares);\n    CheekSpreaders[buttholeAddress] = address(c);\n  }\n\n  /**\n   * @dev Return a random uri.\n   */\n  function _getButthole() internal view returns (address) {\n    return buttholeOwners[uint(keccak256(abi.encodePacked(block.difficulty, block.timestamp, buttholeOwners))) % buttholeOwners.length];\n  }\n\n  /**\n   * @dev Renounce ownership of your own butthole.\n   *\n   * Requirements:\n   *\n   * - `_msgSender` must exist as a butthole.\n   */\n  function renounceButthole() public {\n    require(buttholeMap[_msgSender()], \"Buttholes: caller must be a butthole\");\n    delete buttholes[_msgSender()];\n    delete CheekSpreaders[_msgSender()];\n    buttholeMap[_msgSender()] = false;\n    // delete from array of owners\n    for (uint i=0;i<buttholeOwners.length;i++)\n      if (buttholeOwners[i] == _msgSender())\n        delete buttholeOwners[i];\n    emit PuckerDown(_msgSender());\n  }\n\n}\n",
   "sourcePath": "/home/skeetzo/Projects/nftbuttholes/contracts/Buttholes.sol",
   "ast": {
     "absolutePath": "project:/contracts/Buttholes.sol",
@@ -21790,10 +24385,10 @@ module.exports={
             "id": 4341,
             "mutability": "mutable",
             "name": "buttholeOwners",
-            "nameLocation": "867:14:29",
+            "nameLocation": "875:14:29",
             "nodeType": "VariableDeclaration",
             "scope": 4874,
-            "src": "857:24:29",
+            "src": "857:32:29",
             "stateVariable": true,
             "storageLocation": "default",
             "typeDescriptions": {
@@ -21820,17 +24415,17 @@ module.exports={
                 "typeString": "address[]"
               }
             },
-            "visibility": "internal"
+            "visibility": "private"
           },
           {
             "constant": false,
             "id": 4345,
             "mutability": "mutable",
             "name": "CheekSpreaders",
-            "nameLocation": "935:14:29",
+            "nameLocation": "951:14:29",
             "nodeType": "VariableDeclaration",
             "scope": 4874,
-            "src": "907:42:29",
+            "src": "915:50:29",
             "stateVariable": true,
             "storageLocation": "default",
             "typeDescriptions": {
@@ -21843,14 +24438,14 @@ module.exports={
                 "id": 4342,
                 "name": "address",
                 "nodeType": "ElementaryTypeName",
-                "src": "915:7:29",
+                "src": "923:7:29",
                 "typeDescriptions": {
                   "typeIdentifier": "t_address",
                   "typeString": "address"
                 }
               },
               "nodeType": "Mapping",
-              "src": "907:27:29",
+              "src": "915:27:29",
               "typeDescriptions": {
                 "typeIdentifier": "t_mapping$_t_address_$_t_address_$",
                 "typeString": "mapping(address => address)"
@@ -21859,7 +24454,7 @@ module.exports={
                 "id": 4343,
                 "name": "address",
                 "nodeType": "ElementaryTypeName",
-                "src": "926:7:29",
+                "src": "934:7:29",
                 "stateMutability": "nonpayable",
                 "typeDescriptions": {
                   "typeIdentifier": "t_address",
@@ -21867,7 +24462,7 @@ module.exports={
                 }
               }
             },
-            "visibility": "internal"
+            "visibility": "private"
           },
           {
             "constant": true,
@@ -21875,10 +24470,10 @@ module.exports={
             "id": 4348,
             "mutability": "constant",
             "name": "royaltyValue",
-            "nameLocation": "998:12:29",
+            "nameLocation": "1014:12:29",
             "nodeType": "VariableDeclaration",
             "scope": 4874,
-            "src": "975:41:29",
+            "src": "991:41:29",
             "stateVariable": true,
             "storageLocation": "default",
             "typeDescriptions": {
@@ -21889,7 +24484,7 @@ module.exports={
               "id": 4346,
               "name": "uint96",
               "nodeType": "ElementaryTypeName",
-              "src": "975:6:29",
+              "src": "991:6:29",
               "typeDescriptions": {
                 "typeIdentifier": "t_uint96",
                 "typeString": "uint96"
@@ -21904,7 +24499,7 @@ module.exports={
               "kind": "number",
               "lValueRequested": false,
               "nodeType": "Literal",
-              "src": "1013:3:29",
+              "src": "1029:3:29",
               "typeDescriptions": {
                 "typeIdentifier": "t_rational_200_by_1",
                 "typeString": "int_const 200"
@@ -21917,13 +24512,13 @@ module.exports={
             "body": {
               "id": 4359,
               "nodeType": "Block",
-              "src": "1207:2:29",
+              "src": "1223:2:29",
               "statements": []
             },
             "documentation": {
               "id": 4349,
               "nodeType": "StructuredDocumentation",
-              "src": "1021:86:29",
+              "src": "1037:86:29",
               "text": " @dev Contract constructor. Sets metadata extension `name` and `symbol`."
             },
             "id": 4360,
@@ -21941,7 +24536,7 @@ module.exports={
                     "kind": "string",
                     "lValueRequested": false,
                     "nodeType": "Literal",
-                    "src": "1177:10:29",
+                    "src": "1193:10:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_stringliteral_2a647d0b128c1d92014323c510284f033dba6e6a881244f07119233d52af3e1f",
                       "typeString": "literal_string \"Butthole\""
@@ -21957,7 +24552,7 @@ module.exports={
                     "kind": "string",
                     "lValueRequested": false,
                     "nodeType": "Literal",
-                    "src": "1189:6:29",
+                    "src": "1205:6:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_stringliteral_cdccec884bc118da04af9da8ba0644b085134df414316055b73a5d9c972cf211",
                       "typeString": "literal_string \"BUTT\""
@@ -21970,7 +24565,7 @@ module.exports={
                     "nodeType": "Identifier",
                     "overloadedDeclarations": [],
                     "referencedDeclaration": 4351,
-                    "src": "1197:8:29",
+                    "src": "1213:8:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_memory_ptr",
                       "typeString": "string memory"
@@ -21984,10 +24579,10 @@ module.exports={
                   "name": "ERC721PresetMinterPauserAutoId",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2877,
-                  "src": "1146:30:29"
+                  "src": "1162:30:29"
                 },
                 "nodeType": "ModifierInvocation",
-                "src": "1146:60:29"
+                "src": "1162:60:29"
               }
             ],
             "name": "",
@@ -22002,10 +24597,10 @@ module.exports={
                   "id": 4351,
                   "mutability": "mutable",
                   "name": "baseURI_",
-                  "nameLocation": "1136:8:29",
+                  "nameLocation": "1152:8:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4360,
-                  "src": "1122:22:29",
+                  "src": "1138:22:29",
                   "stateVariable": false,
                   "storageLocation": "memory",
                   "typeDescriptions": {
@@ -22016,7 +24611,7 @@ module.exports={
                     "id": 4350,
                     "name": "string",
                     "nodeType": "ElementaryTypeName",
-                    "src": "1122:6:29",
+                    "src": "1138:6:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_storage_ptr",
                       "typeString": "string"
@@ -22025,16 +24620,16 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "1121:24:29"
+              "src": "1137:24:29"
             },
             "returnParameters": {
               "id": 4358,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "1207:0:29"
+              "src": "1223:0:29"
             },
             "scope": 4874,
-            "src": "1110:99:29",
+            "src": "1126:99:29",
             "stateMutability": "nonpayable",
             "virtual": false,
             "visibility": "public"
@@ -22043,7 +24638,7 @@ module.exports={
             "body": {
               "id": 4370,
               "nodeType": "Block",
-              "src": "1398:48:29",
+              "src": "1414:48:29",
               "statements": [
                 {
                   "expression": {
@@ -22054,7 +24649,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 2718,
-                        "src": "1415:11:29",
+                        "src": "1431:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_bytes32",
                           "typeString": "bytes32"
@@ -22069,7 +24664,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 3382,
-                          "src": "1428:10:29",
+                          "src": "1444:10:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                             "typeString": "function () view returns (address)"
@@ -22083,7 +24678,7 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "1428:12:29",
+                        "src": "1444:12:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
@@ -22107,7 +24702,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 216,
-                      "src": "1404:10:29",
+                      "src": "1420:10:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_nonpayable$_t_bytes32_$_t_address_$returns$__$",
                         "typeString": "function (bytes32,address)"
@@ -22121,7 +24716,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "1404:37:29",
+                    "src": "1420:37:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -22130,14 +24725,14 @@ module.exports={
                   },
                   "id": 4369,
                   "nodeType": "ExpressionStatement",
-                  "src": "1404:37:29"
+                  "src": "1420:37:29"
                 }
               ]
             },
             "documentation": {
               "id": 4361,
               "nodeType": "StructuredDocumentation",
-              "src": "1317:50:29",
+              "src": "1333:50:29",
               "text": " @dev 18+ confirm to enable minting."
             },
             "functionSelector": "031cf586",
@@ -22146,22 +24741,22 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "addMinter",
-            "nameLocation": "1379:9:29",
+            "nameLocation": "1395:9:29",
             "nodeType": "FunctionDefinition",
             "parameters": {
               "id": 4362,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "1388:2:29"
+              "src": "1404:2:29"
             },
             "returnParameters": {
               "id": 4363,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "1398:0:29"
+              "src": "1414:0:29"
             },
             "scope": 4874,
-            "src": "1370:76:29",
+            "src": "1386:76:29",
             "stateMutability": "nonpayable",
             "virtual": false,
             "visibility": "public"
@@ -22174,7 +24769,7 @@ module.exports={
             "body": {
               "id": 4385,
               "nodeType": "Block",
-              "src": "1790:27:29",
+              "src": "1806:27:29",
               "statements": [
                 {
                   "expression": {
@@ -22187,7 +24782,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4294967271,
-                        "src": "1796:5:29",
+                        "src": "1812:5:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_super$_Buttholes_$4874_$",
                           "typeString": "type(contract super Buttholes)"
@@ -22201,7 +24796,7 @@ module.exports={
                       "memberName": "_baseURI",
                       "nodeType": "MemberAccess",
                       "referencedDeclaration": 2774,
-                      "src": "1796:14:29",
+                      "src": "1812:14:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_view$__$returns$_t_string_memory_ptr_$",
                         "typeString": "function () view returns (string memory)"
@@ -22215,7 +24810,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "1796:16:29",
+                    "src": "1812:16:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_memory_ptr",
@@ -22224,14 +24819,14 @@ module.exports={
                   },
                   "id": 4384,
                   "nodeType": "ExpressionStatement",
-                  "src": "1796:16:29"
+                  "src": "1812:16:29"
                 }
               ]
             },
             "documentation": {
               "id": 4372,
               "nodeType": "StructuredDocumentation",
-              "src": "1450:222:29",
+              "src": "1466:222:29",
               "text": " @dev Base URI for computing {tokenURI}. If set, the resulting URI for each\n token will be the concatenation of the `baseURI` and the `tokenId`. Empty\n by default, can be overriden in child contracts."
             },
             "id": 4386,
@@ -22239,7 +24834,7 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "_baseURI",
-            "nameLocation": "1684:8:29",
+            "nameLocation": "1700:8:29",
             "nodeType": "FunctionDefinition",
             "overrides": {
               "id": 4376,
@@ -22250,23 +24845,23 @@ module.exports={
                   "name": "ERC721",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 1918,
-                  "src": "1726:6:29"
+                  "src": "1742:6:29"
                 },
                 {
                   "id": 4375,
                   "name": "ERC721PresetMinterPauserAutoId",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2877,
-                  "src": "1734:30:29"
+                  "src": "1750:30:29"
                 }
               ],
-              "src": "1717:48:29"
+              "src": "1733:48:29"
             },
             "parameters": {
               "id": 4373,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "1692:2:29"
+              "src": "1708:2:29"
             },
             "returnParameters": {
               "id": 4379,
@@ -22280,7 +24875,7 @@ module.exports={
                   "nameLocation": "-1:-1:-1",
                   "nodeType": "VariableDeclaration",
                   "scope": 4386,
-                  "src": "1775:13:29",
+                  "src": "1791:13:29",
                   "stateVariable": false,
                   "storageLocation": "memory",
                   "typeDescriptions": {
@@ -22291,7 +24886,7 @@ module.exports={
                     "id": 4377,
                     "name": "string",
                     "nodeType": "ElementaryTypeName",
-                    "src": "1775:6:29",
+                    "src": "1791:6:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_storage_ptr",
                       "typeString": "string"
@@ -22300,10 +24895,10 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "1774:15:29"
+              "src": "1790:15:29"
             },
             "scope": 4874,
-            "src": "1675:142:29",
+            "src": "1691:142:29",
             "stateMutability": "view",
             "virtual": true,
             "visibility": "internal"
@@ -22316,7 +24911,7 @@ module.exports={
             "body": {
               "id": 4407,
               "nodeType": "Block",
-              "src": "2085:56:29",
+              "src": "2101:56:29",
               "statements": [
                 {
                   "expression": {
@@ -22327,7 +24922,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4389,
-                        "src": "2118:4:29",
+                        "src": "2134:4:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -22339,7 +24934,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4391,
-                        "src": "2124:2:29",
+                        "src": "2140:2:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -22351,7 +24946,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4393,
-                        "src": "2128:7:29",
+                        "src": "2144:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
@@ -22379,7 +24974,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4294967271,
-                        "src": "2091:5:29",
+                        "src": "2107:5:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_super$_Buttholes_$4874_$",
                           "typeString": "type(contract super Buttholes)"
@@ -22393,7 +24988,7 @@ module.exports={
                       "memberName": "_beforeTokenTransfer",
                       "nodeType": "MemberAccess",
                       "referencedDeclaration": 2858,
-                      "src": "2091:26:29",
+                      "src": "2107:26:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_nonpayable$_t_address_$_t_address_$_t_uint256_$returns$__$",
                         "typeString": "function (address,address,uint256)"
@@ -22407,7 +25002,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "2091:45:29",
+                    "src": "2107:45:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -22416,14 +25011,14 @@ module.exports={
                   },
                   "id": 4406,
                   "nodeType": "ExpressionStatement",
-                  "src": "2091:45:29"
+                  "src": "2107:45:29"
                 }
               ]
             },
             "documentation": {
               "id": 4387,
               "nodeType": "StructuredDocumentation",
-              "src": "1821:106:29",
+              "src": "1837:106:29",
               "text": " @dev Hook that is called before any token transfer. This includes minting\n and burning."
             },
             "id": 4408,
@@ -22431,7 +25026,7 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "_beforeTokenTransfer",
-            "nameLocation": "1939:20:29",
+            "nameLocation": "1955:20:29",
             "nodeType": "FunctionDefinition",
             "overrides": {
               "id": 4397,
@@ -22442,17 +25037,17 @@ module.exports={
                   "name": "ERC721",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 1918,
-                  "src": "2045:6:29"
+                  "src": "2061:6:29"
                 },
                 {
                   "id": 4396,
                   "name": "ERC721PresetMinterPauserAutoId",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2877,
-                  "src": "2053:30:29"
+                  "src": "2069:30:29"
                 }
               ],
-              "src": "2036:48:29"
+              "src": "2052:48:29"
             },
             "parameters": {
               "id": 4394,
@@ -22463,10 +25058,10 @@ module.exports={
                   "id": 4389,
                   "mutability": "mutable",
                   "name": "from",
-                  "nameLocation": "1973:4:29",
+                  "nameLocation": "1989:4:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4408,
-                  "src": "1965:12:29",
+                  "src": "1981:12:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -22477,7 +25072,7 @@ module.exports={
                     "id": 4388,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
-                    "src": "1965:7:29",
+                    "src": "1981:7:29",
                     "stateMutability": "nonpayable",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
@@ -22491,10 +25086,10 @@ module.exports={
                   "id": 4391,
                   "mutability": "mutable",
                   "name": "to",
-                  "nameLocation": "1991:2:29",
+                  "nameLocation": "2007:2:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4408,
-                  "src": "1983:10:29",
+                  "src": "1999:10:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -22505,7 +25100,7 @@ module.exports={
                     "id": 4390,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
-                    "src": "1983:7:29",
+                    "src": "1999:7:29",
                     "stateMutability": "nonpayable",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
@@ -22519,10 +25114,10 @@ module.exports={
                   "id": 4393,
                   "mutability": "mutable",
                   "name": "tokenId",
-                  "nameLocation": "2007:7:29",
+                  "nameLocation": "2023:7:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4408,
-                  "src": "1999:15:29",
+                  "src": "2015:15:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -22533,7 +25128,7 @@ module.exports={
                     "id": 4392,
                     "name": "uint256",
                     "nodeType": "ElementaryTypeName",
-                    "src": "1999:7:29",
+                    "src": "2015:7:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -22542,16 +25137,16 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "1959:59:29"
+              "src": "1975:59:29"
             },
             "returnParameters": {
               "id": 4398,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "2085:0:29"
+              "src": "2101:0:29"
             },
             "scope": 4874,
-            "src": "1930:211:29",
+            "src": "1946:211:29",
             "stateMutability": "nonpayable",
             "virtual": true,
             "visibility": "internal"
@@ -22565,7 +25160,7 @@ module.exports={
             "body": {
               "id": 4424,
               "nodeType": "Block",
-              "src": "2341:31:29",
+              "src": "2357:31:29",
               "statements": [
                 {
                   "expression": {
@@ -22576,7 +25171,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4411,
-                        "src": "2359:7:29",
+                        "src": "2375:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
@@ -22596,7 +25191,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4294967271,
-                        "src": "2347:5:29",
+                        "src": "2363:5:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_super$_Buttholes_$4874_$",
                           "typeString": "type(contract super Buttholes)"
@@ -22610,7 +25205,7 @@ module.exports={
                       "memberName": "_burn",
                       "nodeType": "MemberAccess",
                       "referencedDeclaration": 2502,
-                      "src": "2347:11:29",
+                      "src": "2363:11:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_nonpayable$_t_uint256_$returns$__$",
                         "typeString": "function (uint256)"
@@ -22624,7 +25219,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "2347:20:29",
+                    "src": "2363:20:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -22633,14 +25228,14 @@ module.exports={
                   },
                   "id": 4423,
                   "nodeType": "ExpressionStatement",
-                  "src": "2347:20:29"
+                  "src": "2363:20:29"
                 }
               ]
             },
             "documentation": {
               "id": 4409,
               "nodeType": "StructuredDocumentation",
-              "src": "2145:94:29",
+              "src": "2161:94:29",
               "text": " @dev Destroys `tokenId`.\n The approval is cleared when the token is burned."
             },
             "id": 4425,
@@ -22648,7 +25243,7 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "_burn",
-            "nameLocation": "2251:5:29",
+            "nameLocation": "2267:5:29",
             "nodeType": "FunctionDefinition",
             "overrides": {
               "id": 4416,
@@ -22659,24 +25254,24 @@ module.exports={
                   "name": "ERC721",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 1918,
-                  "src": "2300:6:29"
+                  "src": "2316:6:29"
                 },
                 {
                   "id": 4414,
                   "name": "ERC721URIStorage",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2631,
-                  "src": "2308:16:29"
+                  "src": "2324:16:29"
                 },
                 {
                   "id": 4415,
                   "name": "ERC721Royalty",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2503,
-                  "src": "2326:13:29"
+                  "src": "2342:13:29"
                 }
               ],
-              "src": "2291:49:29"
+              "src": "2307:49:29"
             },
             "parameters": {
               "id": 4412,
@@ -22687,10 +25282,10 @@ module.exports={
                   "id": 4411,
                   "mutability": "mutable",
                   "name": "tokenId",
-                  "nameLocation": "2265:7:29",
+                  "nameLocation": "2281:7:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4425,
-                  "src": "2257:15:29",
+                  "src": "2273:15:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -22701,7 +25296,7 @@ module.exports={
                     "id": 4410,
                     "name": "uint256",
                     "nodeType": "ElementaryTypeName",
-                    "src": "2257:7:29",
+                    "src": "2273:7:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -22710,16 +25305,16 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "2256:17:29"
+              "src": "2272:17:29"
             },
             "returnParameters": {
               "id": 4417,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "2341:0:29"
+              "src": "2357:0:29"
             },
             "scope": 4874,
-            "src": "2242:130:29",
+            "src": "2258:130:29",
             "stateMutability": "nonpayable",
             "virtual": true,
             "visibility": "internal"
@@ -22731,7 +25326,7 @@ module.exports={
             "body": {
               "id": 4475,
               "nodeType": "Block",
-              "src": "2511:475:29",
+              "src": "2527:475:29",
               "statements": [
                 {
                   "expression": {
@@ -22742,7 +25337,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4428,
-                        "src": "2529:2:29",
+                        "src": "2545:2:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -22754,7 +25349,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4430,
-                        "src": "2533:7:29",
+                        "src": "2549:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
@@ -22778,7 +25373,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4294967271,
-                        "src": "2517:5:29",
+                        "src": "2533:5:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_super$_Buttholes_$4874_$",
                           "typeString": "type(contract super Buttholes)"
@@ -22792,7 +25387,7 @@ module.exports={
                       "memberName": "_mint",
                       "nodeType": "MemberAccess",
                       "referencedDeclaration": 1642,
-                      "src": "2517:11:29",
+                      "src": "2533:11:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_nonpayable$_t_address_$_t_uint256_$returns$__$",
                         "typeString": "function (address,uint256)"
@@ -22806,7 +25401,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "2517:24:29",
+                    "src": "2533:24:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -22815,7 +25410,7 @@ module.exports={
                   },
                   "id": 4441,
                   "nodeType": "ExpressionStatement",
-                  "src": "2517:24:29"
+                  "src": "2533:24:29"
                 },
                 {
                   "assignments": [
@@ -22827,10 +25422,10 @@ module.exports={
                       "id": 4443,
                       "mutability": "mutable",
                       "name": "buttholeOwner",
-                      "nameLocation": "2593:13:29",
+                      "nameLocation": "2609:13:29",
                       "nodeType": "VariableDeclaration",
                       "scope": 4475,
-                      "src": "2585:21:29",
+                      "src": "2601:21:29",
                       "stateVariable": false,
                       "storageLocation": "default",
                       "typeDescriptions": {
@@ -22841,7 +25436,7 @@ module.exports={
                         "id": 4442,
                         "name": "address",
                         "nodeType": "ElementaryTypeName",
-                        "src": "2585:7:29",
+                        "src": "2601:7:29",
                         "stateMutability": "nonpayable",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
@@ -22861,7 +25456,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4812,
-                      "src": "2609:12:29",
+                      "src": "2625:12:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                         "typeString": "function () view returns (address)"
@@ -22875,7 +25470,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "2609:14:29",
+                    "src": "2625:14:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
@@ -22883,7 +25478,7 @@ module.exports={
                     }
                   },
                   "nodeType": "VariableDeclarationStatement",
-                  "src": "2585:38:29"
+                  "src": "2601:38:29"
                 },
                 {
                   "expression": {
@@ -22894,7 +25489,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4430,
-                        "src": "2698:7:29",
+                        "src": "2714:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
@@ -22907,7 +25502,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4334,
-                          "src": "2707:9:29",
+                          "src": "2723:9:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_mapping$_t_address_$_t_string_storage_$",
                             "typeString": "mapping(address => string storage ref)"
@@ -22920,7 +25515,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4443,
-                          "src": "2717:13:29",
+                          "src": "2733:13:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
@@ -22931,7 +25526,7 @@ module.exports={
                         "isPure": false,
                         "lValueRequested": false,
                         "nodeType": "IndexAccess",
-                        "src": "2707:24:29",
+                        "src": "2723:24:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_string_storage",
                           "typeString": "string storage ref"
@@ -22954,7 +25549,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 2600,
-                      "src": "2685:12:29",
+                      "src": "2701:12:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_nonpayable$_t_uint256_$_t_string_memory_ptr_$returns$__$",
                         "typeString": "function (uint256,string memory)"
@@ -22968,7 +25563,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "2685:47:29",
+                    "src": "2701:47:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -22977,7 +25572,7 @@ module.exports={
                   },
                   "id": 4453,
                   "nodeType": "ExpressionStatement",
-                  "src": "2685:47:29"
+                  "src": "2701:47:29"
                 },
                 {
                   "condition": {
@@ -22997,7 +25592,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4345,
-                        "src": "2825:14:29",
+                        "src": "2841:14:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_address_$",
                           "typeString": "mapping(address => address)"
@@ -23010,7 +25605,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4443,
-                        "src": "2840:13:29",
+                        "src": "2856:13:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -23021,7 +25616,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": false,
                       "nodeType": "IndexAccess",
-                      "src": "2825:29:29",
+                      "src": "2841:29:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -23040,7 +25635,7 @@ module.exports={
                           "kind": "number",
                           "lValueRequested": false,
                           "nodeType": "Literal",
-                          "src": "2864:3:29",
+                          "src": "2880:3:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_rational_0_by_1",
                             "typeString": "int_const 0"
@@ -23061,7 +25656,7 @@ module.exports={
                         "isPure": true,
                         "lValueRequested": false,
                         "nodeType": "ElementaryTypeNameExpression",
-                        "src": "2856:7:29",
+                        "src": "2872:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_address_$",
                           "typeString": "type(address)"
@@ -23070,7 +25665,7 @@ module.exports={
                           "id": 4457,
                           "name": "address",
                           "nodeType": "ElementaryTypeName",
-                          "src": "2856:7:29",
+                          "src": "2872:7:29",
                           "typeDescriptions": {}
                         }
                       },
@@ -23082,14 +25677,14 @@ module.exports={
                       "lValueRequested": false,
                       "names": [],
                       "nodeType": "FunctionCall",
-                      "src": "2856:12:29",
+                      "src": "2872:12:29",
                       "tryCall": false,
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "2825:43:29",
+                    "src": "2841:43:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_bool",
                       "typeString": "bool"
@@ -23097,7 +25692,7 @@ module.exports={
                   },
                   "id": 4468,
                   "nodeType": "IfStatement",
-                  "src": "2821:100:29",
+                  "src": "2837:100:29",
                   "trueBody": {
                     "expression": {
                       "id": 4466,
@@ -23111,7 +25706,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4443,
-                        "src": "2876:13:29",
+                        "src": "2892:13:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -23126,7 +25721,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4345,
-                          "src": "2892:14:29",
+                          "src": "2908:14:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_mapping$_t_address_$_t_address_$",
                             "typeString": "mapping(address => address)"
@@ -23139,7 +25734,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4443,
-                          "src": "2907:13:29",
+                          "src": "2923:13:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
@@ -23150,13 +25745,13 @@ module.exports={
                         "isPure": false,
                         "lValueRequested": false,
                         "nodeType": "IndexAccess",
-                        "src": "2892:29:29",
+                        "src": "2908:29:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
                         }
                       },
-                      "src": "2876:45:29",
+                      "src": "2892:45:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -23164,7 +25759,7 @@ module.exports={
                     },
                     "id": 4467,
                     "nodeType": "ExpressionStatement",
-                    "src": "2876:45:29"
+                    "src": "2892:45:29"
                   }
                 },
                 {
@@ -23176,7 +25771,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4430,
-                        "src": "2944:7:29",
+                        "src": "2960:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
@@ -23188,7 +25783,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4443,
-                        "src": "2953:13:29",
+                        "src": "2969:13:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -23200,7 +25795,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4348,
-                        "src": "2968:12:29",
+                        "src": "2984:12:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint96",
                           "typeString": "uint96"
@@ -23227,7 +25822,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 3062,
-                      "src": "2927:16:29",
+                      "src": "2943:16:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_nonpayable$_t_uint256_$_t_address_$_t_uint96_$returns$__$",
                         "typeString": "function (uint256,address,uint96)"
@@ -23241,7 +25836,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "2927:54:29",
+                    "src": "2943:54:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -23250,14 +25845,14 @@ module.exports={
                   },
                   "id": 4474,
                   "nodeType": "ExpressionStatement",
-                  "src": "2927:54:29"
+                  "src": "2943:54:29"
                 }
               ]
             },
             "documentation": {
               "id": 4426,
               "nodeType": "StructuredDocumentation",
-              "src": "2376:54:29",
+              "src": "2392:54:29",
               "text": " @dev Set proper token data for minting."
             },
             "id": 4476,
@@ -23265,7 +25860,7 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "_mint",
-            "nameLocation": "2442:5:29",
+            "nameLocation": "2458:5:29",
             "nodeType": "FunctionDefinition",
             "overrides": {
               "id": 4433,
@@ -23276,10 +25871,10 @@ module.exports={
                   "name": "ERC721",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 1918,
-                  "src": "2503:6:29"
+                  "src": "2519:6:29"
                 }
               ],
-              "src": "2494:16:29"
+              "src": "2510:16:29"
             },
             "parameters": {
               "id": 4431,
@@ -23290,10 +25885,10 @@ module.exports={
                   "id": 4428,
                   "mutability": "mutable",
                   "name": "to",
-                  "nameLocation": "2456:2:29",
+                  "nameLocation": "2472:2:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4476,
-                  "src": "2448:10:29",
+                  "src": "2464:10:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -23304,7 +25899,7 @@ module.exports={
                     "id": 4427,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
-                    "src": "2448:7:29",
+                    "src": "2464:7:29",
                     "stateMutability": "nonpayable",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
@@ -23318,10 +25913,10 @@ module.exports={
                   "id": 4430,
                   "mutability": "mutable",
                   "name": "tokenId",
-                  "nameLocation": "2468:7:29",
+                  "nameLocation": "2484:7:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4476,
-                  "src": "2460:15:29",
+                  "src": "2476:15:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -23332,7 +25927,7 @@ module.exports={
                     "id": 4429,
                     "name": "uint256",
                     "nodeType": "ElementaryTypeName",
-                    "src": "2460:7:29",
+                    "src": "2476:7:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -23341,16 +25936,16 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "2447:29:29"
+              "src": "2463:29:29"
             },
             "returnParameters": {
               "id": 4434,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "2511:0:29"
+              "src": "2527:0:29"
             },
             "scope": 4874,
-            "src": "2433:553:29",
+            "src": "2449:553:29",
             "stateMutability": "nonpayable",
             "virtual": true,
             "visibility": "internal"
@@ -23364,7 +25959,7 @@ module.exports={
             "body": {
               "id": 4493,
               "nodeType": "Block",
-              "src": "3191:54:29",
+              "src": "3207:54:29",
               "statements": [
                 {
                   "expression": {
@@ -23375,7 +25970,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4479,
-                        "src": "3228:11:29",
+                        "src": "3244:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_bytes4",
                           "typeString": "bytes4"
@@ -23395,7 +25990,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4294967271,
-                        "src": "3204:5:29",
+                        "src": "3220:5:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_super$_Buttholes_$4874_$",
                           "typeString": "type(contract super Buttholes)"
@@ -23409,7 +26004,7 @@ module.exports={
                       "memberName": "supportsInterface",
                       "nodeType": "MemberAccess",
                       "referencedDeclaration": 2876,
-                      "src": "3204:23:29",
+                      "src": "3220:23:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_view$_t_bytes4_$returns$_t_bool_$",
                         "typeString": "function (bytes4) view returns (bool)"
@@ -23423,7 +26018,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "3204:36:29",
+                    "src": "3220:36:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_bool",
@@ -23433,14 +26028,14 @@ module.exports={
                   "functionReturnParameters": 4487,
                   "id": 4492,
                   "nodeType": "Return",
-                  "src": "3197:43:29"
+                  "src": "3213:43:29"
                 }
               ]
             },
             "documentation": {
               "id": 4477,
               "nodeType": "StructuredDocumentation",
-              "src": "2990:52:29",
+              "src": "3006:52:29",
               "text": " @dev See {IERC165-supportsInterface}."
             },
             "functionSelector": "01ffc9a7",
@@ -23449,7 +26044,7 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "supportsInterface",
-            "nameLocation": "3054:17:29",
+            "nameLocation": "3070:17:29",
             "nodeType": "FunctionDefinition",
             "overrides": {
               "id": 4484,
@@ -23460,24 +26055,24 @@ module.exports={
                   "name": "ERC721",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 1918,
-                  "src": "3121:6:29"
+                  "src": "3137:6:29"
                 },
                 {
                   "id": 4482,
                   "name": "ERC721Royalty",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2503,
-                  "src": "3129:13:29"
+                  "src": "3145:13:29"
                 },
                 {
                   "id": 4483,
                   "name": "ERC721PresetMinterPauserAutoId",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2877,
-                  "src": "3144:30:29"
+                  "src": "3160:30:29"
                 }
               ],
-              "src": "3112:63:29"
+              "src": "3128:63:29"
             },
             "parameters": {
               "id": 4480,
@@ -23488,10 +26083,10 @@ module.exports={
                   "id": 4479,
                   "mutability": "mutable",
                   "name": "interfaceId",
-                  "nameLocation": "3079:11:29",
+                  "nameLocation": "3095:11:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4494,
-                  "src": "3072:18:29",
+                  "src": "3088:18:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -23502,7 +26097,7 @@ module.exports={
                     "id": 4478,
                     "name": "bytes4",
                     "nodeType": "ElementaryTypeName",
-                    "src": "3072:6:29",
+                    "src": "3088:6:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_bytes4",
                       "typeString": "bytes4"
@@ -23511,7 +26106,7 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "3071:20:29"
+              "src": "3087:20:29"
             },
             "returnParameters": {
               "id": 4487,
@@ -23525,7 +26120,7 @@ module.exports={
                   "nameLocation": "-1:-1:-1",
                   "nodeType": "VariableDeclaration",
                   "scope": 4494,
-                  "src": "3185:4:29",
+                  "src": "3201:4:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -23536,7 +26131,7 @@ module.exports={
                     "id": 4485,
                     "name": "bool",
                     "nodeType": "ElementaryTypeName",
-                    "src": "3185:4:29",
+                    "src": "3201:4:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_bool",
                       "typeString": "bool"
@@ -23545,10 +26140,10 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "3184:6:29"
+              "src": "3200:6:29"
             },
             "scope": 4874,
-            "src": "3045:200:29",
+            "src": "3061:200:29",
             "stateMutability": "view",
             "virtual": true,
             "visibility": "public"
@@ -23561,7 +26156,7 @@ module.exports={
             "body": {
               "id": 4510,
               "nodeType": "Block",
-              "src": "3443:41:29",
+              "src": "3459:41:29",
               "statements": [
                 {
                   "expression": {
@@ -23572,7 +26167,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4497,
-                        "src": "3471:7:29",
+                        "src": "3487:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
@@ -23592,7 +26187,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4294967271,
-                        "src": "3456:5:29",
+                        "src": "3472:5:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_super$_Buttholes_$4874_$",
                           "typeString": "type(contract super Buttholes)"
@@ -23606,7 +26201,7 @@ module.exports={
                       "memberName": "tokenURI",
                       "nodeType": "MemberAccess",
                       "referencedDeclaration": 2578,
-                      "src": "3456:14:29",
+                      "src": "3472:14:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_internal_view$_t_uint256_$returns$_t_string_memory_ptr_$",
                         "typeString": "function (uint256) view returns (string memory)"
@@ -23620,7 +26215,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "3456:23:29",
+                    "src": "3472:23:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_memory_ptr",
@@ -23630,14 +26225,14 @@ module.exports={
                   "functionReturnParameters": 4504,
                   "id": 4509,
                   "nodeType": "Return",
-                  "src": "3449:30:29"
+                  "src": "3465:30:29"
                 }
               ]
             },
             "documentation": {
               "id": 4495,
               "nodeType": "StructuredDocumentation",
-              "src": "3275:51:29",
+              "src": "3291:51:29",
               "text": " @dev See {IERC721Metadata-tokenURI}."
             },
             "functionSelector": "c87b56dd",
@@ -23646,7 +26241,7 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "tokenURI",
-            "nameLocation": "3338:8:29",
+            "nameLocation": "3354:8:29",
             "nodeType": "FunctionDefinition",
             "overrides": {
               "id": 4501,
@@ -23657,17 +26252,17 @@ module.exports={
                   "name": "ERC721",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 1918,
-                  "src": "3393:6:29"
+                  "src": "3409:6:29"
                 },
                 {
                   "id": 4500,
                   "name": "ERC721URIStorage",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 2631,
-                  "src": "3401:16:29"
+                  "src": "3417:16:29"
                 }
               ],
-              "src": "3384:34:29"
+              "src": "3400:34:29"
             },
             "parameters": {
               "id": 4498,
@@ -23678,10 +26273,10 @@ module.exports={
                   "id": 4497,
                   "mutability": "mutable",
                   "name": "tokenId",
-                  "nameLocation": "3355:7:29",
+                  "nameLocation": "3371:7:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4511,
-                  "src": "3347:15:29",
+                  "src": "3363:15:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -23692,7 +26287,7 @@ module.exports={
                     "id": 4496,
                     "name": "uint256",
                     "nodeType": "ElementaryTypeName",
-                    "src": "3347:7:29",
+                    "src": "3363:7:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -23701,7 +26296,7 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "3346:17:29"
+              "src": "3362:17:29"
             },
             "returnParameters": {
               "id": 4504,
@@ -23715,7 +26310,7 @@ module.exports={
                   "nameLocation": "-1:-1:-1",
                   "nodeType": "VariableDeclaration",
                   "scope": 4511,
-                  "src": "3428:13:29",
+                  "src": "3444:13:29",
                   "stateVariable": false,
                   "storageLocation": "memory",
                   "typeDescriptions": {
@@ -23726,7 +26321,7 @@ module.exports={
                     "id": 4502,
                     "name": "string",
                     "nodeType": "ElementaryTypeName",
-                    "src": "3428:6:29",
+                    "src": "3444:6:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_storage_ptr",
                       "typeString": "string"
@@ -23735,10 +26330,10 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "3427:15:29"
+              "src": "3443:15:29"
             },
             "scope": 4874,
-            "src": "3329:155:29",
+            "src": "3345:155:29",
             "stateMutability": "view",
             "virtual": true,
             "visibility": "public"
@@ -23747,7 +26342,7 @@ module.exports={
             "body": {
               "id": 4552,
               "nodeType": "Block",
-              "src": "3828:290:29",
+              "src": "3844:290:29",
               "statements": [
                 {
                   "expression": {
@@ -23761,7 +26356,7 @@ module.exports={
                         "nodeType": "UnaryOperation",
                         "operator": "!",
                         "prefix": true,
-                        "src": "3842:25:29",
+                        "src": "3858:25:29",
                         "subExpression": {
                           "baseExpression": {
                             "id": 4522,
@@ -23769,7 +26364,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 4338,
-                            "src": "3843:11:29",
+                            "src": "3859:11:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_mapping$_t_address_$_t_bool_$",
                               "typeString": "mapping(address => bool)"
@@ -23782,7 +26377,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 4514,
-                            "src": "3855:11:29",
+                            "src": "3871:11:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_address",
                               "typeString": "address"
@@ -23793,7 +26388,7 @@ module.exports={
                           "isPure": false,
                           "lValueRequested": false,
                           "nodeType": "IndexAccess",
-                          "src": "3843:24:29",
+                          "src": "3859:24:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_bool",
                             "typeString": "bool"
@@ -23813,7 +26408,7 @@ module.exports={
                         "kind": "string",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "3869:35:29",
+                        "src": "3885:35:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_stringliteral_884a2356cd2d0e7f7ff9b9a45fb5ee310c9a1029ca1c0f8f7469649e60b54098",
                           "typeString": "literal_string \"Buttholes: account must not exist\""
@@ -23840,7 +26435,7 @@ module.exports={
                         4294967278
                       ],
                       "referencedDeclaration": 4294967278,
-                      "src": "3834:7:29",
+                      "src": "3850:7:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_require_pure$_t_bool_$_t_string_memory_ptr_$returns$__$",
                         "typeString": "function (bool,string memory) pure"
@@ -23854,7 +26449,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "3834:71:29",
+                    "src": "3850:71:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -23863,7 +26458,7 @@ module.exports={
                   },
                   "id": 4528,
                   "nodeType": "ExpressionStatement",
-                  "src": "3834:71:29"
+                  "src": "3850:71:29"
                 },
                 {
                   "expression": {
@@ -23879,7 +26474,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4338,
-                        "src": "3911:11:29",
+                        "src": "3927:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_bool_$",
                           "typeString": "mapping(address => bool)"
@@ -23892,7 +26487,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4514,
-                        "src": "3923:11:29",
+                        "src": "3939:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -23903,7 +26498,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "3911:24:29",
+                      "src": "3927:24:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_bool",
                         "typeString": "bool"
@@ -23920,14 +26515,14 @@ module.exports={
                       "kind": "bool",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "3938:4:29",
+                      "src": "3954:4:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_bool",
                         "typeString": "bool"
                       },
                       "value": "true"
                     },
-                    "src": "3911:31:29",
+                    "src": "3927:31:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_bool",
                       "typeString": "bool"
@@ -23935,7 +26530,7 @@ module.exports={
                   },
                   "id": 4534,
                   "nodeType": "ExpressionStatement",
-                  "src": "3911:31:29"
+                  "src": "3927:31:29"
                 },
                 {
                   "expression": {
@@ -23946,7 +26541,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4514,
-                        "src": "3968:11:29",
+                        "src": "3984:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -23966,7 +26561,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4341,
-                        "src": "3948:14:29",
+                        "src": "3964:14:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_storage",
                           "typeString": "address[] storage ref"
@@ -23979,7 +26574,7 @@ module.exports={
                       "lValueRequested": false,
                       "memberName": "push",
                       "nodeType": "MemberAccess",
-                      "src": "3948:19:29",
+                      "src": "3964:19:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_arraypush_nonpayable$_t_array$_t_address_$dyn_storage_ptr_$_t_address_$returns$__$bound_to$_t_array$_t_address_$dyn_storage_ptr_$",
                         "typeString": "function (address[] storage pointer,address)"
@@ -23993,7 +26588,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "3948:32:29",
+                    "src": "3964:32:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -24002,7 +26597,7 @@ module.exports={
                   },
                   "id": 4540,
                   "nodeType": "ExpressionStatement",
-                  "src": "3948:32:29"
+                  "src": "3964:32:29"
                 },
                 {
                   "expression": {
@@ -24018,7 +26613,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4334,
-                        "src": "3986:9:29",
+                        "src": "4002:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_string_storage_$",
                           "typeString": "mapping(address => string storage ref)"
@@ -24031,7 +26626,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4514,
-                        "src": "3996:11:29",
+                        "src": "4012:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -24042,7 +26637,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "3986:22:29",
+                      "src": "4002:22:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_string_storage",
                         "typeString": "string storage ref"
@@ -24056,13 +26651,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4516,
-                      "src": "4011:9:29",
+                      "src": "4027:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_string_memory_ptr",
                         "typeString": "string memory"
                       }
                     },
-                    "src": "3986:34:29",
+                    "src": "4002:34:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_storage",
                       "typeString": "string storage ref"
@@ -24070,7 +26665,7 @@ module.exports={
                   },
                   "id": 4546,
                   "nodeType": "ExpressionStatement",
-                  "src": "3986:34:29"
+                  "src": "4002:34:29"
                 },
                 {
                   "eventCall": {
@@ -24081,7 +26676,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4514,
-                        "src": "4090:11:29",
+                        "src": "4106:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -24093,7 +26688,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4516,
-                        "src": "4103:9:29",
+                        "src": "4119:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_string_memory_ptr",
                           "typeString": "string memory"
@@ -24116,7 +26711,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4326,
-                      "src": "4081:8:29",
+                      "src": "4097:8:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_event_nonpayable$_t_address_$_t_string_memory_ptr_$returns$__$",
                         "typeString": "function (address,string memory)"
@@ -24130,7 +26725,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "4081:32:29",
+                    "src": "4097:32:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -24139,14 +26734,14 @@ module.exports={
                   },
                   "id": 4551,
                   "nodeType": "EmitStatement",
-                  "src": "4076:37:29"
+                  "src": "4092:37:29"
                 }
               ]
             },
             "documentation": {
               "id": 4512,
               "nodeType": "StructuredDocumentation",
-              "src": "3595:146:29",
+              "src": "3611:146:29",
               "text": " @dev Sets `_tokenURI` as the tokenURI of `tokenId`.\n Requirements:\n - `newButthole` must not exist as a butthole."
             },
             "functionSelector": "39c1e21d",
@@ -24162,14 +26757,14 @@ module.exports={
                   "name": "onlyOwner",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 578,
-                  "src": "3818:9:29"
+                  "src": "3834:9:29"
                 },
                 "nodeType": "ModifierInvocation",
-                "src": "3818:9:29"
+                "src": "3834:9:29"
               }
             ],
             "name": "addButthole",
-            "nameLocation": "3753:11:29",
+            "nameLocation": "3769:11:29",
             "nodeType": "FunctionDefinition",
             "parameters": {
               "id": 4517,
@@ -24180,10 +26775,10 @@ module.exports={
                   "id": 4514,
                   "mutability": "mutable",
                   "name": "newButthole",
-                  "nameLocation": "3773:11:29",
+                  "nameLocation": "3789:11:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4553,
-                  "src": "3765:19:29",
+                  "src": "3781:19:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -24194,7 +26789,7 @@ module.exports={
                     "id": 4513,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
-                    "src": "3765:7:29",
+                    "src": "3781:7:29",
                     "stateMutability": "nonpayable",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
@@ -24208,10 +26803,10 @@ module.exports={
                   "id": 4516,
                   "mutability": "mutable",
                   "name": "_tokenURI",
-                  "nameLocation": "3800:9:29",
+                  "nameLocation": "3816:9:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4553,
-                  "src": "3786:23:29",
+                  "src": "3802:23:29",
                   "stateVariable": false,
                   "storageLocation": "memory",
                   "typeDescriptions": {
@@ -24222,7 +26817,7 @@ module.exports={
                     "id": 4515,
                     "name": "string",
                     "nodeType": "ElementaryTypeName",
-                    "src": "3786:6:29",
+                    "src": "3802:6:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_string_storage_ptr",
                       "typeString": "string"
@@ -24231,16 +26826,16 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "3764:46:29"
+              "src": "3780:46:29"
             },
             "returnParameters": {
               "id": 4520,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "3828:0:29"
+              "src": "3844:0:29"
             },
             "scope": 4874,
-            "src": "3744:374:29",
+            "src": "3760:374:29",
             "stateMutability": "nonpayable",
             "virtual": false,
             "visibility": "public"
@@ -24249,7 +26844,7 @@ module.exports={
             "body": {
               "id": 4662,
               "nodeType": "Block",
-              "src": "4295:464:29",
+              "src": "4311:464:29",
               "statements": [
                 {
                   "expression": {
@@ -24261,7 +26856,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4338,
-                          "src": "4309:11:29",
+                          "src": "4325:11:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_mapping$_t_address_$_t_bool_$",
                             "typeString": "mapping(address => bool)"
@@ -24277,7 +26872,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 3382,
-                            "src": "4321:10:29",
+                            "src": "4337:10:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                               "typeString": "function () view returns (address)"
@@ -24291,7 +26886,7 @@ module.exports={
                           "lValueRequested": false,
                           "names": [],
                           "nodeType": "FunctionCall",
-                          "src": "4321:12:29",
+                          "src": "4337:12:29",
                           "tryCall": false,
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
@@ -24303,7 +26898,7 @@ module.exports={
                         "isPure": false,
                         "lValueRequested": false,
                         "nodeType": "IndexAccess",
-                        "src": "4309:25:29",
+                        "src": "4325:25:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_bool",
                           "typeString": "bool"
@@ -24318,7 +26913,7 @@ module.exports={
                         "kind": "string",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4336:38:29",
+                        "src": "4352:38:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_stringliteral_4178a59c863494f22673f9f352336fa432c83f12c38f294fdbaab954fd89957f",
                           "typeString": "literal_string \"Buttholes: caller must be a butthole\""
@@ -24345,7 +26940,7 @@ module.exports={
                         4294967278
                       ],
                       "referencedDeclaration": 4294967278,
-                      "src": "4301:7:29",
+                      "src": "4317:7:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_require_pure$_t_bool_$_t_string_memory_ptr_$returns$__$",
                         "typeString": "function (bool,string memory) pure"
@@ -24359,7 +26954,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "4301:74:29",
+                    "src": "4317:74:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -24368,7 +26963,7 @@ module.exports={
                   },
                   "id": 4570,
                   "nodeType": "ExpressionStatement",
-                  "src": "4301:74:29"
+                  "src": "4317:74:29"
                 },
                 {
                   "assignments": [
@@ -24380,10 +26975,10 @@ module.exports={
                       "id": 4575,
                       "mutability": "mutable",
                       "name": "payees",
-                      "nameLocation": "4398:6:29",
+                      "nameLocation": "4414:6:29",
                       "nodeType": "VariableDeclaration",
                       "scope": 4662,
-                      "src": "4381:23:29",
+                      "src": "4397:23:29",
                       "stateVariable": false,
                       "storageLocation": "memory",
                       "typeDescriptions": {
@@ -24395,7 +26990,7 @@ module.exports={
                           "id": 4573,
                           "name": "address",
                           "nodeType": "ElementaryTypeName",
-                          "src": "4381:7:29",
+                          "src": "4397:7:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
@@ -24403,7 +26998,7 @@ module.exports={
                         },
                         "id": 4574,
                         "nodeType": "ArrayTypeName",
-                        "src": "4381:9:29",
+                        "src": "4397:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_storage_ptr",
                           "typeString": "address[]"
@@ -24424,7 +27019,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4421:1:29",
+                        "src": "4437:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_4_by_1",
                           "typeString": "int_const 4"
@@ -24445,7 +27040,7 @@ module.exports={
                       "isPure": true,
                       "lValueRequested": false,
                       "nodeType": "NewExpression",
-                      "src": "4407:13:29",
+                      "src": "4423:13:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_objectcreation_pure$_t_uint256_$returns$_t_array$_t_address_$dyn_memory_ptr_$",
                         "typeString": "function (uint256) pure returns (address[] memory)"
@@ -24455,7 +27050,7 @@ module.exports={
                           "id": 4576,
                           "name": "address",
                           "nodeType": "ElementaryTypeName",
-                          "src": "4411:7:29",
+                          "src": "4427:7:29",
                           "stateMutability": "nonpayable",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
@@ -24464,7 +27059,7 @@ module.exports={
                         },
                         "id": 4577,
                         "nodeType": "ArrayTypeName",
-                        "src": "4411:9:29",
+                        "src": "4427:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_storage_ptr",
                           "typeString": "address[]"
@@ -24479,7 +27074,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "4407:16:29",
+                    "src": "4423:16:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
@@ -24487,7 +27082,7 @@ module.exports={
                     }
                   },
                   "nodeType": "VariableDeclarationStatement",
-                  "src": "4381:42:29"
+                  "src": "4397:42:29"
                 },
                 {
                   "expression": {
@@ -24503,7 +27098,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4575,
-                        "src": "4429:6:29",
+                        "src": "4445:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -24519,7 +27114,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4436:1:29",
+                        "src": "4452:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_0_by_1",
                           "typeString": "int_const 0"
@@ -24531,7 +27126,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4429:9:29",
+                      "src": "4445:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -24548,7 +27143,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 3382,
-                        "src": "4441:10:29",
+                        "src": "4457:10:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                           "typeString": "function () view returns (address)"
@@ -24562,14 +27157,14 @@ module.exports={
                       "lValueRequested": false,
                       "names": [],
                       "nodeType": "FunctionCall",
-                      "src": "4441:12:29",
+                      "src": "4457:12:29",
                       "tryCall": false,
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "4429:24:29",
+                    "src": "4445:24:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -24577,7 +27172,7 @@ module.exports={
                   },
                   "id": 4588,
                   "nodeType": "ExpressionStatement",
-                  "src": "4429:24:29"
+                  "src": "4445:24:29"
                 },
                 {
                   "expression": {
@@ -24593,7 +27188,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4575,
-                        "src": "4459:6:29",
+                        "src": "4475:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -24609,7 +27204,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4466:1:29",
+                        "src": "4482:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_1_by_1",
                           "typeString": "int_const 1"
@@ -24621,7 +27216,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4459:9:29",
+                      "src": "4475:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -24635,13 +27230,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4556,
-                      "src": "4471:6:29",
+                      "src": "4487:6:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "4459:18:29",
+                    "src": "4475:18:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -24649,7 +27244,7 @@ module.exports={
                   },
                   "id": 4594,
                   "nodeType": "ExpressionStatement",
-                  "src": "4459:18:29"
+                  "src": "4475:18:29"
                 },
                 {
                   "expression": {
@@ -24665,7 +27260,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4575,
-                        "src": "4483:6:29",
+                        "src": "4499:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -24681,7 +27276,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4490:1:29",
+                        "src": "4506:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_2_by_1",
                           "typeString": "int_const 2"
@@ -24693,7 +27288,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4483:9:29",
+                      "src": "4499:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -24707,13 +27302,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4558,
-                      "src": "4495:6:29",
+                      "src": "4511:6:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "4483:18:29",
+                    "src": "4499:18:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -24721,7 +27316,7 @@ module.exports={
                   },
                   "id": 4600,
                   "nodeType": "ExpressionStatement",
-                  "src": "4483:18:29"
+                  "src": "4499:18:29"
                 },
                 {
                   "expression": {
@@ -24737,7 +27332,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4575,
-                        "src": "4507:6:29",
+                        "src": "4523:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -24753,7 +27348,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4514:1:29",
+                        "src": "4530:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_3_by_1",
                           "typeString": "int_const 3"
@@ -24765,7 +27360,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4507:9:29",
+                      "src": "4523:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -24779,13 +27374,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4560,
-                      "src": "4519:6:29",
+                      "src": "4535:6:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "4507:18:29",
+                    "src": "4523:18:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -24793,7 +27388,7 @@ module.exports={
                   },
                   "id": 4606,
                   "nodeType": "ExpressionStatement",
-                  "src": "4507:18:29"
+                  "src": "4523:18:29"
                 },
                 {
                   "assignments": [
@@ -24805,10 +27400,10 @@ module.exports={
                       "id": 4611,
                       "mutability": "mutable",
                       "name": "shares",
-                      "nameLocation": "4548:6:29",
+                      "nameLocation": "4564:6:29",
                       "nodeType": "VariableDeclaration",
                       "scope": 4662,
-                      "src": "4531:23:29",
+                      "src": "4547:23:29",
                       "stateVariable": false,
                       "storageLocation": "memory",
                       "typeDescriptions": {
@@ -24820,7 +27415,7 @@ module.exports={
                           "id": 4609,
                           "name": "uint256",
                           "nodeType": "ElementaryTypeName",
-                          "src": "4531:7:29",
+                          "src": "4547:7:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_uint256",
                             "typeString": "uint256"
@@ -24828,7 +27423,7 @@ module.exports={
                         },
                         "id": 4610,
                         "nodeType": "ArrayTypeName",
-                        "src": "4531:9:29",
+                        "src": "4547:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_storage_ptr",
                           "typeString": "uint256[]"
@@ -24849,7 +27444,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4571:1:29",
+                        "src": "4587:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_4_by_1",
                           "typeString": "int_const 4"
@@ -24870,7 +27465,7 @@ module.exports={
                       "isPure": true,
                       "lValueRequested": false,
                       "nodeType": "NewExpression",
-                      "src": "4557:13:29",
+                      "src": "4573:13:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_objectcreation_pure$_t_uint256_$returns$_t_array$_t_uint256_$dyn_memory_ptr_$",
                         "typeString": "function (uint256) pure returns (uint256[] memory)"
@@ -24880,7 +27475,7 @@ module.exports={
                           "id": 4612,
                           "name": "uint256",
                           "nodeType": "ElementaryTypeName",
-                          "src": "4561:7:29",
+                          "src": "4577:7:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_uint256",
                             "typeString": "uint256"
@@ -24888,7 +27483,7 @@ module.exports={
                         },
                         "id": 4613,
                         "nodeType": "ArrayTypeName",
-                        "src": "4561:9:29",
+                        "src": "4577:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_storage_ptr",
                           "typeString": "uint256[]"
@@ -24903,7 +27498,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "4557:16:29",
+                    "src": "4573:16:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
@@ -24911,7 +27506,7 @@ module.exports={
                     }
                   },
                   "nodeType": "VariableDeclarationStatement",
-                  "src": "4531:42:29"
+                  "src": "4547:42:29"
                 },
                 {
                   "expression": {
@@ -24927,7 +27522,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4611,
-                        "src": "4579:6:29",
+                        "src": "4595:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -24943,7 +27538,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4586:1:29",
+                        "src": "4602:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_0_by_1",
                           "typeString": "int_const 0"
@@ -24955,7 +27550,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4579:9:29",
+                      "src": "4595:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -24972,14 +27567,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "4591:2:29",
+                      "src": "4607:2:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_91_by_1",
                         "typeString": "int_const 91"
                       },
                       "value": "91"
                     },
-                    "src": "4579:14:29",
+                    "src": "4595:14:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -24987,7 +27582,7 @@ module.exports={
                   },
                   "id": 4623,
                   "nodeType": "ExpressionStatement",
-                  "src": "4579:14:29"
+                  "src": "4595:14:29"
                 },
                 {
                   "expression": {
@@ -25003,7 +27598,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4611,
-                        "src": "4599:6:29",
+                        "src": "4615:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -25019,7 +27614,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4606:1:29",
+                        "src": "4622:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_1_by_1",
                           "typeString": "int_const 1"
@@ -25031,7 +27626,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4599:9:29",
+                      "src": "4615:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -25048,14 +27643,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "4611:1:29",
+                      "src": "4627:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_3_by_1",
                         "typeString": "int_const 3"
                       },
                       "value": "3"
                     },
-                    "src": "4599:13:29",
+                    "src": "4615:13:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -25063,7 +27658,7 @@ module.exports={
                   },
                   "id": 4629,
                   "nodeType": "ExpressionStatement",
-                  "src": "4599:13:29"
+                  "src": "4615:13:29"
                 },
                 {
                   "expression": {
@@ -25079,7 +27674,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4611,
-                        "src": "4618:6:29",
+                        "src": "4634:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -25095,7 +27690,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4625:1:29",
+                        "src": "4641:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_2_by_1",
                           "typeString": "int_const 2"
@@ -25107,7 +27702,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4618:9:29",
+                      "src": "4634:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -25124,14 +27719,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "4630:1:29",
+                      "src": "4646:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_3_by_1",
                         "typeString": "int_const 3"
                       },
                       "value": "3"
                     },
-                    "src": "4618:13:29",
+                    "src": "4634:13:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -25139,7 +27734,7 @@ module.exports={
                   },
                   "id": 4635,
                   "nodeType": "ExpressionStatement",
-                  "src": "4618:13:29"
+                  "src": "4634:13:29"
                 },
                 {
                   "expression": {
@@ -25155,7 +27750,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4611,
-                        "src": "4637:6:29",
+                        "src": "4653:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -25171,7 +27766,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "4644:1:29",
+                        "src": "4660:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_3_by_1",
                           "typeString": "int_const 3"
@@ -25183,7 +27778,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4637:9:29",
+                      "src": "4653:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -25200,14 +27795,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "4649:1:29",
+                      "src": "4665:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_3_by_1",
                         "typeString": "int_const 3"
                       },
                       "value": "3"
                     },
-                    "src": "4637:13:29",
+                    "src": "4653:13:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -25215,7 +27810,7 @@ module.exports={
                   },
                   "id": 4641,
                   "nodeType": "ExpressionStatement",
-                  "src": "4637:13:29"
+                  "src": "4653:13:29"
                 },
                 {
                   "assignments": [
@@ -25227,10 +27822,10 @@ module.exports={
                       "id": 4644,
                       "mutability": "mutable",
                       "name": "c",
-                      "nameLocation": "4670:1:29",
+                      "nameLocation": "4686:1:29",
                       "nodeType": "VariableDeclaration",
                       "scope": 4662,
-                      "src": "4656:15:29",
+                      "src": "4672:15:29",
                       "stateVariable": false,
                       "storageLocation": "default",
                       "typeDescriptions": {
@@ -25245,10 +27840,10 @@ module.exports={
                           "name": "CheekSpreader",
                           "nodeType": "IdentifierPath",
                           "referencedDeclaration": 5380,
-                          "src": "4656:13:29"
+                          "src": "4672:13:29"
                         },
                         "referencedDeclaration": 5380,
-                        "src": "4656:13:29",
+                        "src": "4672:13:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_contract$_CheekSpreader_$5380",
                           "typeString": "contract CheekSpreader"
@@ -25266,7 +27861,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4575,
-                        "src": "4692:6:29",
+                        "src": "4708:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -25278,7 +27873,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4611,
-                        "src": "4700:6:29",
+                        "src": "4716:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -25302,7 +27897,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": false,
                       "nodeType": "NewExpression",
-                      "src": "4674:17:29",
+                      "src": "4690:17:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_creation_payable$_t_array$_t_address_$dyn_memory_ptr_$_t_array$_t_uint256_$dyn_memory_ptr_$returns$_t_contract$_CheekSpreader_$5380_$",
                         "typeString": "function (address[] memory,uint256[] memory) payable returns (contract CheekSpreader)"
@@ -25315,10 +27910,10 @@ module.exports={
                           "name": "CheekSpreader",
                           "nodeType": "IdentifierPath",
                           "referencedDeclaration": 5380,
-                          "src": "4678:13:29"
+                          "src": "4694:13:29"
                         },
                         "referencedDeclaration": 5380,
-                        "src": "4678:13:29",
+                        "src": "4694:13:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_contract$_CheekSpreader_$5380",
                           "typeString": "contract CheekSpreader"
@@ -25333,7 +27928,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "4674:33:29",
+                    "src": "4690:33:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_contract$_CheekSpreader_$5380",
@@ -25341,7 +27936,7 @@ module.exports={
                     }
                   },
                   "nodeType": "VariableDeclarationStatement",
-                  "src": "4656:51:29"
+                  "src": "4672:51:29"
                 },
                 {
                   "expression": {
@@ -25357,7 +27952,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4345,
-                        "src": "4713:14:29",
+                        "src": "4729:14:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_address_$",
                           "typeString": "mapping(address => address)"
@@ -25373,7 +27968,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 3382,
-                          "src": "4728:10:29",
+                          "src": "4744:10:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                             "typeString": "function () view returns (address)"
@@ -25387,7 +27982,7 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "4728:12:29",
+                        "src": "4744:12:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
@@ -25399,7 +27994,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "4713:28:29",
+                      "src": "4729:28:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -25415,7 +28010,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4644,
-                          "src": "4752:1:29",
+                          "src": "4768:1:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_contract$_CheekSpreader_$5380",
                             "typeString": "contract CheekSpreader"
@@ -25435,7 +28030,7 @@ module.exports={
                         "isPure": true,
                         "lValueRequested": false,
                         "nodeType": "ElementaryTypeNameExpression",
-                        "src": "4744:7:29",
+                        "src": "4760:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_address_$",
                           "typeString": "type(address)"
@@ -25444,7 +28039,7 @@ module.exports={
                           "id": 4656,
                           "name": "address",
                           "nodeType": "ElementaryTypeName",
-                          "src": "4744:7:29",
+                          "src": "4760:7:29",
                           "typeDescriptions": {}
                         }
                       },
@@ -25456,14 +28051,14 @@ module.exports={
                       "lValueRequested": false,
                       "names": [],
                       "nodeType": "FunctionCall",
-                      "src": "4744:10:29",
+                      "src": "4760:10:29",
                       "tryCall": false,
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "4713:41:29",
+                    "src": "4729:41:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -25471,14 +28066,14 @@ module.exports={
                   },
                   "id": 4661,
                   "nodeType": "ExpressionStatement",
-                  "src": "4713:41:29"
+                  "src": "4729:41:29"
                 }
               ]
             },
             "documentation": {
               "id": 4554,
               "nodeType": "StructuredDocumentation",
-              "src": "4122:86:29",
+              "src": "4138:86:29",
               "text": " @dev Create a new CheekSpreader contract for handling royalty payments."
             },
             "functionSelector": "5cbf7deb",
@@ -25487,7 +28082,7 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "createCheekSpreader",
-            "nameLocation": "4220:19:29",
+            "nameLocation": "4236:19:29",
             "nodeType": "FunctionDefinition",
             "parameters": {
               "id": 4561,
@@ -25498,34 +28093,6 @@ module.exports={
                   "id": 4556,
                   "mutability": "mutable",
                   "name": "donor1",
-                  "nameLocation": "4248:6:29",
-                  "nodeType": "VariableDeclaration",
-                  "scope": 4663,
-                  "src": "4240:14:29",
-                  "stateVariable": false,
-                  "storageLocation": "default",
-                  "typeDescriptions": {
-                    "typeIdentifier": "t_address",
-                    "typeString": "address"
-                  },
-                  "typeName": {
-                    "id": 4555,
-                    "name": "address",
-                    "nodeType": "ElementaryTypeName",
-                    "src": "4240:7:29",
-                    "stateMutability": "nonpayable",
-                    "typeDescriptions": {
-                      "typeIdentifier": "t_address",
-                      "typeString": "address"
-                    }
-                  },
-                  "visibility": "internal"
-                },
-                {
-                  "constant": false,
-                  "id": 4558,
-                  "mutability": "mutable",
-                  "name": "donor2",
                   "nameLocation": "4264:6:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4663,
@@ -25537,7 +28104,7 @@ module.exports={
                     "typeString": "address"
                   },
                   "typeName": {
-                    "id": 4557,
+                    "id": 4555,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
                     "src": "4256:7:29",
@@ -25551,9 +28118,9 @@ module.exports={
                 },
                 {
                   "constant": false,
-                  "id": 4560,
+                  "id": 4558,
                   "mutability": "mutable",
-                  "name": "donor3",
+                  "name": "donor2",
                   "nameLocation": "4280:6:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4663,
@@ -25565,7 +28132,7 @@ module.exports={
                     "typeString": "address"
                   },
                   "typeName": {
-                    "id": 4559,
+                    "id": 4557,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
                     "src": "4272:7:29",
@@ -25576,18 +28143,46 @@ module.exports={
                     }
                   },
                   "visibility": "internal"
+                },
+                {
+                  "constant": false,
+                  "id": 4560,
+                  "mutability": "mutable",
+                  "name": "donor3",
+                  "nameLocation": "4296:6:29",
+                  "nodeType": "VariableDeclaration",
+                  "scope": 4663,
+                  "src": "4288:14:29",
+                  "stateVariable": false,
+                  "storageLocation": "default",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_address",
+                    "typeString": "address"
+                  },
+                  "typeName": {
+                    "id": 4559,
+                    "name": "address",
+                    "nodeType": "ElementaryTypeName",
+                    "src": "4288:7:29",
+                    "stateMutability": "nonpayable",
+                    "typeDescriptions": {
+                      "typeIdentifier": "t_address",
+                      "typeString": "address"
+                    }
+                  },
+                  "visibility": "internal"
                 }
               ],
-              "src": "4239:48:29"
+              "src": "4255:48:29"
             },
             "returnParameters": {
               "id": 4562,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "4295:0:29"
+              "src": "4311:0:29"
             },
             "scope": 4874,
-            "src": "4211:548:29",
+            "src": "4227:548:29",
             "stateMutability": "nonpayable",
             "virtual": false,
             "visibility": "public"
@@ -25596,7 +28191,7 @@ module.exports={
             "body": {
               "id": 4785,
               "nodeType": "Block",
-              "src": "4993:582:29",
+              "src": "5009:582:29",
               "statements": [
                 {
                   "expression": {
@@ -25608,7 +28203,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4338,
-                          "src": "5007:11:29",
+                          "src": "5023:11:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_mapping$_t_address_$_t_bool_$",
                             "typeString": "mapping(address => bool)"
@@ -25621,7 +28216,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4666,
-                          "src": "5019:15:29",
+                          "src": "5035:15:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
@@ -25632,7 +28227,7 @@ module.exports={
                         "isPure": false,
                         "lValueRequested": false,
                         "nodeType": "IndexAccess",
-                        "src": "5007:28:29",
+                        "src": "5023:28:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_bool",
                           "typeString": "bool"
@@ -25647,7 +28242,7 @@ module.exports={
                         "kind": "string",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5037:39:29",
+                        "src": "5053:39:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_stringliteral_5f2914793dbe8cc91d96b77da43f8c2dcd1c31eed08b5a423255e63dc8377ba3",
                           "typeString": "literal_string \"Buttholes: address must be a butthole\""
@@ -25674,7 +28269,7 @@ module.exports={
                         4294967278
                       ],
                       "referencedDeclaration": 4294967278,
-                      "src": "4999:7:29",
+                      "src": "5015:7:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_require_pure$_t_bool_$_t_string_memory_ptr_$returns$__$",
                         "typeString": "function (bool,string memory) pure"
@@ -25688,7 +28283,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "4999:78:29",
+                    "src": "5015:78:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -25697,7 +28292,7 @@ module.exports={
                   },
                   "id": 4683,
                   "nodeType": "ExpressionStatement",
-                  "src": "4999:78:29"
+                  "src": "5015:78:29"
                 },
                 {
                   "expression": {
@@ -25719,7 +28314,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 4345,
-                            "src": "5091:14:29",
+                            "src": "5107:14:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_mapping$_t_address_$_t_address_$",
                               "typeString": "mapping(address => address)"
@@ -25732,7 +28327,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 4666,
-                            "src": "5106:15:29",
+                            "src": "5122:15:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_address",
                               "typeString": "address"
@@ -25743,7 +28338,7 @@ module.exports={
                           "isPure": false,
                           "lValueRequested": false,
                           "nodeType": "IndexAccess",
-                          "src": "5091:31:29",
+                          "src": "5107:31:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
@@ -25762,7 +28357,7 @@ module.exports={
                               "kind": "number",
                               "lValueRequested": false,
                               "nodeType": "Literal",
-                              "src": "5134:3:29",
+                              "src": "5150:3:29",
                               "typeDescriptions": {
                                 "typeIdentifier": "t_rational_0_by_1",
                                 "typeString": "int_const 0"
@@ -25783,7 +28378,7 @@ module.exports={
                             "isPure": true,
                             "lValueRequested": false,
                             "nodeType": "ElementaryTypeNameExpression",
-                            "src": "5126:7:29",
+                            "src": "5142:7:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_type$_t_address_$",
                               "typeString": "type(address)"
@@ -25792,7 +28387,7 @@ module.exports={
                               "id": 4688,
                               "name": "address",
                               "nodeType": "ElementaryTypeName",
-                              "src": "5126:7:29",
+                              "src": "5142:7:29",
                               "typeDescriptions": {}
                             }
                           },
@@ -25804,14 +28399,14 @@ module.exports={
                           "lValueRequested": false,
                           "names": [],
                           "nodeType": "FunctionCall",
-                          "src": "5126:12:29",
+                          "src": "5142:12:29",
                           "tryCall": false,
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
                           }
                         },
-                        "src": "5091:47:29",
+                        "src": "5107:47:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_bool",
                           "typeString": "bool"
@@ -25826,7 +28421,7 @@ module.exports={
                         "kind": "string",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5140:44:29",
+                        "src": "5156:44:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_stringliteral_36bc9f6331bf834ff2be623dd4936f8b2af9ca11d4e66d002924c2e440c4d79d",
                           "typeString": "literal_string \"Buttholes: address must not already be set\""
@@ -25853,7 +28448,7 @@ module.exports={
                         4294967278
                       ],
                       "referencedDeclaration": 4294967278,
-                      "src": "5083:7:29",
+                      "src": "5099:7:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_require_pure$_t_bool_$_t_string_memory_ptr_$returns$__$",
                         "typeString": "function (bool,string memory) pure"
@@ -25867,7 +28462,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "5083:102:29",
+                    "src": "5099:102:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -25876,7 +28471,7 @@ module.exports={
                   },
                   "id": 4695,
                   "nodeType": "ExpressionStatement",
-                  "src": "5083:102:29"
+                  "src": "5099:102:29"
                 },
                 {
                   "assignments": [
@@ -25888,10 +28483,10 @@ module.exports={
                       "id": 4700,
                       "mutability": "mutable",
                       "name": "payees",
-                      "nameLocation": "5208:6:29",
+                      "nameLocation": "5224:6:29",
                       "nodeType": "VariableDeclaration",
                       "scope": 4785,
-                      "src": "5191:23:29",
+                      "src": "5207:23:29",
                       "stateVariable": false,
                       "storageLocation": "memory",
                       "typeDescriptions": {
@@ -25903,7 +28498,7 @@ module.exports={
                           "id": 4698,
                           "name": "address",
                           "nodeType": "ElementaryTypeName",
-                          "src": "5191:7:29",
+                          "src": "5207:7:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
@@ -25911,7 +28506,7 @@ module.exports={
                         },
                         "id": 4699,
                         "nodeType": "ArrayTypeName",
-                        "src": "5191:9:29",
+                        "src": "5207:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_storage_ptr",
                           "typeString": "address[]"
@@ -25932,7 +28527,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5231:1:29",
+                        "src": "5247:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_4_by_1",
                           "typeString": "int_const 4"
@@ -25953,7 +28548,7 @@ module.exports={
                       "isPure": true,
                       "lValueRequested": false,
                       "nodeType": "NewExpression",
-                      "src": "5217:13:29",
+                      "src": "5233:13:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_objectcreation_pure$_t_uint256_$returns$_t_array$_t_address_$dyn_memory_ptr_$",
                         "typeString": "function (uint256) pure returns (address[] memory)"
@@ -25963,7 +28558,7 @@ module.exports={
                           "id": 4701,
                           "name": "address",
                           "nodeType": "ElementaryTypeName",
-                          "src": "5221:7:29",
+                          "src": "5237:7:29",
                           "stateMutability": "nonpayable",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
@@ -25972,7 +28567,7 @@ module.exports={
                         },
                         "id": 4702,
                         "nodeType": "ArrayTypeName",
-                        "src": "5221:9:29",
+                        "src": "5237:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_storage_ptr",
                           "typeString": "address[]"
@@ -25987,7 +28582,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "5217:16:29",
+                    "src": "5233:16:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
@@ -25995,7 +28590,7 @@ module.exports={
                     }
                   },
                   "nodeType": "VariableDeclarationStatement",
-                  "src": "5191:42:29"
+                  "src": "5207:42:29"
                 },
                 {
                   "expression": {
@@ -26011,7 +28606,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4700,
-                        "src": "5239:6:29",
+                        "src": "5255:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -26027,7 +28622,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5246:1:29",
+                        "src": "5262:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_0_by_1",
                           "typeString": "int_const 0"
@@ -26039,7 +28634,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5239:9:29",
+                      "src": "5255:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -26053,13 +28648,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4666,
-                      "src": "5251:15:29",
+                      "src": "5267:15:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "5239:27:29",
+                    "src": "5255:27:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -26067,7 +28662,7 @@ module.exports={
                   },
                   "id": 4712,
                   "nodeType": "ExpressionStatement",
-                  "src": "5239:27:29"
+                  "src": "5255:27:29"
                 },
                 {
                   "expression": {
@@ -26083,7 +28678,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4700,
-                        "src": "5272:6:29",
+                        "src": "5288:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -26099,7 +28694,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5279:1:29",
+                        "src": "5295:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_1_by_1",
                           "typeString": "int_const 1"
@@ -26111,7 +28706,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5272:9:29",
+                      "src": "5288:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -26125,13 +28720,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4668,
-                      "src": "5284:6:29",
+                      "src": "5300:6:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "5272:18:29",
+                    "src": "5288:18:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -26139,7 +28734,7 @@ module.exports={
                   },
                   "id": 4718,
                   "nodeType": "ExpressionStatement",
-                  "src": "5272:18:29"
+                  "src": "5288:18:29"
                 },
                 {
                   "expression": {
@@ -26155,7 +28750,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4700,
-                        "src": "5296:6:29",
+                        "src": "5312:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -26171,7 +28766,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5303:1:29",
+                        "src": "5319:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_2_by_1",
                           "typeString": "int_const 2"
@@ -26183,7 +28778,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5296:9:29",
+                      "src": "5312:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -26197,13 +28792,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4670,
-                      "src": "5308:6:29",
+                      "src": "5324:6:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "5296:18:29",
+                    "src": "5312:18:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -26211,7 +28806,7 @@ module.exports={
                   },
                   "id": 4724,
                   "nodeType": "ExpressionStatement",
-                  "src": "5296:18:29"
+                  "src": "5312:18:29"
                 },
                 {
                   "expression": {
@@ -26227,7 +28822,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4700,
-                        "src": "5320:6:29",
+                        "src": "5336:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -26243,7 +28838,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5327:1:29",
+                        "src": "5343:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_3_by_1",
                           "typeString": "int_const 3"
@@ -26255,7 +28850,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5320:9:29",
+                      "src": "5336:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -26269,13 +28864,13 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4672,
-                      "src": "5332:6:29",
+                      "src": "5348:6:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "5320:18:29",
+                    "src": "5336:18:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -26283,7 +28878,7 @@ module.exports={
                   },
                   "id": 4730,
                   "nodeType": "ExpressionStatement",
-                  "src": "5320:18:29"
+                  "src": "5336:18:29"
                 },
                 {
                   "assignments": [
@@ -26295,10 +28890,10 @@ module.exports={
                       "id": 4735,
                       "mutability": "mutable",
                       "name": "shares",
-                      "nameLocation": "5361:6:29",
+                      "nameLocation": "5377:6:29",
                       "nodeType": "VariableDeclaration",
                       "scope": 4785,
-                      "src": "5344:23:29",
+                      "src": "5360:23:29",
                       "stateVariable": false,
                       "storageLocation": "memory",
                       "typeDescriptions": {
@@ -26310,7 +28905,7 @@ module.exports={
                           "id": 4733,
                           "name": "uint256",
                           "nodeType": "ElementaryTypeName",
-                          "src": "5344:7:29",
+                          "src": "5360:7:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_uint256",
                             "typeString": "uint256"
@@ -26318,7 +28913,7 @@ module.exports={
                         },
                         "id": 4734,
                         "nodeType": "ArrayTypeName",
-                        "src": "5344:9:29",
+                        "src": "5360:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_storage_ptr",
                           "typeString": "uint256[]"
@@ -26339,7 +28934,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5384:1:29",
+                        "src": "5400:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_4_by_1",
                           "typeString": "int_const 4"
@@ -26360,7 +28955,7 @@ module.exports={
                       "isPure": true,
                       "lValueRequested": false,
                       "nodeType": "NewExpression",
-                      "src": "5370:13:29",
+                      "src": "5386:13:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_objectcreation_pure$_t_uint256_$returns$_t_array$_t_uint256_$dyn_memory_ptr_$",
                         "typeString": "function (uint256) pure returns (uint256[] memory)"
@@ -26370,7 +28965,7 @@ module.exports={
                           "id": 4736,
                           "name": "uint256",
                           "nodeType": "ElementaryTypeName",
-                          "src": "5374:7:29",
+                          "src": "5390:7:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_uint256",
                             "typeString": "uint256"
@@ -26378,7 +28973,7 @@ module.exports={
                         },
                         "id": 4737,
                         "nodeType": "ArrayTypeName",
-                        "src": "5374:9:29",
+                        "src": "5390:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_storage_ptr",
                           "typeString": "uint256[]"
@@ -26393,7 +28988,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "5370:16:29",
+                    "src": "5386:16:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
@@ -26401,7 +28996,7 @@ module.exports={
                     }
                   },
                   "nodeType": "VariableDeclarationStatement",
-                  "src": "5344:42:29"
+                  "src": "5360:42:29"
                 },
                 {
                   "expression": {
@@ -26417,7 +29012,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4735,
-                        "src": "5392:6:29",
+                        "src": "5408:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -26433,7 +29028,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5399:1:29",
+                        "src": "5415:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_0_by_1",
                           "typeString": "int_const 0"
@@ -26445,7 +29040,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5392:9:29",
+                      "src": "5408:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -26462,14 +29057,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "5404:2:29",
+                      "src": "5420:2:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_91_by_1",
                         "typeString": "int_const 91"
                       },
                       "value": "91"
                     },
-                    "src": "5392:14:29",
+                    "src": "5408:14:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -26477,7 +29072,7 @@ module.exports={
                   },
                   "id": 4747,
                   "nodeType": "ExpressionStatement",
-                  "src": "5392:14:29"
+                  "src": "5408:14:29"
                 },
                 {
                   "expression": {
@@ -26493,7 +29088,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4735,
-                        "src": "5412:6:29",
+                        "src": "5428:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -26509,7 +29104,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5419:1:29",
+                        "src": "5435:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_1_by_1",
                           "typeString": "int_const 1"
@@ -26521,7 +29116,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5412:9:29",
+                      "src": "5428:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -26538,14 +29133,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "5424:1:29",
+                      "src": "5440:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_3_by_1",
                         "typeString": "int_const 3"
                       },
                       "value": "3"
                     },
-                    "src": "5412:13:29",
+                    "src": "5428:13:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -26553,7 +29148,7 @@ module.exports={
                   },
                   "id": 4753,
                   "nodeType": "ExpressionStatement",
-                  "src": "5412:13:29"
+                  "src": "5428:13:29"
                 },
                 {
                   "expression": {
@@ -26569,7 +29164,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4735,
-                        "src": "5431:6:29",
+                        "src": "5447:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -26585,7 +29180,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5438:1:29",
+                        "src": "5454:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_2_by_1",
                           "typeString": "int_const 2"
@@ -26597,7 +29192,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5431:9:29",
+                      "src": "5447:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -26614,14 +29209,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "5443:1:29",
+                      "src": "5459:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_3_by_1",
                         "typeString": "int_const 3"
                       },
                       "value": "3"
                     },
-                    "src": "5431:13:29",
+                    "src": "5447:13:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -26629,7 +29224,7 @@ module.exports={
                   },
                   "id": 4759,
                   "nodeType": "ExpressionStatement",
-                  "src": "5431:13:29"
+                  "src": "5447:13:29"
                 },
                 {
                   "expression": {
@@ -26645,7 +29240,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4735,
-                        "src": "5450:6:29",
+                        "src": "5466:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -26661,7 +29256,7 @@ module.exports={
                         "kind": "number",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "5457:1:29",
+                        "src": "5473:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_rational_3_by_1",
                           "typeString": "int_const 3"
@@ -26673,7 +29268,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5450:9:29",
+                      "src": "5466:9:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -26690,14 +29285,14 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "5462:1:29",
+                      "src": "5478:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_3_by_1",
                         "typeString": "int_const 3"
                       },
                       "value": "3"
                     },
-                    "src": "5450:13:29",
+                    "src": "5466:13:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_uint256",
                       "typeString": "uint256"
@@ -26705,7 +29300,7 @@ module.exports={
                   },
                   "id": 4765,
                   "nodeType": "ExpressionStatement",
-                  "src": "5450:13:29"
+                  "src": "5466:13:29"
                 },
                 {
                   "assignments": [
@@ -26717,10 +29312,10 @@ module.exports={
                       "id": 4768,
                       "mutability": "mutable",
                       "name": "c",
-                      "nameLocation": "5483:1:29",
+                      "nameLocation": "5499:1:29",
                       "nodeType": "VariableDeclaration",
                       "scope": 4785,
-                      "src": "5469:15:29",
+                      "src": "5485:15:29",
                       "stateVariable": false,
                       "storageLocation": "default",
                       "typeDescriptions": {
@@ -26735,10 +29330,10 @@ module.exports={
                           "name": "CheekSpreader",
                           "nodeType": "IdentifierPath",
                           "referencedDeclaration": 5380,
-                          "src": "5469:13:29"
+                          "src": "5485:13:29"
                         },
                         "referencedDeclaration": 5380,
-                        "src": "5469:13:29",
+                        "src": "5485:13:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_contract$_CheekSpreader_$5380",
                           "typeString": "contract CheekSpreader"
@@ -26756,7 +29351,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4700,
-                        "src": "5505:6:29",
+                        "src": "5521:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_memory_ptr",
                           "typeString": "address[] memory"
@@ -26768,7 +29363,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4735,
-                        "src": "5513:6:29",
+                        "src": "5529:6:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_uint256_$dyn_memory_ptr",
                           "typeString": "uint256[] memory"
@@ -26792,7 +29387,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": false,
                       "nodeType": "NewExpression",
-                      "src": "5487:17:29",
+                      "src": "5503:17:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_creation_payable$_t_array$_t_address_$dyn_memory_ptr_$_t_array$_t_uint256_$dyn_memory_ptr_$returns$_t_contract$_CheekSpreader_$5380_$",
                         "typeString": "function (address[] memory,uint256[] memory) payable returns (contract CheekSpreader)"
@@ -26805,10 +29400,10 @@ module.exports={
                           "name": "CheekSpreader",
                           "nodeType": "IdentifierPath",
                           "referencedDeclaration": 5380,
-                          "src": "5491:13:29"
+                          "src": "5507:13:29"
                         },
                         "referencedDeclaration": 5380,
-                        "src": "5491:13:29",
+                        "src": "5507:13:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_contract$_CheekSpreader_$5380",
                           "typeString": "contract CheekSpreader"
@@ -26823,7 +29418,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "5487:33:29",
+                    "src": "5503:33:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_contract$_CheekSpreader_$5380",
@@ -26831,7 +29426,7 @@ module.exports={
                     }
                   },
                   "nodeType": "VariableDeclarationStatement",
-                  "src": "5469:51:29"
+                  "src": "5485:51:29"
                 },
                 {
                   "expression": {
@@ -26847,7 +29442,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4345,
-                        "src": "5526:14:29",
+                        "src": "5542:14:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_address_$",
                           "typeString": "mapping(address => address)"
@@ -26860,7 +29455,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4666,
-                        "src": "5541:15:29",
+                        "src": "5557:15:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -26871,7 +29466,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "5526:31:29",
+                      "src": "5542:31:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -26887,7 +29482,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4768,
-                          "src": "5568:1:29",
+                          "src": "5584:1:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_contract$_CheekSpreader_$5380",
                             "typeString": "contract CheekSpreader"
@@ -26907,7 +29502,7 @@ module.exports={
                         "isPure": true,
                         "lValueRequested": false,
                         "nodeType": "ElementaryTypeNameExpression",
-                        "src": "5560:7:29",
+                        "src": "5576:7:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_type$_t_address_$",
                           "typeString": "type(address)"
@@ -26916,7 +29511,7 @@ module.exports={
                           "id": 4779,
                           "name": "address",
                           "nodeType": "ElementaryTypeName",
-                          "src": "5560:7:29",
+                          "src": "5576:7:29",
                           "typeDescriptions": {}
                         }
                       },
@@ -26928,14 +29523,14 @@ module.exports={
                       "lValueRequested": false,
                       "names": [],
                       "nodeType": "FunctionCall",
-                      "src": "5560:10:29",
+                      "src": "5576:10:29",
                       "tryCall": false,
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
                       }
                     },
-                    "src": "5526:44:29",
+                    "src": "5542:44:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -26943,14 +29538,14 @@ module.exports={
                   },
                   "id": 4784,
                   "nodeType": "ExpressionStatement",
-                  "src": "5526:44:29"
+                  "src": "5542:44:29"
                 }
               ]
             },
             "documentation": {
               "id": 4664,
               "nodeType": "StructuredDocumentation",
-              "src": "4763:108:29",
+              "src": "4779:108:29",
               "text": " @dev Create a new CheekSpreader contract for handling royalty payments for an unset butthole."
             },
             "functionSelector": "f8984a4b",
@@ -26966,14 +29561,14 @@ module.exports={
                   "name": "onlyOwner",
                   "nodeType": "IdentifierPath",
                   "referencedDeclaration": 578,
-                  "src": "4983:9:29"
+                  "src": "4999:9:29"
                 },
                 "nodeType": "ModifierInvocation",
-                "src": "4983:9:29"
+                "src": "4999:9:29"
               }
             ],
             "name": "updateCheekSpreader",
-            "nameLocation": "4883:19:29",
+            "nameLocation": "4899:19:29",
             "nodeType": "FunctionDefinition",
             "parameters": {
               "id": 4673,
@@ -26984,10 +29579,10 @@ module.exports={
                   "id": 4666,
                   "mutability": "mutable",
                   "name": "buttholeAddress",
-                  "nameLocation": "4911:15:29",
+                  "nameLocation": "4927:15:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4786,
-                  "src": "4903:23:29",
+                  "src": "4919:23:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -26998,7 +29593,7 @@ module.exports={
                     "id": 4665,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
-                    "src": "4903:7:29",
+                    "src": "4919:7:29",
                     "stateMutability": "nonpayable",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
@@ -27012,34 +29607,6 @@ module.exports={
                   "id": 4668,
                   "mutability": "mutable",
                   "name": "donor1",
-                  "nameLocation": "4936:6:29",
-                  "nodeType": "VariableDeclaration",
-                  "scope": 4786,
-                  "src": "4928:14:29",
-                  "stateVariable": false,
-                  "storageLocation": "default",
-                  "typeDescriptions": {
-                    "typeIdentifier": "t_address",
-                    "typeString": "address"
-                  },
-                  "typeName": {
-                    "id": 4667,
-                    "name": "address",
-                    "nodeType": "ElementaryTypeName",
-                    "src": "4928:7:29",
-                    "stateMutability": "nonpayable",
-                    "typeDescriptions": {
-                      "typeIdentifier": "t_address",
-                      "typeString": "address"
-                    }
-                  },
-                  "visibility": "internal"
-                },
-                {
-                  "constant": false,
-                  "id": 4670,
-                  "mutability": "mutable",
-                  "name": "donor2",
                   "nameLocation": "4952:6:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4786,
@@ -27051,7 +29618,7 @@ module.exports={
                     "typeString": "address"
                   },
                   "typeName": {
-                    "id": 4669,
+                    "id": 4667,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
                     "src": "4944:7:29",
@@ -27065,9 +29632,9 @@ module.exports={
                 },
                 {
                   "constant": false,
-                  "id": 4672,
+                  "id": 4670,
                   "mutability": "mutable",
-                  "name": "donor3",
+                  "name": "donor2",
                   "nameLocation": "4968:6:29",
                   "nodeType": "VariableDeclaration",
                   "scope": 4786,
@@ -27079,7 +29646,7 @@ module.exports={
                     "typeString": "address"
                   },
                   "typeName": {
-                    "id": 4671,
+                    "id": 4669,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
                     "src": "4960:7:29",
@@ -27090,18 +29657,46 @@ module.exports={
                     }
                   },
                   "visibility": "internal"
+                },
+                {
+                  "constant": false,
+                  "id": 4672,
+                  "mutability": "mutable",
+                  "name": "donor3",
+                  "nameLocation": "4984:6:29",
+                  "nodeType": "VariableDeclaration",
+                  "scope": 4786,
+                  "src": "4976:14:29",
+                  "stateVariable": false,
+                  "storageLocation": "default",
+                  "typeDescriptions": {
+                    "typeIdentifier": "t_address",
+                    "typeString": "address"
+                  },
+                  "typeName": {
+                    "id": 4671,
+                    "name": "address",
+                    "nodeType": "ElementaryTypeName",
+                    "src": "4976:7:29",
+                    "stateMutability": "nonpayable",
+                    "typeDescriptions": {
+                      "typeIdentifier": "t_address",
+                      "typeString": "address"
+                    }
+                  },
+                  "visibility": "internal"
                 }
               ],
-              "src": "4902:73:29"
+              "src": "4918:73:29"
             },
             "returnParameters": {
               "id": 4676,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "4993:0:29"
+              "src": "5009:0:29"
             },
             "scope": 4874,
-            "src": "4874:701:29",
+            "src": "4890:701:29",
             "stateMutability": "nonpayable",
             "virtual": false,
             "visibility": "public"
@@ -27110,7 +29705,7 @@ module.exports={
             "body": {
               "id": 4811,
               "nodeType": "Block",
-              "src": "5678:142:29",
+              "src": "5694:142:29",
               "statements": [
                 {
                   "expression": {
@@ -27120,7 +29715,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4341,
-                      "src": "5691:14:29",
+                      "src": "5707:14:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_array$_t_address_$dyn_storage",
                         "typeString": "address[] storage ref"
@@ -27150,7 +29745,7 @@ module.exports={
                                       "nodeType": "Identifier",
                                       "overloadedDeclarations": [],
                                       "referencedDeclaration": 4294967292,
-                                      "src": "5738:5:29",
+                                      "src": "5754:5:29",
                                       "typeDescriptions": {
                                         "typeIdentifier": "t_magic_block",
                                         "typeString": "block"
@@ -27163,7 +29758,7 @@ module.exports={
                                     "lValueRequested": false,
                                     "memberName": "difficulty",
                                     "nodeType": "MemberAccess",
-                                    "src": "5738:16:29",
+                                    "src": "5754:16:29",
                                     "typeDescriptions": {
                                       "typeIdentifier": "t_uint256",
                                       "typeString": "uint256"
@@ -27176,7 +29771,7 @@ module.exports={
                                       "nodeType": "Identifier",
                                       "overloadedDeclarations": [],
                                       "referencedDeclaration": 4294967292,
-                                      "src": "5756:5:29",
+                                      "src": "5772:5:29",
                                       "typeDescriptions": {
                                         "typeIdentifier": "t_magic_block",
                                         "typeString": "block"
@@ -27189,7 +29784,7 @@ module.exports={
                                     "lValueRequested": false,
                                     "memberName": "timestamp",
                                     "nodeType": "MemberAccess",
-                                    "src": "5756:15:29",
+                                    "src": "5772:15:29",
                                     "typeDescriptions": {
                                       "typeIdentifier": "t_uint256",
                                       "typeString": "uint256"
@@ -27201,7 +29796,7 @@ module.exports={
                                     "nodeType": "Identifier",
                                     "overloadedDeclarations": [],
                                     "referencedDeclaration": 4341,
-                                    "src": "5773:14:29",
+                                    "src": "5789:14:29",
                                     "typeDescriptions": {
                                       "typeIdentifier": "t_array$_t_address_$dyn_storage",
                                       "typeString": "address[] storage ref"
@@ -27229,7 +29824,7 @@ module.exports={
                                     "nodeType": "Identifier",
                                     "overloadedDeclarations": [],
                                     "referencedDeclaration": 4294967295,
-                                    "src": "5721:3:29",
+                                    "src": "5737:3:29",
                                     "typeDescriptions": {
                                       "typeIdentifier": "t_magic_abi",
                                       "typeString": "abi"
@@ -27242,7 +29837,7 @@ module.exports={
                                   "lValueRequested": false,
                                   "memberName": "encodePacked",
                                   "nodeType": "MemberAccess",
-                                  "src": "5721:16:29",
+                                  "src": "5737:16:29",
                                   "typeDescriptions": {
                                     "typeIdentifier": "t_function_abiencodepacked_pure$__$returns$_t_bytes_memory_ptr_$",
                                     "typeString": "function () pure returns (bytes memory)"
@@ -27256,7 +29851,7 @@ module.exports={
                                 "lValueRequested": false,
                                 "names": [],
                                 "nodeType": "FunctionCall",
-                                "src": "5721:67:29",
+                                "src": "5737:67:29",
                                 "tryCall": false,
                                 "typeDescriptions": {
                                   "typeIdentifier": "t_bytes_memory_ptr",
@@ -27276,7 +29871,7 @@ module.exports={
                               "nodeType": "Identifier",
                               "overloadedDeclarations": [],
                               "referencedDeclaration": 4294967288,
-                              "src": "5711:9:29",
+                              "src": "5727:9:29",
                               "typeDescriptions": {
                                 "typeIdentifier": "t_function_keccak256_pure$_t_bytes_memory_ptr_$returns$_t_bytes32_$",
                                 "typeString": "function (bytes memory) pure returns (bytes32)"
@@ -27290,7 +29885,7 @@ module.exports={
                             "lValueRequested": false,
                             "names": [],
                             "nodeType": "FunctionCall",
-                            "src": "5711:78:29",
+                            "src": "5727:78:29",
                             "tryCall": false,
                             "typeDescriptions": {
                               "typeIdentifier": "t_bytes32",
@@ -27311,7 +29906,7 @@ module.exports={
                           "isPure": true,
                           "lValueRequested": false,
                           "nodeType": "ElementaryTypeNameExpression",
-                          "src": "5706:4:29",
+                          "src": "5722:4:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_type$_t_uint256_$",
                             "typeString": "type(uint256)"
@@ -27320,7 +29915,7 @@ module.exports={
                             "id": 4793,
                             "name": "uint",
                             "nodeType": "ElementaryTypeName",
-                            "src": "5706:4:29",
+                            "src": "5722:4:29",
                             "typeDescriptions": {}
                           }
                         },
@@ -27332,7 +29927,7 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "5706:84:29",
+                        "src": "5722:84:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
@@ -27348,7 +29943,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4341,
-                          "src": "5793:14:29",
+                          "src": "5809:14:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_array$_t_address_$dyn_storage",
                             "typeString": "address[] storage ref"
@@ -27361,13 +29956,13 @@ module.exports={
                         "lValueRequested": false,
                         "memberName": "length",
                         "nodeType": "MemberAccess",
-                        "src": "5793:21:29",
+                        "src": "5809:21:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
                         }
                       },
-                      "src": "5706:108:29",
+                      "src": "5722:108:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -27378,7 +29973,7 @@ module.exports={
                     "isPure": false,
                     "lValueRequested": false,
                     "nodeType": "IndexAccess",
-                    "src": "5691:124:29",
+                    "src": "5707:124:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
                       "typeString": "address"
@@ -27387,14 +29982,14 @@ module.exports={
                   "functionReturnParameters": 4791,
                   "id": 4810,
                   "nodeType": "Return",
-                  "src": "5684:131:29"
+                  "src": "5700:131:29"
                 }
               ]
             },
             "documentation": {
               "id": 4787,
               "nodeType": "StructuredDocumentation",
-              "src": "5579:40:29",
+              "src": "5595:40:29",
               "text": " @dev Return a random uri."
             },
             "id": 4812,
@@ -27402,13 +29997,13 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "_getButthole",
-            "nameLocation": "5631:12:29",
+            "nameLocation": "5647:12:29",
             "nodeType": "FunctionDefinition",
             "parameters": {
               "id": 4788,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "5643:2:29"
+              "src": "5659:2:29"
             },
             "returnParameters": {
               "id": 4791,
@@ -27422,7 +30017,7 @@ module.exports={
                   "nameLocation": "-1:-1:-1",
                   "nodeType": "VariableDeclaration",
                   "scope": 4812,
-                  "src": "5669:7:29",
+                  "src": "5685:7:29",
                   "stateVariable": false,
                   "storageLocation": "default",
                   "typeDescriptions": {
@@ -27433,7 +30028,7 @@ module.exports={
                     "id": 4789,
                     "name": "address",
                     "nodeType": "ElementaryTypeName",
-                    "src": "5669:7:29",
+                    "src": "5685:7:29",
                     "stateMutability": "nonpayable",
                     "typeDescriptions": {
                       "typeIdentifier": "t_address",
@@ -27443,10 +30038,10 @@ module.exports={
                   "visibility": "internal"
                 }
               ],
-              "src": "5668:9:29"
+              "src": "5684:9:29"
             },
             "scope": 4874,
-            "src": "5622:198:29",
+            "src": "5638:198:29",
             "stateMutability": "view",
             "virtual": false,
             "visibility": "internal"
@@ -27455,7 +30050,7 @@ module.exports={
             "body": {
               "id": 4872,
               "nodeType": "Block",
-              "src": "5997:397:29",
+              "src": "6013:397:29",
               "statements": [
                 {
                   "expression": {
@@ -27467,7 +30062,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4338,
-                          "src": "6011:11:29",
+                          "src": "6027:11:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_mapping$_t_address_$_t_bool_$",
                             "typeString": "mapping(address => bool)"
@@ -27483,7 +30078,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 3382,
-                            "src": "6023:10:29",
+                            "src": "6039:10:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                               "typeString": "function () view returns (address)"
@@ -27497,7 +30092,7 @@ module.exports={
                           "lValueRequested": false,
                           "names": [],
                           "nodeType": "FunctionCall",
-                          "src": "6023:12:29",
+                          "src": "6039:12:29",
                           "tryCall": false,
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
@@ -27509,7 +30104,7 @@ module.exports={
                         "isPure": false,
                         "lValueRequested": false,
                         "nodeType": "IndexAccess",
-                        "src": "6011:25:29",
+                        "src": "6027:25:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_bool",
                           "typeString": "bool"
@@ -27524,7 +30119,7 @@ module.exports={
                         "kind": "string",
                         "lValueRequested": false,
                         "nodeType": "Literal",
-                        "src": "6038:38:29",
+                        "src": "6054:38:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_stringliteral_4178a59c863494f22673f9f352336fa432c83f12c38f294fdbaab954fd89957f",
                           "typeString": "literal_string \"Buttholes: caller must be a butthole\""
@@ -27551,7 +30146,7 @@ module.exports={
                         4294967278
                       ],
                       "referencedDeclaration": 4294967278,
-                      "src": "6003:7:29",
+                      "src": "6019:7:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_require_pure$_t_bool_$_t_string_memory_ptr_$returns$__$",
                         "typeString": "function (bool,string memory) pure"
@@ -27565,7 +30160,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "6003:74:29",
+                    "src": "6019:74:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -27574,7 +30169,7 @@ module.exports={
                   },
                   "id": 4823,
                   "nodeType": "ExpressionStatement",
-                  "src": "6003:74:29"
+                  "src": "6019:74:29"
                 },
                 {
                   "expression": {
@@ -27586,7 +30181,7 @@ module.exports={
                     "nodeType": "UnaryOperation",
                     "operator": "delete",
                     "prefix": true,
-                    "src": "6083:30:29",
+                    "src": "6099:30:29",
                     "subExpression": {
                       "baseExpression": {
                         "id": 4824,
@@ -27594,7 +30189,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4334,
-                        "src": "6090:9:29",
+                        "src": "6106:9:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_string_storage_$",
                           "typeString": "mapping(address => string storage ref)"
@@ -27610,7 +30205,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 3382,
-                          "src": "6100:10:29",
+                          "src": "6116:10:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                             "typeString": "function () view returns (address)"
@@ -27624,7 +30219,7 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "6100:12:29",
+                        "src": "6116:12:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
@@ -27636,7 +30231,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "6090:23:29",
+                      "src": "6106:23:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_string_storage",
                         "typeString": "string storage ref"
@@ -27649,7 +30244,7 @@ module.exports={
                   },
                   "id": 4829,
                   "nodeType": "ExpressionStatement",
-                  "src": "6083:30:29"
+                  "src": "6099:30:29"
                 },
                 {
                   "expression": {
@@ -27661,7 +30256,7 @@ module.exports={
                     "nodeType": "UnaryOperation",
                     "operator": "delete",
                     "prefix": true,
-                    "src": "6119:35:29",
+                    "src": "6135:35:29",
                     "subExpression": {
                       "baseExpression": {
                         "id": 4830,
@@ -27669,7 +30264,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4345,
-                        "src": "6126:14:29",
+                        "src": "6142:14:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_address_$",
                           "typeString": "mapping(address => address)"
@@ -27685,7 +30280,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 3382,
-                          "src": "6141:10:29",
+                          "src": "6157:10:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                             "typeString": "function () view returns (address)"
@@ -27699,7 +30294,7 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "6141:12:29",
+                        "src": "6157:12:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
@@ -27711,7 +30306,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "6126:28:29",
+                      "src": "6142:28:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_address",
                         "typeString": "address"
@@ -27724,7 +30319,7 @@ module.exports={
                   },
                   "id": 4835,
                   "nodeType": "ExpressionStatement",
-                  "src": "6119:35:29"
+                  "src": "6135:35:29"
                 },
                 {
                   "expression": {
@@ -27740,7 +30335,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4338,
-                        "src": "6160:11:29",
+                        "src": "6176:11:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_mapping$_t_address_$_t_bool_$",
                           "typeString": "mapping(address => bool)"
@@ -27756,7 +30351,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 3382,
-                          "src": "6172:10:29",
+                          "src": "6188:10:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                             "typeString": "function () view returns (address)"
@@ -27770,7 +30365,7 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "6172:12:29",
+                        "src": "6188:12:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
@@ -27782,7 +30377,7 @@ module.exports={
                       "isPure": false,
                       "lValueRequested": true,
                       "nodeType": "IndexAccess",
-                      "src": "6160:25:29",
+                      "src": "6176:25:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_bool",
                         "typeString": "bool"
@@ -27799,14 +30394,14 @@ module.exports={
                       "kind": "bool",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "6188:5:29",
+                      "src": "6204:5:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_bool",
                         "typeString": "bool"
                       },
                       "value": "false"
                     },
-                    "src": "6160:33:29",
+                    "src": "6176:33:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_bool",
                       "typeString": "bool"
@@ -27814,7 +30409,7 @@ module.exports={
                   },
                   "id": 4842,
                   "nodeType": "ExpressionStatement",
-                  "src": "6160:33:29"
+                  "src": "6176:33:29"
                 },
                 {
                   "body": {
@@ -27835,7 +30430,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4341,
-                          "src": "6287:14:29",
+                          "src": "6303:14:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_array$_t_address_$dyn_storage",
                             "typeString": "address[] storage ref"
@@ -27848,7 +30443,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 4844,
-                          "src": "6302:1:29",
+                          "src": "6318:1:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_uint256",
                             "typeString": "uint256"
@@ -27859,7 +30454,7 @@ module.exports={
                         "isPure": false,
                         "lValueRequested": false,
                         "nodeType": "IndexAccess",
-                        "src": "6287:17:29",
+                        "src": "6303:17:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
@@ -27876,7 +30471,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 3382,
-                          "src": "6308:10:29",
+                          "src": "6324:10:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                             "typeString": "function () view returns (address)"
@@ -27890,14 +30485,14 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "6308:12:29",
+                        "src": "6324:12:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
                           "typeString": "address"
                         }
                       },
-                      "src": "6287:33:29",
+                      "src": "6303:33:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_bool",
                         "typeString": "bool"
@@ -27905,7 +30500,7 @@ module.exports={
                     },
                     "id": 4865,
                     "nodeType": "IfStatement",
-                    "src": "6283:71:29",
+                    "src": "6299:71:29",
                     "trueBody": {
                       "expression": {
                         "id": 4863,
@@ -27916,7 +30511,7 @@ module.exports={
                         "nodeType": "UnaryOperation",
                         "operator": "delete",
                         "prefix": true,
-                        "src": "6330:24:29",
+                        "src": "6346:24:29",
                         "subExpression": {
                           "baseExpression": {
                             "id": 4860,
@@ -27924,7 +30519,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 4341,
-                            "src": "6337:14:29",
+                            "src": "6353:14:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_array$_t_address_$dyn_storage",
                               "typeString": "address[] storage ref"
@@ -27937,7 +30532,7 @@ module.exports={
                             "nodeType": "Identifier",
                             "overloadedDeclarations": [],
                             "referencedDeclaration": 4844,
-                            "src": "6352:1:29",
+                            "src": "6368:1:29",
                             "typeDescriptions": {
                               "typeIdentifier": "t_uint256",
                               "typeString": "uint256"
@@ -27948,7 +30543,7 @@ module.exports={
                           "isPure": false,
                           "lValueRequested": true,
                           "nodeType": "IndexAccess",
-                          "src": "6337:17:29",
+                          "src": "6353:17:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_address",
                             "typeString": "address"
@@ -27961,7 +30556,7 @@ module.exports={
                       },
                       "id": 4864,
                       "nodeType": "ExpressionStatement",
-                      "src": "6330:24:29"
+                      "src": "6346:24:29"
                     }
                   },
                   "condition": {
@@ -27980,7 +30575,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4844,
-                      "src": "6248:1:29",
+                      "src": "6264:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
@@ -27995,7 +30590,7 @@ module.exports={
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4341,
-                        "src": "6250:14:29",
+                        "src": "6266:14:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_array$_t_address_$dyn_storage",
                           "typeString": "address[] storage ref"
@@ -28008,13 +30603,13 @@ module.exports={
                       "lValueRequested": false,
                       "memberName": "length",
                       "nodeType": "MemberAccess",
-                      "src": "6250:21:29",
+                      "src": "6266:21:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_uint256",
                         "typeString": "uint256"
                       }
                     },
-                    "src": "6248:23:29",
+                    "src": "6264:23:29",
                     "typeDescriptions": {
                       "typeIdentifier": "t_bool",
                       "typeString": "bool"
@@ -28031,10 +30626,10 @@ module.exports={
                         "id": 4844,
                         "mutability": "mutable",
                         "name": "i",
-                        "nameLocation": "6244:1:29",
+                        "nameLocation": "6260:1:29",
                         "nodeType": "VariableDeclaration",
                         "scope": 4866,
-                        "src": "6239:6:29",
+                        "src": "6255:6:29",
                         "stateVariable": false,
                         "storageLocation": "default",
                         "typeDescriptions": {
@@ -28045,7 +30640,7 @@ module.exports={
                           "id": 4843,
                           "name": "uint",
                           "nodeType": "ElementaryTypeName",
-                          "src": "6239:4:29",
+                          "src": "6255:4:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_uint256",
                             "typeString": "uint256"
@@ -28064,7 +30659,7 @@ module.exports={
                       "kind": "number",
                       "lValueRequested": false,
                       "nodeType": "Literal",
-                      "src": "6246:1:29",
+                      "src": "6262:1:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_rational_0_by_1",
                         "typeString": "int_const 0"
@@ -28072,7 +30667,7 @@ module.exports={
                       "value": "0"
                     },
                     "nodeType": "VariableDeclarationStatement",
-                    "src": "6239:8:29"
+                    "src": "6255:8:29"
                   },
                   "loopExpression": {
                     "expression": {
@@ -28084,14 +30679,14 @@ module.exports={
                       "nodeType": "UnaryOperation",
                       "operator": "++",
                       "prefix": false,
-                      "src": "6272:3:29",
+                      "src": "6288:3:29",
                       "subExpression": {
                         "id": 4851,
                         "name": "i",
                         "nodeType": "Identifier",
                         "overloadedDeclarations": [],
                         "referencedDeclaration": 4844,
-                        "src": "6272:1:29",
+                        "src": "6288:1:29",
                         "typeDescriptions": {
                           "typeIdentifier": "t_uint256",
                           "typeString": "uint256"
@@ -28104,10 +30699,10 @@ module.exports={
                     },
                     "id": 4853,
                     "nodeType": "ExpressionStatement",
-                    "src": "6272:3:29"
+                    "src": "6288:3:29"
                   },
                   "nodeType": "ForStatement",
-                  "src": "6234:120:29"
+                  "src": "6250:120:29"
                 },
                 {
                   "eventCall": {
@@ -28121,7 +30716,7 @@ module.exports={
                           "nodeType": "Identifier",
                           "overloadedDeclarations": [],
                           "referencedDeclaration": 3382,
-                          "src": "6376:10:29",
+                          "src": "6392:10:29",
                           "typeDescriptions": {
                             "typeIdentifier": "t_function_internal_view$__$returns$_t_address_$",
                             "typeString": "function () view returns (address)"
@@ -28135,7 +30730,7 @@ module.exports={
                         "lValueRequested": false,
                         "names": [],
                         "nodeType": "FunctionCall",
-                        "src": "6376:12:29",
+                        "src": "6392:12:29",
                         "tryCall": false,
                         "typeDescriptions": {
                           "typeIdentifier": "t_address",
@@ -28155,7 +30750,7 @@ module.exports={
                       "nodeType": "Identifier",
                       "overloadedDeclarations": [],
                       "referencedDeclaration": 4330,
-                      "src": "6365:10:29",
+                      "src": "6381:10:29",
                       "typeDescriptions": {
                         "typeIdentifier": "t_function_event_nonpayable$_t_address_$returns$__$",
                         "typeString": "function (address)"
@@ -28169,7 +30764,7 @@ module.exports={
                     "lValueRequested": false,
                     "names": [],
                     "nodeType": "FunctionCall",
-                    "src": "6365:24:29",
+                    "src": "6381:24:29",
                     "tryCall": false,
                     "typeDescriptions": {
                       "typeIdentifier": "t_tuple$__$",
@@ -28178,14 +30773,14 @@ module.exports={
                   },
                   "id": 4871,
                   "nodeType": "EmitStatement",
-                  "src": "6360:29:29"
+                  "src": "6376:29:29"
                 }
               ]
             },
             "documentation": {
               "id": 4813,
               "nodeType": "StructuredDocumentation",
-              "src": "5824:135:29",
+              "src": "5840:135:29",
               "text": " @dev Renounce ownership of your own butthole.\n Requirements:\n - `_msgSender` must exist as a butthole."
             },
             "functionSelector": "bd2573bb",
@@ -28194,33 +30789,33 @@ module.exports={
             "kind": "function",
             "modifiers": [],
             "name": "renounceButthole",
-            "nameLocation": "5971:16:29",
+            "nameLocation": "5987:16:29",
             "nodeType": "FunctionDefinition",
             "parameters": {
               "id": 4814,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "5987:2:29"
+              "src": "6003:2:29"
             },
             "returnParameters": {
               "id": 4815,
               "nodeType": "ParameterList",
               "parameters": [],
-              "src": "5997:0:29"
+              "src": "6013:0:29"
             },
             "scope": 4874,
-            "src": "5962:432:29",
+            "src": "5978:432:29",
             "stateMutability": "nonpayable",
             "virtual": false,
             "visibility": "public"
           }
         ],
         "scope": 4875,
-        "src": "479:5918:29",
+        "src": "479:5934:29",
         "usedErrors": []
       }
     ],
-    "src": "32:6366:29"
+    "src": "32:6382:29"
   },
   "compiler": {
     "name": "solc",
@@ -28228,14 +30823,242 @@ module.exports={
   },
   "networks": {
     "1337": {
-      "events": {},
+      "events": {
+        "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "owner",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "approved",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "name": "Approval",
+          "type": "event"
+        },
+        "0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "owner",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "operator",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "bool",
+              "name": "approved",
+              "type": "bool"
+            }
+          ],
+          "name": "ApprovalForAll",
+          "type": "event"
+        },
+        "0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "previousOwner",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "newOwner",
+              "type": "address"
+            }
+          ],
+          "name": "OwnershipTransferred",
+          "type": "event"
+        },
+        "0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
+            }
+          ],
+          "name": "Paused",
+          "type": "event"
+        },
+        "0xb177a07085e0487947eaa3af695b80cf8af7044400eae85f7095bcfab312902f": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "internalType": "address",
+              "name": "removedButthole",
+              "type": "address"
+            }
+          ],
+          "name": "PuckerDown",
+          "type": "event"
+        },
+        "0x3928d8d4ef77269d64bde1cdb2870113bf1ae2d5c8e970356e43f58a09134bbe": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "internalType": "address",
+              "name": "addedButthole",
+              "type": "address"
+            },
+            {
+              "indexed": false,
+              "internalType": "string",
+              "name": "buttholeHash",
+              "type": "string"
+            }
+          ],
+          "name": "PuckerUp",
+          "type": "event"
+        },
+        "0xbd79b86ffe0ab8e8776151514217cd7cacd52c909f66475c3af44e129f0b00ff": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "bytes32",
+              "name": "role",
+              "type": "bytes32"
+            },
+            {
+              "indexed": true,
+              "internalType": "bytes32",
+              "name": "previousAdminRole",
+              "type": "bytes32"
+            },
+            {
+              "indexed": true,
+              "internalType": "bytes32",
+              "name": "newAdminRole",
+              "type": "bytes32"
+            }
+          ],
+          "name": "RoleAdminChanged",
+          "type": "event"
+        },
+        "0x2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "bytes32",
+              "name": "role",
+              "type": "bytes32"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "sender",
+              "type": "address"
+            }
+          ],
+          "name": "RoleGranted",
+          "type": "event"
+        },
+        "0xf6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "bytes32",
+              "name": "role",
+              "type": "bytes32"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "sender",
+              "type": "address"
+            }
+          ],
+          "name": "RoleRevoked",
+          "type": "event"
+        },
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        },
+        "0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa": {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": false,
+              "internalType": "address",
+              "name": "account",
+              "type": "address"
+            }
+          ],
+          "name": "Unpaused",
+          "type": "event"
+        }
+      },
       "links": {},
       "address": "0x1de1E1Ee724DA2D7fF707F55411661278cB32AA3",
-      "transactionHash": "0xf853ea68294c4971b0a23ff23ddf8d4fd0bdee3c2057eec74c30e560ac5ccb45"
+      "transactionHash": "0x36280623541d05199f9a2d4af7365370acca2f72a41e5e4a53b493e12f16f5eb"
     }
   },
   "schemaVersion": "3.4.7",
-  "updatedAt": "2022-05-10T22:37:11.689Z",
+  "updatedAt": "2022-05-11T16:52:25.777Z",
   "networkType": "ethereum",
   "devdoc": {
     "author": "Skeetzo",
@@ -28366,36 +31189,257 @@ module.exports={
     "version": 1
   }
 }
-},{}],6:[function(require,module,exports){
-
-const { create } = require('ipfs-http-client');
-const IPFS = create();
-
-const { ethers } = require("ethers");
-
-// import * as IPFS from 'ipfs-core'
-
-const $ = require('jquery')
-
-// const ipfs = await IPFS.create()
-
-const DEFAULT_URI = "ipfs://";
-
-var Buttholes;
-var web3Provider;
-var signer;
-var account;
-
-var divs = [];
-
-////////////////////////////////////////////////////////////////////////////////////
-
-// Contract //
+},{}],13:[function(require,module,exports){
+// Access Functions for Smart Contract
+// -> add, mint, update, renounce
 
 /**
- * @dev Connects to contract.
+ * @dev Adds a newly generated butthole NFT.
+ * @param Buttholes The Buttholes contract object provided by Ethers.
+ * @param newButtholeAddress The artist's ETH address.
+ * @param newButtholeURI The CID of the token's metadata.json on IPFS.
  */
-async function connectToContract() {
+async function add(Buttholes, newButtholeAddress, newButtholeURI) {
+	console.log("Adding butthole to contract: %s -> %s", newButtholeAddress, newButtholeURI);
+	try {
+		const gasLimit = await Buttholes.estimateGas.addButthole(newButtholeAddress.toString(), newButtholeURI.toString());
+		const tx = await Buttholes.addButthole(newButtholeAddress.toString(), newButtholeURI.toString(), {'gasLimit':gasLimit});
+		const receipt = await tx.wait();
+		console.debug(receipt);
+		const event = receipt.events.find(x => x.event === "PuckerUp");
+		if (event) {
+			console.debug(event);
+			console.log(`Successfully added butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
+		}
+		else
+			console.warn("Failed to add new butthole!");
+	}
+	catch (err) {
+		console.error(err);
+		console.warn("Unable to add new butthole!");
+		console.error(JSON.parse(err.body).error.data.reason);
+	}
+}
+
+/**
+ * @dev Adds a user to minting role aka 18+ access.
+ * @param Buttholes The Buttholes contract object provided by Ethers.
+ */
+async function addMinter(Buttholes) {
+	try {
+		const gasLimit = await Buttholes.estimateGas.addMinter();
+		const tx = await Buttholes.addMinter({'gasLimit':gasLimit});
+		const receipt = await tx.wait();
+		console.log(receipt.logs);
+		const event = receipt.events.find(x => x.event === "RoleGranted");
+		console.log(event);
+		console.log(event.args.account); // account
+		console.log("successfully added minting!");		    
+	}
+	catch (err) {console.error(err);}
+};
+
+/**
+ * @dev Check if address has admin role.
+ * @param address The address to check.
+ */
+async function isAdmin(Buttholes, address) {
+	return await Buttholes.hasRole(await Buttholes.DEFAULT_ADMIN_ROLE(), address);
+}
+
+/**
+ * @dev Check if address has minter role.
+ * @param address The address to check.
+ */
+async function isMinter(Buttholes, address) {
+	return await Buttholes.hasRole(await Buttholes.MINTER_ROLE(), address);
+}
+
+/**
+ * @dev Mints a butthole NFT.
+ * @param to The address to receive the token.
+ * @param Buttholes The Buttholes contract object provided by Ethers.
+ */
+async function mint(Buttholes, to) {
+	console.log("Minting butthole to address: %s", to);
+	try {
+		const gasLimit = await Buttholes.estimateGas.mint(to.toString());
+		const tx = await Buttholes.mint(to.toString(), {'gasLimit':gasLimit});
+		const receipt = await tx.wait();
+		console.debug(receipt);
+		const event = receipt.events.find(x => x.event === "Transfer");
+		if (event) {
+			console.debug(event);
+			console.log(`Successfully minted butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
+		}
+		else
+			console.warn("Failed to mint butthole!");
+	}
+	catch (err) {
+		console.error(err);
+		console.warn("Unable to mint butthole!");
+		console.error(JSON.parse(err.body).error.data.reason);
+	}
+}
+
+/**
+ * @dev Adds starving artists for the provided ETH address.
+ * @param Buttholes The Buttholes contract object provided by Ethers.
+ * @param address The artist's ETH address.
+ * @param donor1 The 1st donation address.
+ * @param donor2 The 2nd donation address.
+ * @param donor3 The 3rd donation address.
+ */
+async function update(Buttholes, address, donor1, donor2, donor3) {
+	console.log("Adding starving artists to contract for address: %s\n-> %s\n-> %s\n-> %s", address, donor1, donor2, donor3);
+	async function _update() {
+		try {
+			const gasLimit = await Buttholes.estimateGas.updateCheekSpreader(address.toString(), donor1.toString(), donor2.toString(), donor3.toString());
+			const tx = await Buttholes.updateCheekSpreader(address.toString(), donor1.toString(), donor2.toString(), donor3.toString(), {'gasLimit':gasLimit});
+			const receipt = await tx.wait();
+			console.debug(receipt);
+			console.log("Successfully added starving artists!");
+		}
+		catch (err) {
+			console.error(err);
+			console.warn("Unable to add new starving artists!");
+			console.error(JSON.parse(err.body).error.data.reason);
+			return false;
+		}
+		return true;
+	}
+	async function _create() {
+		try {
+			const gasLimit = await Buttholes.estimateGas.createCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString());
+			const tx = await Buttholes.updateCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString(), {'gasLimit':gasLimit});
+			const receipt = await tx.wait();
+			console.debug(receipt);
+			console.log("Successfully created starving artists!");
+		}
+		catch (err) {
+			console.error(err);
+			console.warn("Unable to create new starving artists!");
+			console.error(JSON.parse(err.body).error.data.reason);
+		}
+	}
+	// create if update fails
+	if (!await _update()) await _create();
+}
+
+/**
+ * @dev Renounce your Butthole NFT. Must be called by the rouncing artist.
+ * @param Buttholes The Buttholes contract object provided by Ethers.
+ */
+async function renounce(Buttholes) {
+	console.log("Renouncing butthole from contract...");
+	const gasLimit = await Buttholes.estimateGas.renounceButthole();
+	const tx = await Buttholes.renounceButthole({'gasLimit':gasLimit});
+	try {
+		const receipt = await tx.wait();
+		console.debug(receipt);
+		const event = receipt.events.find(x => x.event === "PuckerDown");
+		if (event) {
+			console.debug(event);
+			console.log("Successfully renounced butthole!");		
+		}
+		else
+			console.warn("Failed to renounce butthole!");
+	}
+	catch (err) {
+		// console.error(err);
+		console.warn("Unable to renounce butthole!");
+		console.error(JSON.parse(err.body).error.data.reason);
+	}
+}
+
+module.exports = {
+	add,
+	addMinter,
+	isAdmin,
+	isMinter,
+	update,
+	mint,
+	renounce
+}
+},{}],14:[function(require,module,exports){
+(function (process){(function (){
+
+// Add, update, or renounce a butthole NFT.
+
+require('dotenv').config();
+const ButtholesInterface = require('./Buttholes.js');
+const commander = require('commander'),
+	  Command = commander.Command;
+const ethers = require('ethers');
+const ipfs = require('./ipfs.js');
+const { readFileSync } = require('fs');
+const path = require('path');
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Metadata //
+
+// return skeleton {} metadata
+/**
+ * @dev Loads and returns the default butthole metadata template.
+ */
+function _getDefaultMetadata() {
+	const nft = require('./metadata.json', 'utf8');
+	nft.animation_url = process.env.DEFAULT_ANIMATION_URI
+	const date = new Date();
+	const timestampInMs = date.getTime();
+	const unixTimestamp = Math.floor(date.getTime() / 1000);
+	nft.attributes.birthday = unixTimestamp;
+	// Properties //
+	// image
+	nft.properties.image.value = process.env.DEFAULT_PLACEHOLDER_URI
+	// butthole
+	nft.properties.butthole.value = process.env.DEFAULT_PLACEHOLDER_URI
+	return nft;
+}
+
+/**
+ * @dev Create's a butthole NFT's metadata from the provided butthole data.
+ * @param butthole An object containing nft metadata.
+ */
+function _createButtholeMetadata(butthole) {
+	// load default metadata.json and update default values
+	const nft = _getDefaultMetadata();
+	// update birthday
+	// https://stackoverflow.com/questions/4060004/calculate-age-given-the-birth-date-in-the-format-yyyymmdd
+	function _getAge(dateString) {
+	    var today = new Date();
+	    var birthDate = new Date(dateString);
+	    var age = today.getFullYear() - birthDate.getFullYear();
+	    var m = today.getMonth() - birthDate.getMonth();
+	    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+	        age--;
+	    }
+	    return age;
+	}
+	const date = new Date(butthole.birthday);
+	const unixTimestamp = Math.floor(date.getTime() / 1000);
+	const age = _getAge(butthole.birthday);
+	console.log(`Birthday: (${age}) ${butthole.birthday} --> ${unixTimestamp}`);
+	// update attributes
+	nft.attributes.map(a => {if (a["trait_type"] == "birthday") a["value"] = unixTimestamp });
+	nft.attributes.map(a => {if (a["trait_type"] == "level") a["value"] = age });
+	// update properties
+	nft.properties.artist.value = butthole.artist;
+	nft.properties.name.value = butthole.name;
+	nft.properties.description.value = butthole.description;
+	nft.properties.butthole.value = butthole.image;
+	return nft;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Contract Interface //
+
+var ButtholesContract;
+async function getContract() {
+	if (ButtholesContract) return ButtholesContract;
+	let web3Provider, signer;
 	try {
 	  function _default() {
 	    try {
@@ -28433,16 +31477,15 @@ async function connectToContract() {
 		// await web3Provider.send("eth_requestAccounts", []);
 	  signer = web3Provider.getSigner();
 	  account = await signer.getAddress();
-	  console.debug("address: "+account);
-	  //
-	  const ButtholesInterface = require('../build/contracts/Buttholes.json');
-		const abi = ButtholesInterface.abi;
-		// load network to find contract address
-		const { chainId } = await web3Provider.getNetwork();
-		console.log("Chain ID: %s", chainId); // 42
-		const address = ButtholesInterface.networks[chainId].address;
-		console.log("Contract Address: %s", address);
-		Buttholes = new ethers.Contract(address, abi, signer);
+	  console.debug("Connected Account: %s", account);
+	  const contract = require('../build/contracts/Buttholes.json');
+	  const abi = contract.abi;
+	  // load network to find contract address
+	  const { chainId } = await web3Provider.getNetwork();
+	  console.log("Chain ID: %s", chainId); // 42
+	  const address = contract.networks[chainId].address;
+	  console.log("Contract Address: %s", address);
+	  ButtholesContract = new ethers.Contract(address, abi, signer);
 	  web3Provider.on("network", (newNetwork, oldNetwork) => {
 	    // When a Provider makes its initial connection, it emits a "network"
 	    // event with a null oldNetwork along with the newNetwork. So, if the
@@ -28453,17 +31496,412 @@ async function connectToContract() {
 	      window.location.reload();
 	    }
 	  });
-		console.debug("successfully connected to contract!");
+	  console.debug("successfully connected to contract!");
+	  return ButtholesContract;
 	}
 	catch (err) {
 		console.warn("failed to connect to contract!");
 		console.error(err);
+		// alert("Please refresh the page!");
+		reload();
 	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
 
-// IPFS //
+/**
+ * @dev Create and add a new butthole NFT. Update edition number if artist already exists.
+ * @param butthole An object containing nft metadata.
+ */
+async function add(butthole) {
+	const d = butthole.starvingArtists; 
+	butthole = _createButtholeMetadata(butthole);
+	butthole.starvingArtists = d;
+	try {
+		if (!await ipfs.checkExistingButtholes(butthole))
+			console.log(`Adding new Butthole Artist: ${butthole.properties.name.value} - ${butthole.properties.artist.value}`);
+		// TODO
+		// else butthole = 
+		// connect this function to the check
+
+
+
+		buttholeCID = await ipfs.uploadButthole(butthole);
+		await ButtholesInterface.add(await getContract(), butthole.properties.artist.value, buttholeCID);
+		if (butthole.starvingArtists.length > 0)
+			await ButtholesInterface.update(await getContract(), butthole);
+	}
+	catch (err) {console.error(err);}
+}
+module.exports.add = add;
+
+async function addMinter() {
+	await ButtholesInterface.addMinter(await getContract());
+};
+module.exports.addMinter = addMinter;
+
+async function isAdmin(address) {
+	return ButtholesInterface.isAdmin(await getContract(), address);
+}
+module.exports.isAdmin = isAdmin;
+
+async function isMinter(address) {
+	return ButtholesInterface.isMinter(await getContract(), address);
+}
+module.exports.isMinter = isMinter;
+
+/**
+ * @dev Mint a Butthole NFT.
+ * @param to The address to mint to.
+ */
+async function mint(to) {
+	await ButtholesInterface.mint(await getContract(), to);
+}
+module.exports.mint = mint;
+
+/**
+ * @dev Update a butthole NFT's CheekSpreader contract data.
+ * @param butthole An object containing nft metadata.
+ */
+async function update(butthole) {
+	let defaultStarvingArtists = [process.env.DEFAULT_DONATION1, process.env.DEFAULT_DONATION2, process.env.DEFAULT_DONATION3];
+	let artist1 = butthole.starvingArtists[0],
+		artist2 = butthole.starvingArtists[1],
+		artist3 = butthole.starvingArtists[2];
+	if (!artist1) {
+		artist1 = defaultStarvingArtists.shift();
+		console.warn("Missing Donor1.");
+	}
+	if (!artist2) {
+		artist2 = defaultStarvingArtists.shift();
+		console.warn("Missing Donor2.");
+	}
+	if (!artist3) {
+		artist3 = defaultStarvingArtists.shift();
+		console.warn("Missing Donor3.");
+	}
+	await ButtholesInterface.update(await getContract(), butthole.properties ? butthole.properties.artist.value : butthole.artist, artist1, artist2, artist3);
+}
+module.exports.update = update;
+
+/**
+ * @dev Renounce your Butthole NFT. Must be called by the rouncing artist.
+ */
+async function renounce(ButtholesContract=null) {
+	await ButtholesInterface.renounce(await getContract());
+}
+module.exports.renounce = renounce;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Commander //
+
+// ensure value is an 0x address
+function parseAddress(value) {
+	if (!ethers.utils.isAddress(value))
+	    throw new commander.InvalidArgumentError('Not an ETH address.');
+	return value;
+}
+
+// ensure value is a date value that equates to a unix timestamp
+function parseDate(value) {
+	if (!isValidDate(value))
+	    throw new commander.InvalidArgumentError('Not a date.');
+	return value;
+}
+
+// https://stackoverflow.com/questions/6177975/how-to-validate-date-with-format-mm-dd-yyyy-in-javascript
+function isValidDate(dateString) {
+    // First check for the pattern
+    if(!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString))
+        return false;
+
+    // Parse the date parts to integers
+    var parts = dateString.split("/");
+    var day = parseInt(parts[1], 10);
+    var month = parseInt(parts[0], 10);
+    var year = parseInt(parts[2], 10);
+
+    // Check the ranges of month and year
+    if(year < 1000 || year > 3000 || month == 0 || month > 12)
+        return false;
+
+    var monthLength = [ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 ];
+
+    // Adjust for leap years
+    if(year % 400 == 0 || (year % 100 != 0 && year % 4 == 0))
+        monthLength[1] = 29;
+
+    // Check the range of the day
+    return day > 0 && day <= monthLength[month - 1];
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @dev Add an artist, addMinter, mint, update starving artists, or renounce a butthole NFT.
+ */
+(async function main() {
+
+	const program = new Command();
+
+	const butthole = {
+		'artist' : "",
+		'image' : "",
+		'name' : "",
+		'description' : "",
+		'birthday' : "",
+		'starvingArtists' : []
+	};
+
+	program
+	  .name('buttholes')
+	  .description('CLI to some Butthole NFT utilities')
+	  .version('0.0.10');
+
+	program.command('add')
+	  .description('Add a butthole.')
+	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
+	  .argument('<image>', 'The local path to the butthole image')
+	  .option('-n, --name <string>', 'The artist\'s name')
+	  .option('-d, --description <string>', 'The artist\'s description')
+	  .option('-b, --birthday <date>', 'The artist\'s birthday (MM/DD/YYYY)', parseDate)
+	  .option('-s, --starve [addresses...]', 'Up to 3 starving artist ETH addresses', 'specify at least 1 starving artist')
+	  .addHelpText('after', `
+Example call:
+ $ butthole add 0x00.. /path/to/image.jpg -n "My Name" -d "A description." -b "06/06/1990 -s 0x01.. 0x02.. 0x03..`)
+	  .action(async (artist, image, options) => {
+	  	butthole.artist = artist;
+	  	butthole.image = image;
+	  	butthole.name = options.name;
+	  	butthole.description = options.description;
+	  	butthole.birthday = options.birthday;
+	  	butthole.starvingArtists = options.starve;
+	  	await add(butthole);
+	  });
+
+	program.command('addMinter')
+	  .description('Add caller as a minter.')
+	  .action(addMinter);
+
+	program.command('mint')
+	  .description('Mint a butthole.')
+	  .argument('<address>', 'The receiving address.', parseAddress)
+	  .addHelpText('after', `
+Example call:
+ $ butthole mint 0x00.. `)
+	  .action(async (to) => {
+	  	await mint(to);
+	  });
+
+	program.command('update')
+	  .description('Update your starving artist(s).')
+	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
+	  .requiredOption('-s, --starve [addresses...]', 'Up to 3 starving artist ETH addresses', 'specify at least 1 starving artist')
+	  .addHelpText('after', `
+Example call:
+ $ butthole update 0x00.. -s 0x01.. 0x02.. 0x03..`)
+	  .action(async (artist, options) => {
+	  	butthole.artist = artist;
+	  	butthole.starvingArtists = options.starve;
+	  	await update(butthole);
+	  });
+
+	program.command('renounce')
+	  .description('Renounce your butthole.')
+	  .action(renounce);
+
+	await program.parseAsync(process.argv);
+
+})();
+}).call(this)}).call(this,require('_process'))
+},{"../build/contracts/Buttholes.json":12,"./Buttholes.js":13,"./ipfs.js":15,"./metadata.json":17,"_process":10,"commander":182,"dotenv":195,"ethers":215,"fs":1,"path":9}],15:[function(require,module,exports){
+(function (process,Buffer,__dirname){(function (){
+// Access functions for IPFS
+
+const { create } = require('ipfs-http-client');
+const IPFS = create();
+const path = require('path');
+const { readFileSync } = require('fs');
+const readline = require('readline');
+
+////////////////////////////////////////////////////////////////////////////////////
+
+const IPFS_BUTTHOLES = "/nfts/buttholes",
+	  IPFS_METADATA = "/nfts/buttholes/metadata",
+	  IPFS_IMAGES = "/nfts/buttholes/images";
+
+async function createIPFS() {
+	console.log("Creating IPFS Folder Structure");
+	try {
+		await IPFS.files.mkdir(IPFS_METADATA, { parents: true })
+		await IPFS.files.mkdir(IPFS_IMAGES, { parents: true })
+	}
+	catch (err) {_ipfsError(err);}
+}
+
+function _ipfsError(err) {
+	console.warn("Check IPFS daemon!");
+	console.error(err.message);
+	process.exit(1);
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+
+async function checkExistingButtholes(butthole) {
+	// check if butthole already exists in metadata collection
+	let existingButtholes = await _findButthole(butthole);
+
+	if (existingButtholes.length > 0) {
+
+		async function _getLatestButthole(buttholes) {
+			if (buttholes.length == 1) return buttholes[0];
+			let latestButthole = buttholes[1];
+			for (let butt of buttholes) {
+				const chunks = [];
+				for await (const chunk of IPFS.cat(buttholeCID.cid))
+				  chunks.push(chunk)
+				butt = JSON.parse(Buffer.from(Buffer.concat(chunks)).toString('utf8'));
+
+				let edition1 = butt.attributes.filter(obj => {return obj["trait_type"] === "edition"});
+				let edition2 = latestButthole.attributes.filter(obj => {return obj["trait_type"] === "edition"});
+
+				console.log("edition1 vs edition2: %s - %s", edition1, edition2);
+
+				if (parseInt(edition1) > parseInt(edition2))
+					latestButthole = butt;
+			}
+			return latestButthole;
+		}
+		let latestButthole = await _getLatestButthole(existingButtholes);
+        console.log(`Butthole Artist \"${butthole.properties.name.value}\" already exists.`);
+        console.log(`Latest Edition #: ${butthole.attributes.filter(obj => {if (obj["trait_type"] === "edition") return obj.value})[0].value}`);
+
+        // https://stackoverflow.com/questions/18193953/waiting-for-user-to-enter-input-in-node-js
+        function askQuestion(query) {
+		    const rl = readline.createInterface({
+		        input: process.stdin,
+		        output: process.stdout,
+		    });
+
+		    return new Promise(resolve => rl.question(query, ans => {
+		        rl.close();
+		        resolve(ans);
+		    }))
+		}
+
+		const answer = await askQuestion("Add new edition? yes/[n]o: ");
+		if (answer.includes("y")) {
+			console.log ("Adding new " + butthole.properties.name.value);
+			butthole.attributes.map(a => {if (a["trait_type"] == "edition") a["value"] = parseInt(a["value"]) + 1 });
+		}
+		else {
+			console.log ("Not adding new " + butthole.properties.name.value);
+			throw "Existing Butthole found!";
+		}
+		return true;
+	}
+	else return false;
+}
+
+
+
+
+
+
+
+/**
+ * @dev Check if artist name exists already in IPFS.
+ * @param butthole An object containing nft metadata.
+ */
+async function _findButthole(butthole, i=0) {
+	console.debug("checking for preexisting butthole...");
+	let existingButtholes = [];
+	try {
+		// const metadataDir = await IPFS.files.stat(IPFS_METADATA);
+		// console.debug(metadataDir);
+		for await (const file of IPFS.files.ls(IPFS_METADATA)) {
+		  console.log(`${file.name} vs ${butthole.properties.name.value}`);
+		  console.debug(file);
+		  if (file.name == butthole.properties.name.value+".json")
+		  	existingButtholes.push(file);
+		}
+	  	console.debug("preexisting butthole nfts found: %s", existingButtholes.length);
+	}
+	catch (err) {
+		if (err.message == "file does not exist" && i == 0) {
+			await createIPFS();
+			return _findButthole(butthole, 1);
+		}
+		_ipfsError(err);
+	}
+	console.debug("preexisting butthole nft not found!");
+	return existingButtholes;
+}
+
+/**
+ * @dev Upload a butthole's jpeg/png file and return the CID.
+ * @param butthole An object containing nft metadata.
+ */
+async function _uploadButtholeImage(butthole) {
+	let image = path.resolve(__dirname, "../", butthole.properties.butthole.value);
+	image = new Uint8Array(readFileSync(image));
+	console.debug("uploading butthole image: %s", butthole.properties.butthole.value);
+	const file = {
+	  path: IPFS_IMAGES,
+	  content: image
+	}
+	try {
+		const { cid: metadataCid } = await IPFS.add(file);
+		console.log("Successfully added butthole image to IPFS: %s", cid.toString());
+		await IPFS.files.write(`${IPFS_IMAGES}/${butthole.properties.name.value}`, image, {'create':true});
+		console.log("Successfully wrote butthole image to IPFS: %s", butthole.properties.name.value);
+		return cid.toString();
+	}
+	catch (err) {_ipfsError(err);}
+}
+
+/**
+ * @dev Upload a butthole's metadata.json file and return the CID.
+ * @param butthole An object containing nft metadata.
+ */
+async function _uploadButtholeMetadata(butthole) {
+	console.debug("uploading butthole metadata: %s\n%s", butthole.properties.name.value, JSON.parse(JSON.stringify(butthole),null,4));
+	const file = {
+	  name: butthole.properties.name.value,
+	  path: IPFS_METADATA,
+	  content: JSON.stringify(butthole),
+	}
+	try {
+		const { cid: metadataCid } = await IPFS.add(file);
+		console.log("Successfully added butthole metadata to IPFS: %s", cid.toString());
+		await IPFS.files.write(`${IPFS_METADATA}/${butthole.properties.name.value}.json`, JSON.stringify(butthole), {'create':true});
+		console.log("Successfully wrote butthole metadata to IPFS: %s", butthole.properties.name.value);
+		return cid.toString();
+	}
+	catch (err) {_ipfsError(err);}
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * @dev Uploads content to IPFS: image first then combined metadata.json + image hash / CID.
+ * @param butthole An object containing artist nft metadata.
+ */
+async function uploadButthole(butthole) {
+	butthole.properties.butthole.value = await _uploadButtholeImage(butthole);
+	return await _uploadButtholeMetadata(butthole);
+}
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////
+
+
+
 
 /**
  * @dev Get the butthole NFT metadata from IPFS.
@@ -28481,31 +31919,136 @@ async function getButtholeImageFromIPFS(buttholeURI) {
 	let file = await IPFS.files.cat(buttholeURI);
 	return file.toString("base64");
 }
+}).call(this)}).call(this,require('_process'),require("buffer").Buffer,"/js")
+},{"_process":10,"buffer":4,"fs":1,"ipfs-http-client":313,"path":9,"readline":1}],16:[function(require,module,exports){
 
+const ButtholesInterface = require("./butthole.js");
+const $ = require('jquery')
 
+const DEFAULT_URI = "ipfs://";
+var divs = [];
+var account;
 
-// if they have an IPFS enabled browser, return
-// <!-- <img src="https://ipfs.infura.io:5001/api/v0/cat/QmQuTjzy8aZyYqYRyH7UdE5qcDXTxLFYEE9GKNhPY6D6K1"> -->
+////////////////////////////////////////////////////////////////////////////////////
 
-// if they do not have an IPFS enabled browser, fetch the image resource for them
+// Contract Interface //
 
+/**
+ * @dev Add a butthole. Must be owner.
+ */
+document.getElementById("add").onclick = async function () {
+	try {
+		const butthole = {
+			artist : prompt("Artist's ETH address"),
+			image : prompt("Path to image"),
+			name : prompt("Artist's name"),
+			description : prompt("Artist's description"),
+			birthday : prompt("Artist's birthday"),
+			starvingArtists : [prompt("1st starving artist"), prompt("2nd starving artist"), prompt("3rd starving artist")]
+		};
+		await ButtholesInterface.add(butthole);
+	}
+	catch (err) {console.error(err);}
+}
 
+/**
+ * @dev Connects to Web3.0 wallet.
+ */
+document.getElementById("connect").onclick = async function () {
+	try {
+		let accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+		account = accounts[0];
+		if (await ButtholesInterface.isAdmin(account)) {	
+			$("#add").show();
+			document.getElementById("add").removeAttribute("disabled");
+		}
+		console.log("successfully connected wallet!");
+		$("#eighteen").show();
+		$("#connect").hide();
+	}
+	catch (err) {
+		console.warn("failed to connect wallet!");
+		console.error(err);
+		alert("Be sure to unlock your wallet!");
+	}
+}
+
+/**
+ * @dev Confirm 18+ and add minter role.
+ */
+document.getElementById("eighteen").onclick = async function () {
+	try {
+		if (await ButtholesInterface.isAdmin(account)) {	
+			$("#add").show();
+			document.getElementById("add").removeAttribute("disabled");
+		}
+		if (!await ButtholesInterface.isMinter(account))
+			await ButtholesInterface.addMinter();
+		$("#mint").show();
+		document.getElementById("mint").removeAttribute("disabled");
+		$("view").show();
+		$("#eighteen").hide();
+		console.log("successfully accepted consequences!");
+	}
+	catch (err) {console.error(err);}
+};
+
+/**
+ * @dev Mint butthole. Requires minter role.
+ */
+document.getElementById("mint").onclick = async function () {
+	try {await ButtholesInterface.mint(account);}
+	catch (err) {console.error(err);}
+};
+
+/**
+ * @dev Updates starving artists.
+ */
+document.getElementById("update").onclick = async function () {
+	try {
+		let artist1 = prompt("1st starving artist");
+		let artist2 = prompt("2nd starving artist");
+		let artist3 = prompt("3rd starving artist");
+		//
+		const butthole = {
+			'artist' : account.toString(),
+			'starvingArtists' : [artist1, artist2, artist3]
+		};
+		await ButtholesInterface.update(butthole);
+	}
+	catch (err) {console.error(err);}
+};
+
+/**
+ * @dev View butthole NFT images in connected wallet.
+ */
+document.getElementById("view").onclick = async function () {
+	for (div of divs)
+		div.remove();
+	let _buttholes = getButtholes();
+	for (butthole of _buttholes)
+		showButthole(butthole);
+};
+
+////////////////////////////////////////////////////////////////////////////////////
+
+// IPFS //
 
 /**
  * @dev Get all butthole tokens owned by connected wallet.
  */
 async function getButtholes() {
 	let balance = await Buttholes.balanceOf(account)
-	let buttholes = [];
+	let _buttholes = [];
 	for (let i=0;i<balance;i++) {
 		let butthole = await Buttholes.tokenOfOwnerByIndex(i);
 		butthole = await Buttholes.tokenURI(butthole);
 		butthole = await getButtholeFromIPFS(butthole);
-		buttholes.push(butthole);
+		_buttholes.push(butthole);
 	}
-	if (buttholes.length == 0) return console.log("No buttholes found!");
-	console.log("Buttholes: "+buttholes.join(", "));
-	return buttholes;
+	if (_buttholes.length == 0) return console.log("No buttholes found!");
+	console.log("Buttholes: "+_buttholes.join(", "));
+	return _buttholes;
 }
 
 /**
@@ -28517,140 +32060,15 @@ function showButthole(butthole) {
 	var iDiv = document.createElement('img');
 	iDiv.id = butthole.tokenId;
 	iDiv.className = 'butthole';
-  iDiv.src= "data:image/png;base64," + getButtholeImageFromIPFS(butthole.properties.butthole.value);
+	iDiv.src= "data:image/png;base64," + getButtholeImageFromIPFS(butthole.properties.butthole.value);
 	document.getElementsByTagName('body')[0].appendChild(iDiv);
 	// buttflap
 	var innerDiv = document.createElement('img');
 	innerDiv.className = 'flap'
-	iDiv.src = !isNan(butthole.properties.image.value) ? butthole.properties.image.value : DEFAULT_URI;
+	iDiv.src = !isNaN(butthole.properties.image.value) ? butthole.properties.image.value : DEFAULT_URI;
 	iDiv.appendChild(innerDiv);
 	divs.push(iDiv);
 }
-
-////////////////////////////////////////////////////////////////////////////////////
-
-// Interface //
-
-document.getElementById("add").onclick = async function () {
-	try {
-		// TODO
-		// add popup / enter field for entering ETH address and metadata CID AND/OR entering local path to image for total IPFS upload
-		alert("Finish me!");
-	}
-	catch (err) {
-		console.warn("failed to ...!");
-		console.error(err);
-	}
-}
-
-document.getElementById("connect").onclick = async function () {
-	try {
-		window.ethereum.request({ method: 'eth_requestAccounts' });
-		console.log("successfully connected wallet!");
-		await connectToContract();
-		$("#eighteen").show();
-		$("#connect").hide();
-	}
-	catch (err) {
-		console.warn("failed to connect wallet!");
-		console.error(err);
-	}
-}
-
-/**
- * @dev Confirm 18+ and add minter role.
- */
-document.getElementById("eighteen").onclick = async function () {
-	try {
-		if (!await Buttholes.hasRole(await Buttholes.MINTER_ROLE(), account)) {
-			const gasLimit = await Buttholes.estimateGas.addMinter();
-			const tx = await Buttholes.addMinter({'gasLimit':gasLimit});
-			const receipt = await tx.wait();
-			console.log(receipt.logs);
-			const event = receipt.events.find(x => x.event === "RoleGranted");
-			console.log(event);
-			console.log(event.args.account); // account
-			//
-			console.log("successfully added minting!");		    
-			document.getElementById("#mint").removeAttribute("disabled");
-		}
-		if (await Buttholes.hasRole(await Buttholes.DEFAULT_ADMIN_ROLE(), account)) {	
-			$("#add").show();
-			document.getElementById("add").removeAttribute("disabled");
-		}
-		$("#mint").show();
-		document.getElementById("mint").removeAttribute("disabled");
-		$("view").show();
-		$("#eighteen").hide();
-		console.log("successfully accepted consequences!");
-	}
-	catch (err) {
-		console.error(err);
-	}
-};
-
-/**
- * @dev Mint butthole. Requires minter role.
- */
-document.getElementById("mint").onclick = async function () {
-	try {
-		// console.debug(0)
-		// console.log(account)
-		// const gasLimit = await Buttholes.estimateGas.mint(account.toString());
-		// console.debug(1)
-		// const tx = await Buttholes.mint(account.toString(), {'gasLimit':gasLimit});
-		const tx = await Buttholes.mint(account.toString());
-		console.debug(2)
-		const receipt = await tx.wait();
-		console.log(receipt)
-		console.log(receipt.logs);
-		const event = receipt.events.find(x => x.event === "Transfer");
-		if (event) {
-			console.log(event);
-			// console.log(event.args.account); // account
-			// console.log(event.args.tokenId.toString());
-		}
-	}
-	catch (err) {
-		console.error(err);
-	}
-};
-
-/**
- * @dev Updates starving artists.
- */
-document.getElementById("update").onclick = async function () {
-	try {
-		// TODO
-		// add method for inputting 3 donor addresses
-		let donor1, donor2, donor3;
-		//
-		const gasLimit = await Buttholes.estimateGas.createCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString());
-		const tx = await Buttholes.createCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString(), {'gasLimit':gasLimit});
-		const receipt = await tx.wait();
-		console.log(receipt.logs);
-		const event = receipt.events.find(x => x.event === "Transfer");
-		if (event) {
-			console.log(event);
-			console.log(event.args.account); // account
-			console.log(event.args.tokenId.toString());
-		}
-	}
-	catch (err) {
-		console.error(err);
-	}
-};
-
-/**
- * @dev View butthole NFT images in connected wallet.
- */
-document.getElementById("view").onclick = async function () {
-	for (div of divs)
-		div.remove();
-	let buttholes = getButtholes();
-	for (butthole of buttholes)
-		showButthole(butthole);
-};
 
 ////////////////////////////////////////////////////////////////////////////////////
 
@@ -28667,13 +32085,77 @@ $(document).ready(() => {
 		console.error("Please install MetaMask!");
 });
 
-},{"../build/contracts/Buttholes.json":5,"ethers":196,"ipfs-http-client":294,"jquery":406}],7:[function(require,module,exports){
+},{"./butthole.js":14,"jquery":425}],17:[function(require,module,exports){
+module.exports={
+  "tokenId": 0,
+  "type": "object",
+  "title": "Butthole Pic",
+  "background_color": "000000",
+  "animation_url": "",
+  "attributes": [
+    {
+      "display_type": "date", 
+      "trait_type": "birthday", 
+      "value": 1546360800
+    },
+    {
+      "display_type": "number", 
+      "trait_type": "edition", 
+      "value": 1
+    },
+    {
+      "trait_type": "base", 
+      "value": "Starfish"
+    }, 
+    {
+      "trait_type": "eye", 
+      "value": "Big"
+    }, 
+    {
+      "trait_type": "mouth", 
+      "value": "Surprised"
+    }, 
+    {
+      "display_type": "number", 
+      "trait_type": "level", 
+      "value": 0
+    }, 
+    {
+      "display_type": "number", 
+      "trait_type": "stamina", 
+      "value": 0
+    } 
+  ],
+  "properties": {
+    "artist": {
+        "type": "string",
+        "description": "The Ethereum address of the artist."
+    },
+    "name": {
+        "type": "string",
+        "description": "Identifies the artist to which this token represents"
+    },
+    "description": {
+        "type": "string",
+        "description": "Describes the artist to which this token represents"
+    },
+    "image": {
+        "type": "string",
+        "description": "A URI pointing to a resource with mime type image/* representing the placeholder asset for this token."
+    },
+    "butthole": {
+        "type": "string",
+        "description": "A URI pointing to a resource with mime type image/* representing the artist's ass to which this token belongs."
+    }
+  }
+}
+},{}],18:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "abi/5.6.1";
 
-},{}],8:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.defaultAbiCoder = exports.AbiCoder = void 0;
@@ -28780,7 +32262,7 @@ var AbiCoder = /** @class */ (function () {
 exports.AbiCoder = AbiCoder;
 exports.defaultAbiCoder = new AbiCoder();
 
-},{"./_version":7,"./coders/abstract-coder":9,"./coders/address":10,"./coders/array":12,"./coders/boolean":13,"./coders/bytes":14,"./coders/fixed-bytes":15,"./coders/null":16,"./coders/number":17,"./coders/string":18,"./coders/tuple":19,"./fragments":20,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68}],9:[function(require,module,exports){
+},{"./_version":18,"./coders/abstract-coder":20,"./coders/address":21,"./coders/array":23,"./coders/boolean":24,"./coders/bytes":25,"./coders/fixed-bytes":26,"./coders/null":27,"./coders/number":28,"./coders/string":29,"./coders/tuple":30,"./fragments":31,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79}],20:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Reader = exports.Writer = exports.Coder = exports.checkResultErrors = void 0;
@@ -28954,7 +32436,7 @@ var Reader = /** @class */ (function () {
 }());
 exports.Reader = Reader;
 
-},{"../_version":7,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68}],10:[function(require,module,exports){
+},{"../_version":18,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79}],21:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29000,7 +32482,7 @@ var AddressCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.AddressCoder = AddressCoder;
 
-},{"./abstract-coder":9,"@ethersproject/address":28,"@ethersproject/bytes":37}],11:[function(require,module,exports){
+},{"./abstract-coder":20,"@ethersproject/address":39,"@ethersproject/bytes":48}],22:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29041,7 +32523,7 @@ var AnonymousCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.AnonymousCoder = AnonymousCoder;
 
-},{"./abstract-coder":9}],12:[function(require,module,exports){
+},{"./abstract-coder":20}],23:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29278,7 +32760,7 @@ var ArrayCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.ArrayCoder = ArrayCoder;
 
-},{"../_version":7,"./abstract-coder":9,"./anonymous":11,"@ethersproject/logger":62}],13:[function(require,module,exports){
+},{"../_version":18,"./abstract-coder":20,"./anonymous":22,"@ethersproject/logger":73}],24:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29316,7 +32798,7 @@ var BooleanCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.BooleanCoder = BooleanCoder;
 
-},{"./abstract-coder":9}],14:[function(require,module,exports){
+},{"./abstract-coder":20}],25:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29369,7 +32851,7 @@ var BytesCoder = /** @class */ (function (_super) {
 }(DynamicBytesCoder));
 exports.BytesCoder = BytesCoder;
 
-},{"./abstract-coder":9,"@ethersproject/bytes":37}],15:[function(require,module,exports){
+},{"./abstract-coder":20,"@ethersproject/bytes":48}],26:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29417,7 +32899,7 @@ var FixedBytesCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.FixedBytesCoder = FixedBytesCoder;
 
-},{"./abstract-coder":9,"@ethersproject/bytes":37}],16:[function(require,module,exports){
+},{"./abstract-coder":20,"@ethersproject/bytes":48}],27:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29459,7 +32941,7 @@ var NullCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.NullCoder = NullCoder;
 
-},{"./abstract-coder":9}],17:[function(require,module,exports){
+},{"./abstract-coder":20}],28:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29524,7 +33006,7 @@ var NumberCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.NumberCoder = NumberCoder;
 
-},{"./abstract-coder":9,"@ethersproject/bignumber":35,"@ethersproject/constants":41}],18:[function(require,module,exports){
+},{"./abstract-coder":20,"@ethersproject/bignumber":46,"@ethersproject/constants":52}],29:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29563,7 +33045,7 @@ var StringCoder = /** @class */ (function (_super) {
 }(bytes_1.DynamicBytesCoder));
 exports.StringCoder = StringCoder;
 
-},{"./bytes":14,"@ethersproject/strings":106}],19:[function(require,module,exports){
+},{"./bytes":25,"@ethersproject/strings":117}],30:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -29643,7 +33125,7 @@ var TupleCoder = /** @class */ (function (_super) {
 }(abstract_coder_1.Coder));
 exports.TupleCoder = TupleCoder;
 
-},{"./abstract-coder":9,"./array":12}],20:[function(require,module,exports){
+},{"./abstract-coder":20,"./array":23}],31:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -30544,7 +34026,7 @@ function splitNesting(value) {
     return result;
 }
 
-},{"./_version":7,"@ethersproject/bignumber":35,"@ethersproject/logger":62,"@ethersproject/properties":68}],21:[function(require,module,exports){
+},{"./_version":18,"@ethersproject/bignumber":46,"@ethersproject/logger":73,"@ethersproject/properties":79}],32:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TransactionDescription = exports.LogDescription = exports.checkResultErrors = exports.Indexed = exports.Interface = exports.defaultAbiCoder = exports.AbiCoder = exports.FormatTypes = exports.ParamType = exports.FunctionFragment = exports.Fragment = exports.EventFragment = exports.ErrorFragment = exports.ConstructorFragment = void 0;
@@ -30566,7 +34048,7 @@ Object.defineProperty(exports, "Interface", { enumerable: true, get: function ()
 Object.defineProperty(exports, "LogDescription", { enumerable: true, get: function () { return interface_1.LogDescription; } });
 Object.defineProperty(exports, "TransactionDescription", { enumerable: true, get: function () { return interface_1.TransactionDescription; } });
 
-},{"./abi-coder":8,"./fragments":20,"./interface":22}],22:[function(require,module,exports){
+},{"./abi-coder":19,"./fragments":31,"./interface":33}],33:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -31226,13 +34708,13 @@ var Interface = /** @class */ (function () {
 }());
 exports.Interface = Interface;
 
-},{"./_version":7,"./abi-coder":8,"./coders/abstract-coder":9,"./fragments":20,"@ethersproject/address":28,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/hash":47,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/properties":68}],23:[function(require,module,exports){
+},{"./_version":18,"./abi-coder":19,"./coders/abstract-coder":20,"./fragments":31,"@ethersproject/address":39,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/hash":58,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/properties":79}],34:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "abstract-provider/5.6.0";
 
-},{}],24:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -31418,13 +34900,13 @@ var Provider = /** @class */ (function () {
 }());
 exports.Provider = Provider;
 
-},{"./_version":23,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68}],25:[function(require,module,exports){
+},{"./_version":34,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79}],36:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "abstract-signer/5.6.0";
 
-},{}],26:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -31865,13 +35347,13 @@ var VoidSigner = /** @class */ (function (_super) {
 }(Signer));
 exports.VoidSigner = VoidSigner;
 
-},{"./_version":25,"@ethersproject/logger":62,"@ethersproject/properties":68}],27:[function(require,module,exports){
+},{"./_version":36,"@ethersproject/logger":73,"@ethersproject/properties":79}],38:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "address/5.6.0";
 
-},{}],28:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getCreate2Address = exports.getContractAddress = exports.getIcapAddress = exports.isAddress = exports.getAddress = void 0;
@@ -32013,7 +35495,7 @@ function getCreate2Address(from, salt, initCodeHash) {
 }
 exports.getCreate2Address = getCreate2Address;
 
-},{"./_version":27,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/rlp":93}],29:[function(require,module,exports){
+},{"./_version":38,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/rlp":104}],40:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.encode = exports.decode = void 0;
@@ -32037,7 +35519,7 @@ function encode(data) {
 }
 exports.encode = encode;
 
-},{"@ethersproject/bytes":37}],30:[function(require,module,exports){
+},{"@ethersproject/bytes":48}],41:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.encode = exports.decode = void 0;
@@ -32045,7 +35527,7 @@ var base64_1 = require("./base64");
 Object.defineProperty(exports, "decode", { enumerable: true, get: function () { return base64_1.decode; } });
 Object.defineProperty(exports, "encode", { enumerable: true, get: function () { return base64_1.encode; } });
 
-},{"./base64":29}],31:[function(require,module,exports){
+},{"./base64":40}],42:[function(require,module,exports){
 "use strict";
 /**
  * var basex = require("base-x");
@@ -32171,13 +35653,13 @@ exports.Base58 = Base58;
 //console.log(Base58.decode("Qmd2V777o5XvJbYMeMb8k2nU5f8d3ciUQ5YpYuWhzv8iDj"))
 //console.log(Base58.encode(Base58.decode("Qmd2V777o5XvJbYMeMb8k2nU5f8d3ciUQ5YpYuWhzv8iDj")))
 
-},{"@ethersproject/bytes":37,"@ethersproject/properties":68}],32:[function(require,module,exports){
+},{"@ethersproject/bytes":48,"@ethersproject/properties":79}],43:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "bignumber/5.6.0";
 
-},{}],33:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 "use strict";
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -32495,7 +35977,7 @@ function _base16To36(value) {
 }
 exports._base16To36 = _base16To36;
 
-},{"./_version":32,"@ethersproject/bytes":37,"@ethersproject/logger":62,"bn.js":147}],34:[function(require,module,exports){
+},{"./_version":43,"@ethersproject/bytes":48,"@ethersproject/logger":73,"bn.js":158}],45:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FixedNumber = exports.FixedFormat = exports.parseFixed = exports.formatFixed = void 0;
@@ -32867,7 +36349,7 @@ exports.FixedNumber = FixedNumber;
 var ONE = FixedNumber.from(1);
 var BUMP = FixedNumber.from("0.5");
 
-},{"./_version":32,"./bignumber":33,"@ethersproject/bytes":37,"@ethersproject/logger":62}],35:[function(require,module,exports){
+},{"./_version":43,"./bignumber":44,"@ethersproject/bytes":48,"@ethersproject/logger":73}],46:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports._base36To16 = exports._base16To36 = exports.parseFixed = exports.FixedNumber = exports.FixedFormat = exports.formatFixed = exports.BigNumber = void 0;
@@ -32883,13 +36365,13 @@ var bignumber_2 = require("./bignumber");
 Object.defineProperty(exports, "_base16To36", { enumerable: true, get: function () { return bignumber_2._base16To36; } });
 Object.defineProperty(exports, "_base36To16", { enumerable: true, get: function () { return bignumber_2._base36To16; } });
 
-},{"./bignumber":33,"./fixednumber":34}],36:[function(require,module,exports){
+},{"./bignumber":44,"./fixednumber":45}],47:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "bytes/5.6.1";
 
-},{}],37:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.joinSignature = exports.splitSignature = exports.hexZeroPad = exports.hexStripZeros = exports.hexValue = exports.hexConcat = exports.hexDataSlice = exports.hexDataLength = exports.hexlify = exports.isHexString = exports.zeroPad = exports.stripZeros = exports.concat = exports.arrayify = exports.isBytes = exports.isBytesLike = void 0;
@@ -33317,13 +36799,13 @@ function joinSignature(signature) {
 }
 exports.joinSignature = joinSignature;
 
-},{"./_version":36,"@ethersproject/logger":62}],38:[function(require,module,exports){
+},{"./_version":47,"@ethersproject/logger":73}],49:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AddressZero = void 0;
 exports.AddressZero = "0x0000000000000000000000000000000000000000";
 
-},{}],39:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MaxInt256 = exports.MinInt256 = exports.MaxUint256 = exports.WeiPerEther = exports.Two = exports.One = exports.Zero = exports.NegativeOne = void 0;
@@ -33345,13 +36827,13 @@ exports.MinInt256 = MinInt256;
 var MaxInt256 = ( /*#__PURE__*/bignumber_1.BigNumber.from("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
 exports.MaxInt256 = MaxInt256;
 
-},{"@ethersproject/bignumber":35}],40:[function(require,module,exports){
+},{"@ethersproject/bignumber":46}],51:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HashZero = void 0;
 exports.HashZero = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
-},{}],41:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EtherSymbol = exports.HashZero = exports.MaxInt256 = exports.MinInt256 = exports.MaxUint256 = exports.WeiPerEther = exports.Two = exports.One = exports.Zero = exports.NegativeOne = exports.AddressZero = void 0;
@@ -33371,20 +36853,20 @@ Object.defineProperty(exports, "HashZero", { enumerable: true, get: function () 
 var strings_1 = require("./strings");
 Object.defineProperty(exports, "EtherSymbol", { enumerable: true, get: function () { return strings_1.EtherSymbol; } });
 
-},{"./addresses":38,"./bignumbers":39,"./hashes":40,"./strings":42}],42:[function(require,module,exports){
+},{"./addresses":49,"./bignumbers":50,"./hashes":51,"./strings":53}],53:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EtherSymbol = void 0;
 // NFKC (composed)             // (decomposed)
 exports.EtherSymbol = "\u039e"; // "\uD835\uDF63";
 
-},{}],43:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "contracts/5.6.0";
 
-},{}],44:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -34589,13 +38071,13 @@ var ContractFactory = /** @class */ (function () {
 }());
 exports.ContractFactory = ContractFactory;
 
-},{"./_version":43,"@ethersproject/abi":21,"@ethersproject/abstract-provider":24,"@ethersproject/abstract-signer":26,"@ethersproject/address":28,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/transactions":109}],45:[function(require,module,exports){
+},{"./_version":54,"@ethersproject/abi":32,"@ethersproject/abstract-provider":35,"@ethersproject/abstract-signer":37,"@ethersproject/address":39,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/transactions":120}],56:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "hash/5.6.0";
 
-},{}],46:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.id = void 0;
@@ -34606,7 +38088,7 @@ function id(text) {
 }
 exports.id = id;
 
-},{"@ethersproject/keccak256":59,"@ethersproject/strings":106}],47:[function(require,module,exports){
+},{"@ethersproject/keccak256":70,"@ethersproject/strings":117}],58:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports._TypedDataEncoder = exports.hashMessage = exports.messagePrefix = exports.isValidName = exports.namehash = exports.dnsEncode = exports.id = void 0;
@@ -34622,7 +38104,7 @@ Object.defineProperty(exports, "messagePrefix", { enumerable: true, get: functio
 var typed_data_1 = require("./typed-data");
 Object.defineProperty(exports, "_TypedDataEncoder", { enumerable: true, get: function () { return typed_data_1.TypedDataEncoder; } });
 
-},{"./id":46,"./message":48,"./namehash":49,"./typed-data":50}],48:[function(require,module,exports){
+},{"./id":57,"./message":59,"./namehash":60,"./typed-data":61}],59:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.hashMessage = exports.messagePrefix = void 0;
@@ -34642,7 +38124,7 @@ function hashMessage(message) {
 }
 exports.hashMessage = hashMessage;
 
-},{"@ethersproject/bytes":37,"@ethersproject/keccak256":59,"@ethersproject/strings":106}],49:[function(require,module,exports){
+},{"@ethersproject/bytes":48,"@ethersproject/keccak256":70,"@ethersproject/strings":117}],60:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.dnsEncode = exports.namehash = exports.isValidName = void 0;
@@ -34699,7 +38181,7 @@ function dnsEncode(name) {
 }
 exports.dnsEncode = dnsEncode;
 
-},{"./_version":45,"@ethersproject/bytes":37,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/strings":106}],50:[function(require,module,exports){
+},{"./_version":56,"@ethersproject/bytes":48,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/strings":117}],61:[function(require,module,exports){
 "use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -35201,13 +38683,13 @@ var TypedDataEncoder = /** @class */ (function () {
 }());
 exports.TypedDataEncoder = TypedDataEncoder;
 
-},{"./_version":45,"./id":46,"@ethersproject/address":28,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/properties":68}],51:[function(require,module,exports){
+},{"./_version":56,"./id":57,"@ethersproject/address":39,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/properties":79}],62:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "hdnode/5.6.0";
 
-},{}],52:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getAccountPath = exports.isValidMnemonic = exports.entropyToMnemonic = exports.mnemonicToEntropy = exports.mnemonicToSeed = exports.HDNode = exports.defaultPath = void 0;
@@ -35553,13 +39035,13 @@ function getAccountPath(index) {
 }
 exports.getAccountPath = getAccountPath;
 
-},{"./_version":51,"@ethersproject/basex":31,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/pbkdf2":66,"@ethersproject/properties":68,"@ethersproject/sha2":96,"@ethersproject/signing-key":100,"@ethersproject/strings":106,"@ethersproject/transactions":109,"@ethersproject/wordlists":118}],53:[function(require,module,exports){
+},{"./_version":62,"@ethersproject/basex":42,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/pbkdf2":77,"@ethersproject/properties":79,"@ethersproject/sha2":107,"@ethersproject/signing-key":111,"@ethersproject/strings":117,"@ethersproject/transactions":120,"@ethersproject/wordlists":129}],64:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "json-wallets/5.6.0";
 
-},{}],54:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -35635,7 +39117,7 @@ function decrypt(json, password) {
 }
 exports.decrypt = decrypt;
 
-},{"./_version":53,"./utils":58,"@ethersproject/address":28,"@ethersproject/bytes":37,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/pbkdf2":66,"@ethersproject/properties":68,"@ethersproject/strings":106,"aes-js":142}],55:[function(require,module,exports){
+},{"./_version":64,"./utils":69,"@ethersproject/address":39,"@ethersproject/bytes":48,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/pbkdf2":77,"@ethersproject/properties":79,"@ethersproject/strings":117,"aes-js":153}],66:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.decryptJsonWalletSync = exports.decryptJsonWallet = exports.getJsonWalletAddress = exports.isKeystoreWallet = exports.isCrowdsaleWallet = exports.encryptKeystore = exports.decryptKeystoreSync = exports.decryptKeystore = exports.decryptCrowdsale = void 0;
@@ -35677,7 +39159,7 @@ function decryptJsonWalletSync(json, password) {
 }
 exports.decryptJsonWalletSync = decryptJsonWalletSync;
 
-},{"./crowdsale":54,"./inspect":56,"./keystore":57}],56:[function(require,module,exports){
+},{"./crowdsale":65,"./inspect":67,"./keystore":68}],67:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getJsonWalletAddress = exports.isKeystoreWallet = exports.isCrowdsaleWallet = void 0;
@@ -35732,7 +39214,7 @@ function getJsonWalletAddress(json) {
 }
 exports.getJsonWalletAddress = getJsonWalletAddress;
 
-},{"@ethersproject/address":28}],57:[function(require,module,exports){
+},{"@ethersproject/address":39}],68:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -36113,7 +39595,7 @@ function encrypt(account, password, options, progressCallback) {
 }
 exports.encrypt = encrypt;
 
-},{"./_version":53,"./utils":58,"@ethersproject/address":28,"@ethersproject/bytes":37,"@ethersproject/hdnode":52,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/pbkdf2":66,"@ethersproject/properties":68,"@ethersproject/random":90,"@ethersproject/transactions":109,"aes-js":142,"scrypt-js":458}],58:[function(require,module,exports){
+},{"./_version":64,"./utils":69,"@ethersproject/address":39,"@ethersproject/bytes":48,"@ethersproject/hdnode":63,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/pbkdf2":77,"@ethersproject/properties":79,"@ethersproject/random":101,"@ethersproject/transactions":120,"aes-js":153,"scrypt-js":477}],69:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.uuidV4 = exports.searchPath = exports.getPassword = exports.zpad = exports.looseArrayify = void 0;
@@ -36184,7 +39666,7 @@ function uuidV4(randomBytes) {
 }
 exports.uuidV4 = uuidV4;
 
-},{"@ethersproject/bytes":37,"@ethersproject/strings":106}],59:[function(require,module,exports){
+},{"@ethersproject/bytes":48,"@ethersproject/strings":117}],70:[function(require,module,exports){
 "use strict";
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -36198,7 +39680,7 @@ function keccak256(data) {
 }
 exports.keccak256 = keccak256;
 
-},{"@ethersproject/bytes":37,"js-sha3":60}],60:[function(require,module,exports){
+},{"@ethersproject/bytes":48,"js-sha3":71}],71:[function(require,module,exports){
 (function (process,global){(function (){
 /**
  * [js-sha3]{@link https://github.com/emn178/js-sha3}
@@ -36858,13 +40340,13 @@ exports.keccak256 = keccak256;
 })();
 
 }).call(this)}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":3}],61:[function(require,module,exports){
+},{"_process":10}],72:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "logger/5.6.0";
 
-},{}],62:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Logger = exports.ErrorCode = exports.LogLevel = void 0;
@@ -37231,13 +40713,13 @@ var Logger = /** @class */ (function () {
 }());
 exports.Logger = Logger;
 
-},{"./_version":61}],63:[function(require,module,exports){
+},{"./_version":72}],74:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "networks/5.6.2";
 
-},{}],64:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getNetwork = void 0;
@@ -37471,7 +40953,7 @@ function getNetwork(network) {
 }
 exports.getNetwork = getNetwork;
 
-},{"./_version":63,"@ethersproject/logger":62}],65:[function(require,module,exports){
+},{"./_version":74,"@ethersproject/logger":73}],76:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pbkdf2 = void 0;
@@ -37519,20 +41001,20 @@ function pbkdf2(password, salt, iterations, keylen, hashAlgorithm) {
 }
 exports.pbkdf2 = pbkdf2;
 
-},{"@ethersproject/bytes":37,"@ethersproject/sha2":96}],66:[function(require,module,exports){
+},{"@ethersproject/bytes":48,"@ethersproject/sha2":107}],77:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pbkdf2 = void 0;
 var pbkdf2_1 = require("./pbkdf2");
 Object.defineProperty(exports, "pbkdf2", { enumerable: true, get: function () { return pbkdf2_1.pbkdf2; } });
 
-},{"./pbkdf2":65}],67:[function(require,module,exports){
+},{"./pbkdf2":76}],78:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "properties/5.6.0";
 
-},{}],68:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 "use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -37704,13 +41186,13 @@ var Description = /** @class */ (function () {
 }());
 exports.Description = Description;
 
-},{"./_version":67,"@ethersproject/logger":62}],69:[function(require,module,exports){
+},{"./_version":78,"@ethersproject/logger":73}],80:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "providers/5.6.5";
 
-},{}],70:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -37832,7 +41314,7 @@ var AlchemyProvider = /** @class */ (function (_super) {
 }(url_json_rpc_provider_1.UrlJsonRpcProvider));
 exports.AlchemyProvider = AlchemyProvider;
 
-},{"./_version":69,"./formatter":78,"./url-json-rpc-provider":85,"./websocket-provider":87,"@ethersproject/logger":62,"@ethersproject/properties":68}],71:[function(require,module,exports){
+},{"./_version":80,"./formatter":89,"./url-json-rpc-provider":96,"./websocket-provider":98,"@ethersproject/logger":73,"@ethersproject/properties":79}],82:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -37912,7 +41394,7 @@ var AnkrProvider = /** @class */ (function (_super) {
 }(url_json_rpc_provider_1.UrlJsonRpcProvider));
 exports.AnkrProvider = AnkrProvider;
 
-},{"./_version":69,"./formatter":78,"./url-json-rpc-provider":85,"@ethersproject/logger":62}],72:[function(require,module,exports){
+},{"./_version":80,"./formatter":89,"./url-json-rpc-provider":96,"@ethersproject/logger":73}],83:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -40481,14 +43963,14 @@ var BaseProvider = /** @class */ (function (_super) {
 }(abstract_provider_1.Provider));
 exports.BaseProvider = BaseProvider;
 
-},{"./_version":69,"./formatter":78,"@ethersproject/abstract-provider":24,"@ethersproject/basex":31,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/constants":41,"@ethersproject/hash":47,"@ethersproject/logger":62,"@ethersproject/networks":64,"@ethersproject/properties":68,"@ethersproject/sha2":96,"@ethersproject/strings":106,"@ethersproject/web":116,"bech32":145}],73:[function(require,module,exports){
+},{"./_version":80,"./formatter":89,"@ethersproject/abstract-provider":35,"@ethersproject/basex":42,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/constants":52,"@ethersproject/hash":58,"@ethersproject/logger":73,"@ethersproject/networks":75,"@ethersproject/properties":79,"@ethersproject/sha2":107,"@ethersproject/strings":117,"@ethersproject/web":127,"bech32":156}],84:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IpcProvider = void 0;
 var IpcProvider = null;
 exports.IpcProvider = IpcProvider;
 
-},{}],74:[function(require,module,exports){
+},{}],85:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WebSocket = void 0;
@@ -40511,7 +43993,7 @@ catch (error) {
     };
 }
 
-},{"./_version":69,"@ethersproject/logger":62}],75:[function(require,module,exports){
+},{"./_version":80,"@ethersproject/logger":73}],86:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -40612,7 +44094,7 @@ var CloudflareProvider = /** @class */ (function (_super) {
 }(url_json_rpc_provider_1.UrlJsonRpcProvider));
 exports.CloudflareProvider = CloudflareProvider;
 
-},{"./_version":69,"./url-json-rpc-provider":85,"@ethersproject/logger":62}],76:[function(require,module,exports){
+},{"./_version":80,"./url-json-rpc-provider":96,"@ethersproject/logger":73}],87:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -41137,7 +44619,7 @@ var EtherscanProvider = /** @class */ (function (_super) {
 }(base_provider_1.BaseProvider));
 exports.EtherscanProvider = EtherscanProvider;
 
-},{"./_version":69,"./base-provider":72,"./formatter":78,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/transactions":109,"@ethersproject/web":116}],77:[function(require,module,exports){
+},{"./_version":80,"./base-provider":83,"./formatter":89,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/transactions":120,"@ethersproject/web":127}],88:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -41835,7 +45317,7 @@ var FallbackProvider = /** @class */ (function (_super) {
 }(base_provider_1.BaseProvider));
 exports.FallbackProvider = FallbackProvider;
 
-},{"./_version":69,"./base-provider":72,"./formatter":78,"@ethersproject/abstract-provider":24,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/random":90,"@ethersproject/web":116}],78:[function(require,module,exports){
+},{"./_version":80,"./base-provider":83,"./formatter":89,"@ethersproject/abstract-provider":35,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/random":101,"@ethersproject/web":127}],89:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.showThrottleMessage = exports.isCommunityResource = exports.isCommunityResourcable = exports.Formatter = void 0;
@@ -42289,7 +45771,7 @@ function showThrottleMessage() {
 }
 exports.showThrottleMessage = showThrottleMessage;
 
-},{"./_version":69,"@ethersproject/address":28,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/constants":41,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/transactions":109}],79:[function(require,module,exports){
+},{"./_version":80,"@ethersproject/address":39,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/constants":52,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/transactions":120}],90:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Formatter = exports.showThrottleMessage = exports.isCommunityResourcable = exports.isCommunityResource = exports.getNetwork = exports.getDefaultProvider = exports.JsonRpcSigner = exports.IpcProvider = exports.WebSocketProvider = exports.Web3Provider = exports.StaticJsonRpcProvider = exports.PocketProvider = exports.NodesmithProvider = exports.JsonRpcBatchProvider = exports.JsonRpcProvider = exports.InfuraWebSocketProvider = exports.InfuraProvider = exports.EtherscanProvider = exports.CloudflareProvider = exports.AnkrProvider = exports.AlchemyWebSocketProvider = exports.AlchemyProvider = exports.FallbackProvider = exports.UrlJsonRpcProvider = exports.Resolver = exports.BaseProvider = exports.Provider = void 0;
@@ -42385,7 +45867,7 @@ function getDefaultProvider(network, options) {
 }
 exports.getDefaultProvider = getDefaultProvider;
 
-},{"./_version":69,"./alchemy-provider":70,"./ankr-provider":71,"./base-provider":72,"./cloudflare-provider":75,"./etherscan-provider":76,"./fallback-provider":77,"./formatter":78,"./infura-provider":80,"./ipc-provider":73,"./json-rpc-batch-provider":81,"./json-rpc-provider":82,"./nodesmith-provider":83,"./pocket-provider":84,"./url-json-rpc-provider":85,"./web3-provider":86,"./websocket-provider":87,"@ethersproject/abstract-provider":24,"@ethersproject/logger":62,"@ethersproject/networks":64}],80:[function(require,module,exports){
+},{"./_version":80,"./alchemy-provider":81,"./ankr-provider":82,"./base-provider":83,"./cloudflare-provider":86,"./etherscan-provider":87,"./fallback-provider":88,"./formatter":89,"./infura-provider":91,"./ipc-provider":84,"./json-rpc-batch-provider":92,"./json-rpc-provider":93,"./nodesmith-provider":94,"./pocket-provider":95,"./url-json-rpc-provider":96,"./web3-provider":97,"./websocket-provider":98,"@ethersproject/abstract-provider":35,"@ethersproject/logger":73,"@ethersproject/networks":75}],91:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -42533,7 +46015,7 @@ var InfuraProvider = /** @class */ (function (_super) {
 }(url_json_rpc_provider_1.UrlJsonRpcProvider));
 exports.InfuraProvider = InfuraProvider;
 
-},{"./_version":69,"./formatter":78,"./url-json-rpc-provider":85,"./websocket-provider":87,"@ethersproject/logger":62,"@ethersproject/properties":68}],81:[function(require,module,exports){
+},{"./_version":80,"./formatter":89,"./url-json-rpc-provider":96,"./websocket-provider":98,"@ethersproject/logger":73,"@ethersproject/properties":79}],92:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -42633,7 +46115,7 @@ var JsonRpcBatchProvider = /** @class */ (function (_super) {
 }(json_rpc_provider_1.JsonRpcProvider));
 exports.JsonRpcBatchProvider = JsonRpcBatchProvider;
 
-},{"./json-rpc-provider":82,"@ethersproject/properties":68,"@ethersproject/web":116}],82:[function(require,module,exports){
+},{"./json-rpc-provider":93,"@ethersproject/properties":79,"@ethersproject/web":127}],93:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -43425,7 +46907,7 @@ var JsonRpcProvider = /** @class */ (function (_super) {
 }(base_provider_1.BaseProvider));
 exports.JsonRpcProvider = JsonRpcProvider;
 
-},{"./_version":69,"./base-provider":72,"@ethersproject/abstract-signer":26,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/hash":47,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/strings":106,"@ethersproject/transactions":109,"@ethersproject/web":116}],83:[function(require,module,exports){
+},{"./_version":80,"./base-provider":83,"@ethersproject/abstract-signer":37,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/hash":58,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/strings":117,"@ethersproject/transactions":120,"@ethersproject/web":127}],94:[function(require,module,exports){
 /* istanbul ignore file */
 "use strict";
 var __extends = (this && this.__extends) || (function () {
@@ -43490,7 +46972,7 @@ var NodesmithProvider = /** @class */ (function (_super) {
 }(url_json_rpc_provider_1.UrlJsonRpcProvider));
 exports.NodesmithProvider = NodesmithProvider;
 
-},{"./_version":69,"./url-json-rpc-provider":85,"@ethersproject/logger":62}],84:[function(require,module,exports){
+},{"./_version":80,"./url-json-rpc-provider":96,"@ethersproject/logger":73}],95:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -43628,7 +47110,7 @@ var PocketProvider = /** @class */ (function (_super) {
 }(url_json_rpc_provider_1.UrlJsonRpcProvider));
 exports.PocketProvider = PocketProvider;
 
-},{"./_version":69,"./url-json-rpc-provider":85,"@ethersproject/logger":62,"@ethersproject/properties":68}],85:[function(require,module,exports){
+},{"./_version":80,"./url-json-rpc-provider":96,"@ethersproject/logger":73,"@ethersproject/properties":79}],96:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -43782,7 +47264,7 @@ var UrlJsonRpcProvider = /** @class */ (function (_super) {
 }(StaticJsonRpcProvider));
 exports.UrlJsonRpcProvider = UrlJsonRpcProvider;
 
-},{"./_version":69,"./json-rpc-provider":82,"@ethersproject/logger":62,"@ethersproject/properties":68}],86:[function(require,module,exports){
+},{"./_version":80,"./json-rpc-provider":93,"@ethersproject/logger":73,"@ethersproject/properties":79}],97:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -43940,7 +47422,7 @@ var Web3Provider = /** @class */ (function (_super) {
 }(json_rpc_provider_1.JsonRpcProvider));
 exports.Web3Provider = Web3Provider;
 
-},{"./_version":69,"./json-rpc-provider":82,"@ethersproject/logger":62,"@ethersproject/properties":68}],87:[function(require,module,exports){
+},{"./_version":80,"./json-rpc-provider":93,"@ethersproject/logger":73,"@ethersproject/properties":79}],98:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -44325,13 +47807,13 @@ var WebSocketProvider = /** @class */ (function (_super) {
 }(json_rpc_provider_1.JsonRpcProvider));
 exports.WebSocketProvider = WebSocketProvider;
 
-},{"./_version":69,"./json-rpc-provider":82,"./ws":74,"@ethersproject/bignumber":35,"@ethersproject/logger":62,"@ethersproject/properties":68}],88:[function(require,module,exports){
+},{"./_version":80,"./json-rpc-provider":93,"./ws":85,"@ethersproject/bignumber":46,"@ethersproject/logger":73,"@ethersproject/properties":79}],99:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "random/5.6.0";
 
-},{}],89:[function(require,module,exports){
+},{}],100:[function(require,module,exports){
 (function (global){(function (){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
@@ -44380,7 +47862,7 @@ exports.randomBytes = randomBytes;
 ;
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./_version":88,"@ethersproject/bytes":37,"@ethersproject/logger":62}],90:[function(require,module,exports){
+},{"./_version":99,"@ethersproject/bytes":48,"@ethersproject/logger":73}],101:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.shuffled = exports.randomBytes = void 0;
@@ -44389,7 +47871,7 @@ Object.defineProperty(exports, "randomBytes", { enumerable: true, get: function 
 var shuffle_1 = require("./shuffle");
 Object.defineProperty(exports, "shuffled", { enumerable: true, get: function () { return shuffle_1.shuffled; } });
 
-},{"./random":89,"./shuffle":91}],91:[function(require,module,exports){
+},{"./random":100,"./shuffle":102}],102:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.shuffled = void 0;
@@ -44405,13 +47887,13 @@ function shuffled(array) {
 }
 exports.shuffled = shuffled;
 
-},{}],92:[function(require,module,exports){
+},{}],103:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "rlp/5.6.0";
 
-},{}],93:[function(require,module,exports){
+},{}],104:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.decode = exports.encode = void 0;
@@ -44536,13 +48018,13 @@ function decode(data) {
 }
 exports.decode = decode;
 
-},{"./_version":92,"@ethersproject/bytes":37,"@ethersproject/logger":62}],94:[function(require,module,exports){
+},{"./_version":103,"@ethersproject/bytes":48,"@ethersproject/logger":73}],105:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "sha2/5.6.0";
 
-},{}],95:[function(require,module,exports){
+},{}],106:[function(require,module,exports){
 "use strict";
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -44579,7 +48061,7 @@ function computeHmac(algorithm, key, data) {
 }
 exports.computeHmac = computeHmac;
 
-},{"./_version":94,"./types":97,"@ethersproject/bytes":37,"@ethersproject/logger":62,"hash.js":201}],96:[function(require,module,exports){
+},{"./_version":105,"./types":108,"@ethersproject/bytes":48,"@ethersproject/logger":73,"hash.js":220}],107:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SupportedAlgorithm = exports.sha512 = exports.sha256 = exports.ripemd160 = exports.computeHmac = void 0;
@@ -44591,7 +48073,7 @@ Object.defineProperty(exports, "sha512", { enumerable: true, get: function () { 
 var types_1 = require("./types");
 Object.defineProperty(exports, "SupportedAlgorithm", { enumerable: true, get: function () { return types_1.SupportedAlgorithm; } });
 
-},{"./sha2":95,"./types":97}],97:[function(require,module,exports){
+},{"./sha2":106,"./types":108}],108:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SupportedAlgorithm = void 0;
@@ -44602,13 +48084,13 @@ var SupportedAlgorithm;
 })(SupportedAlgorithm = exports.SupportedAlgorithm || (exports.SupportedAlgorithm = {}));
 ;
 
-},{}],98:[function(require,module,exports){
+},{}],109:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "signing-key/5.6.0";
 
-},{}],99:[function(require,module,exports){
+},{}],110:[function(require,module,exports){
 "use strict";
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -44619,7 +48101,7 @@ var elliptic_1 = __importDefault(require("elliptic"));
 var EC = elliptic_1.default.ec;
 exports.EC = EC;
 
-},{"elliptic":177}],100:[function(require,module,exports){
+},{"elliptic":196}],111:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computePublicKey = exports.recoverPublicKey = exports.SigningKey = void 0;
@@ -44705,13 +48187,13 @@ function computePublicKey(key, compressed) {
 }
 exports.computePublicKey = computePublicKey;
 
-},{"./_version":98,"./elliptic":99,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68}],101:[function(require,module,exports){
+},{"./_version":109,"./elliptic":110,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79}],112:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "solidity/5.6.0";
 
-},{}],102:[function(require,module,exports){
+},{}],113:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sha256 = exports.keccak256 = exports.pack = void 0;
@@ -44808,13 +48290,13 @@ function sha256(types, values) {
 }
 exports.sha256 = sha256;
 
-},{"./_version":101,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/sha2":96,"@ethersproject/strings":106}],103:[function(require,module,exports){
+},{"./_version":112,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/sha2":107,"@ethersproject/strings":117}],114:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "strings/5.6.0";
 
-},{}],104:[function(require,module,exports){
+},{}],115:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseBytes32String = exports.formatBytes32String = void 0;
@@ -44851,7 +48333,7 @@ function parseBytes32String(bytes) {
 }
 exports.parseBytes32String = parseBytes32String;
 
-},{"./utf8":107,"@ethersproject/bytes":37,"@ethersproject/constants":41}],105:[function(require,module,exports){
+},{"./utf8":118,"@ethersproject/bytes":48,"@ethersproject/constants":52}],116:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.nameprep = exports._nameprepTableC = exports._nameprepTableB2 = exports._nameprepTableA1 = void 0;
@@ -45046,7 +48528,7 @@ function nameprep(value) {
 }
 exports.nameprep = nameprep;
 
-},{"./utf8":107}],106:[function(require,module,exports){
+},{"./utf8":118}],117:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.nameprep = exports.parseBytes32String = exports.formatBytes32String = exports.UnicodeNormalizationForm = exports.Utf8ErrorReason = exports.Utf8ErrorFuncs = exports.toUtf8String = exports.toUtf8CodePoints = exports.toUtf8Bytes = exports._toEscapedUtf8String = void 0;
@@ -45064,7 +48546,7 @@ Object.defineProperty(exports, "UnicodeNormalizationForm", { enumerable: true, g
 Object.defineProperty(exports, "Utf8ErrorFuncs", { enumerable: true, get: function () { return utf8_1.Utf8ErrorFuncs; } });
 Object.defineProperty(exports, "Utf8ErrorReason", { enumerable: true, get: function () { return utf8_1.Utf8ErrorReason; } });
 
-},{"./bytes32":104,"./idna":105,"./utf8":107}],107:[function(require,module,exports){
+},{"./bytes32":115,"./idna":116,"./utf8":118}],118:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.toUtf8CodePoints = exports.toUtf8String = exports._toUtf8String = exports._toEscapedUtf8String = exports.toUtf8Bytes = exports.Utf8ErrorFuncs = exports.Utf8ErrorReason = exports.UnicodeNormalizationForm = void 0;
@@ -45322,13 +48804,13 @@ function toUtf8CodePoints(str, form) {
 }
 exports.toUtf8CodePoints = toUtf8CodePoints;
 
-},{"./_version":103,"@ethersproject/bytes":37,"@ethersproject/logger":62}],108:[function(require,module,exports){
+},{"./_version":114,"@ethersproject/bytes":48,"@ethersproject/logger":73}],119:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "transactions/5.6.0";
 
-},{}],109:[function(require,module,exports){
+},{}],120:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -45745,13 +49227,13 @@ function parse(rawTransaction) {
 }
 exports.parse = parse;
 
-},{"./_version":108,"@ethersproject/address":28,"@ethersproject/bignumber":35,"@ethersproject/bytes":37,"@ethersproject/constants":41,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/rlp":93,"@ethersproject/signing-key":100}],110:[function(require,module,exports){
+},{"./_version":119,"@ethersproject/address":39,"@ethersproject/bignumber":46,"@ethersproject/bytes":48,"@ethersproject/constants":52,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/rlp":104,"@ethersproject/signing-key":111}],121:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "units/5.6.0";
 
-},{}],111:[function(require,module,exports){
+},{}],122:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseEther = exports.formatEther = exports.parseUnits = exports.formatUnits = exports.commify = void 0;
@@ -45843,13 +49325,13 @@ function parseEther(ether) {
 }
 exports.parseEther = parseEther;
 
-},{"./_version":110,"@ethersproject/bignumber":35,"@ethersproject/logger":62}],112:[function(require,module,exports){
+},{"./_version":121,"@ethersproject/bignumber":46,"@ethersproject/logger":73}],123:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "wallet/5.6.0";
 
-},{}],113:[function(require,module,exports){
+},{}],124:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -46101,13 +49583,13 @@ function verifyTypedData(domain, types, value, signature) {
 }
 exports.verifyTypedData = verifyTypedData;
 
-},{"./_version":112,"@ethersproject/abstract-provider":24,"@ethersproject/abstract-signer":26,"@ethersproject/address":28,"@ethersproject/bytes":37,"@ethersproject/hash":47,"@ethersproject/hdnode":52,"@ethersproject/json-wallets":55,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/random":90,"@ethersproject/signing-key":100,"@ethersproject/transactions":109}],114:[function(require,module,exports){
+},{"./_version":123,"@ethersproject/abstract-provider":35,"@ethersproject/abstract-signer":37,"@ethersproject/address":39,"@ethersproject/bytes":48,"@ethersproject/hash":58,"@ethersproject/hdnode":63,"@ethersproject/json-wallets":66,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/random":101,"@ethersproject/signing-key":111,"@ethersproject/transactions":120}],125:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "web/5.6.0";
 
-},{}],115:[function(require,module,exports){
+},{}],126:[function(require,module,exports){
 "use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -46199,7 +49681,7 @@ function getUrl(href, options) {
 }
 exports.getUrl = getUrl;
 
-},{"@ethersproject/bytes":37}],116:[function(require,module,exports){
+},{"@ethersproject/bytes":48}],127:[function(require,module,exports){
 "use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
@@ -46655,13 +50137,13 @@ function poll(func, options) {
 }
 exports.poll = poll;
 
-},{"./_version":114,"./geturl":115,"@ethersproject/base64":30,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/strings":106}],117:[function(require,module,exports){
+},{"./_version":125,"./geturl":126,"@ethersproject/base64":41,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/strings":117}],128:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "wordlists/5.6.0";
 
-},{}],118:[function(require,module,exports){
+},{}],129:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.wordlists = exports.Wordlist = exports.logger = void 0;
@@ -46673,7 +50155,7 @@ Object.defineProperty(exports, "Wordlist", { enumerable: true, get: function () 
 var wordlists_1 = require("./wordlists");
 Object.defineProperty(exports, "wordlists", { enumerable: true, get: function () { return wordlists_1.wordlists; } });
 
-},{"./wordlist":127,"./wordlists":128}],119:[function(require,module,exports){
+},{"./wordlist":138,"./wordlists":139}],130:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -46726,7 +50208,7 @@ var langCz = new LangCz();
 exports.langCz = langCz;
 wordlist_1.Wordlist.register(langCz);
 
-},{"./wordlist":127}],120:[function(require,module,exports){
+},{"./wordlist":138}],131:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -46779,7 +50261,7 @@ var langEn = new LangEn();
 exports.langEn = langEn;
 wordlist_1.Wordlist.register(langEn);
 
-},{"./wordlist":127}],121:[function(require,module,exports){
+},{"./wordlist":138}],132:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -46863,7 +50345,7 @@ var langEs = new LangEs();
 exports.langEs = langEs;
 wordlist_1.Wordlist.register(langEs);
 
-},{"./wordlist":127,"@ethersproject/strings":106}],122:[function(require,module,exports){
+},{"./wordlist":138,"@ethersproject/strings":117}],133:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -46946,7 +50428,7 @@ var langFr = new LangFr();
 exports.langFr = langFr;
 wordlist_1.Wordlist.register(langFr);
 
-},{"./wordlist":127,"@ethersproject/strings":106}],123:[function(require,module,exports){
+},{"./wordlist":138,"@ethersproject/strings":117}],134:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -46999,7 +50481,7 @@ var langIt = new LangIt();
 exports.langIt = langIt;
 wordlist_1.Wordlist.register(langIt);
 
-},{"./wordlist":127}],124:[function(require,module,exports){
+},{"./wordlist":138}],135:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -47147,7 +50629,7 @@ var langJa = new LangJa();
 exports.langJa = langJa;
 wordlist_1.Wordlist.register(langJa);
 
-},{"./wordlist":127,"@ethersproject/bytes":37,"@ethersproject/strings":106}],125:[function(require,module,exports){
+},{"./wordlist":138,"@ethersproject/bytes":48,"@ethersproject/strings":117}],136:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -47231,7 +50713,7 @@ var langKo = new LangKo();
 exports.langKo = langKo;
 wordlist_1.Wordlist.register(langKo);
 
-},{"./wordlist":127,"@ethersproject/strings":106}],126:[function(require,module,exports){
+},{"./wordlist":138,"@ethersproject/strings":117}],137:[function(require,module,exports){
 "use strict";
 var __extends = (this && this.__extends) || (function () {
     var extendStatics = function (d, b) {
@@ -47320,7 +50802,7 @@ var langZhTw = new LangZh("tw");
 exports.langZhTw = langZhTw;
 wordlist_1.Wordlist.register(langZhTw);
 
-},{"./wordlist":127,"@ethersproject/strings":106}],127:[function(require,module,exports){
+},{"./wordlist":138,"@ethersproject/strings":117}],138:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Wordlist = exports.logger = void 0;
@@ -47378,7 +50860,7 @@ var Wordlist = /** @class */ (function () {
 }());
 exports.Wordlist = Wordlist;
 
-},{"./_version":117,"@ethersproject/hash":47,"@ethersproject/logger":62,"@ethersproject/properties":68}],128:[function(require,module,exports){
+},{"./_version":128,"@ethersproject/hash":58,"@ethersproject/logger":73,"@ethersproject/properties":79}],139:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.wordlists = void 0;
@@ -47403,7 +50885,7 @@ exports.wordlists = {
     zh_tw: lang_zh_1.langZhTw
 };
 
-},{"./lang-cz":119,"./lang-en":120,"./lang-es":121,"./lang-fr":122,"./lang-it":123,"./lang-ja":124,"./lang-ko":125,"./lang-zh":126}],129:[function(require,module,exports){
+},{"./lang-cz":130,"./lang-en":131,"./lang-es":132,"./lang-fr":133,"./lang-it":134,"./lang-ja":135,"./lang-ko":136,"./lang-zh":137}],140:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -47494,7 +50976,7 @@ exports.decode = decode;
 exports.encode = encode;
 exports.name = name;
 
-},{"cborg":151,"multiformats/cid":433}],130:[function(require,module,exports){
+},{"cborg":162,"multiformats/cid":452}],141:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -47650,7 +51132,7 @@ exports.decode = decode;
 exports.encode = encode;
 exports.name = name;
 
-},{"cborg":151,"cborg/json":168,"multiformats":440,"multiformats/bases/base64":428}],131:[function(require,module,exports){
+},{"cborg":162,"cborg/json":179,"multiformats":459,"multiformats/bases/base64":447}],142:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -47722,7 +51204,7 @@ exports.decode = decode;
 exports.encode = encode;
 exports.name = name;
 
-},{"./pb-decode.js":132,"./pb-encode.js":133,"./util.js":134,"multiformats/cid":433}],132:[function(require,module,exports){
+},{"./pb-decode.js":143,"./pb-encode.js":144,"./util.js":145,"multiformats/cid":452}],143:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -47872,7 +51354,7 @@ function decodeNode(bytes) {
 
 exports.decodeNode = decodeNode;
 
-},{}],133:[function(require,module,exports){
+},{}],144:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -48253,7 +51735,7 @@ const len8tab = [
 
 exports.encodeNode = encodeNode;
 
-},{}],134:[function(require,module,exports){
+},{}],145:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -48416,7 +51898,7 @@ exports.createNode = createNode;
 exports.prepare = prepare;
 exports.validate = validate;
 
-},{"multiformats/cid":433}],135:[function(require,module,exports){
+},{"multiformats/cid":452}],146:[function(require,module,exports){
 "use strict";
 module.exports = asPromise;
 
@@ -48470,7 +51952,7 @@ function asPromise(fn, ctx/*, varargs */) {
     });
 }
 
-},{}],136:[function(require,module,exports){
+},{}],147:[function(require,module,exports){
 "use strict";
 
 /**
@@ -48611,7 +52093,7 @@ base64.test = function test(string) {
     return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(string);
 };
 
-},{}],137:[function(require,module,exports){
+},{}],148:[function(require,module,exports){
 "use strict";
 module.exports = EventEmitter;
 
@@ -48689,7 +52171,7 @@ EventEmitter.prototype.emit = function emit(evt) {
     return this;
 };
 
-},{}],138:[function(require,module,exports){
+},{}],149:[function(require,module,exports){
 "use strict";
 
 module.exports = factory(factory);
@@ -49026,7 +52508,7 @@ function readUintBE(buf, pos) {
           | buf[pos + 3]) >>> 0;
 }
 
-},{}],139:[function(require,module,exports){
+},{}],150:[function(require,module,exports){
 "use strict";
 module.exports = inquire;
 
@@ -49045,7 +52527,7 @@ function inquire(moduleName) {
     return null;
 }
 
-},{}],140:[function(require,module,exports){
+},{}],151:[function(require,module,exports){
 "use strict";
 module.exports = pool;
 
@@ -49095,7 +52577,7 @@ function pool(alloc, slice, size) {
     };
 }
 
-},{}],141:[function(require,module,exports){
+},{}],152:[function(require,module,exports){
 "use strict";
 
 /**
@@ -49202,7 +52684,7 @@ utf8.write = function utf8_write(string, buffer, offset) {
     return offset - start;
 };
 
-},{}],142:[function(require,module,exports){
+},{}],153:[function(require,module,exports){
 "use strict";
 
 (function(root) {
@@ -50002,7 +53484,7 @@ utf8.write = function utf8_write(string, buffer, offset) {
 
 })(this);
 
-},{}],143:[function(require,module,exports){
+},{}],154:[function(require,module,exports){
 /**
  * Takes an array of AbortSignals and returns a single signal.
  * If any signals are aborted, the returned signal will be aborted.
@@ -50036,7 +53518,7 @@ function anySignal (signals) {
 module.exports = anySignal
 module.exports.anySignal = anySignal
 
-},{}],144:[function(require,module,exports){
+},{}],155:[function(require,module,exports){
 'use strict';
 module.exports = balanced;
 function balanced(a, b, str) {
@@ -50100,7 +53582,7 @@ function range(a, b, str) {
   return result;
 }
 
-},{}],145:[function(require,module,exports){
+},{}],156:[function(require,module,exports){
 'use strict'
 var ALPHABET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
 
@@ -50284,7 +53766,7 @@ module.exports = {
   fromWords: fromWords
 }
 
-},{}],146:[function(require,module,exports){
+},{}],157:[function(require,module,exports){
 /* eslint-env browser */
 
 'use strict'
@@ -50308,7 +53790,7 @@ function blobToIt (blob) {
 
 module.exports = blobToIt
 
-},{"browser-readablestream-to-it":150}],147:[function(require,module,exports){
+},{"browser-readablestream-to-it":161}],158:[function(require,module,exports){
 (function (module, exports) {
   'use strict';
 
@@ -53756,7 +57238,7 @@ module.exports = blobToIt
   };
 })(typeof module === 'undefined' || module, this);
 
-},{"buffer":1}],148:[function(require,module,exports){
+},{"buffer":3}],159:[function(require,module,exports){
 var concatMap = require('concat-map');
 var balanced = require('balanced-match');
 
@@ -53959,7 +57441,7 @@ function expand(str, isTop) {
 }
 
 
-},{"balanced-match":144,"concat-map":171}],149:[function(require,module,exports){
+},{"balanced-match":155,"concat-map":189}],160:[function(require,module,exports){
 var r;
 
 module.exports = function rand(len) {
@@ -54026,7 +57508,7 @@ if (typeof self === 'object') {
   }
 }
 
-},{"crypto":1}],150:[function(require,module,exports){
+},{"crypto":3}],161:[function(require,module,exports){
 'use strict'
 
 /**
@@ -54065,7 +57547,7 @@ async function * browserReadableStreamToIt (stream, options = {}) {
 
 module.exports = browserReadableStreamToIt
 
-},{}],151:[function(require,module,exports){
+},{}],162:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54081,7 +57563,7 @@ exports.decode = decode.decode;
 exports.Token = token.Token;
 exports.Type = token.Type;
 
-},{"./lib/decode.js":163,"./lib/encode.js":164,"./lib/token.js":170}],152:[function(require,module,exports){
+},{"./lib/decode.js":174,"./lib/encode.js":175,"./lib/token.js":181}],163:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54246,7 +57728,7 @@ exports.readUint64 = readUint64;
 exports.readUint8 = readUint8;
 exports.uintBoundaries = uintBoundaries;
 
-},{"./common.js":162,"./token.js":170}],153:[function(require,module,exports){
+},{"./common.js":173,"./token.js":181}],164:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54311,7 +57793,7 @@ exports.decodeNegint64 = decodeNegint64;
 exports.decodeNegint8 = decodeNegint8;
 exports.encodeNegint = encodeNegint;
 
-},{"./0uint.js":152,"./common.js":162,"./token.js":170}],154:[function(require,module,exports){
+},{"./0uint.js":163,"./common.js":173,"./token.js":181}],165:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54375,7 +57857,7 @@ exports.decodeBytes8 = decodeBytes8;
 exports.decodeBytesCompact = decodeBytesCompact;
 exports.encodeBytes = encodeBytes;
 
-},{"./0uint.js":152,"./byte-utils.js":161,"./common.js":162,"./token.js":170}],155:[function(require,module,exports){
+},{"./0uint.js":163,"./byte-utils.js":172,"./common.js":173,"./token.js":181}],166:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54423,7 +57905,7 @@ exports.decodeString8 = decodeString8;
 exports.decodeStringCompact = decodeStringCompact;
 exports.encodeString = encodeString;
 
-},{"./0uint.js":152,"./2bytes.js":154,"./byte-utils.js":161,"./common.js":162,"./token.js":170}],156:[function(require,module,exports){
+},{"./0uint.js":163,"./2bytes.js":165,"./byte-utils.js":172,"./common.js":173,"./token.js":181}],167:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54476,7 +57958,7 @@ exports.decodeArrayCompact = decodeArrayCompact;
 exports.decodeArrayIndefinite = decodeArrayIndefinite;
 exports.encodeArray = encodeArray;
 
-},{"./0uint.js":152,"./common.js":162,"./token.js":170}],157:[function(require,module,exports){
+},{"./0uint.js":163,"./common.js":173,"./token.js":181}],168:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54529,7 +58011,7 @@ exports.decodeMapCompact = decodeMapCompact;
 exports.decodeMapIndefinite = decodeMapIndefinite;
 exports.encodeMap = encodeMap;
 
-},{"./0uint.js":152,"./common.js":162,"./token.js":170}],158:[function(require,module,exports){
+},{"./0uint.js":163,"./common.js":173,"./token.js":181}],169:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54567,7 +58049,7 @@ exports.decodeTag8 = decodeTag8;
 exports.decodeTagCompact = decodeTagCompact;
 exports.encodeTag = encodeTag;
 
-},{"./0uint.js":152,"./token.js":170}],159:[function(require,module,exports){
+},{"./0uint.js":163,"./token.js":181}],170:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54757,7 +58239,7 @@ exports.decodeFloat64 = decodeFloat64;
 exports.decodeUndefined = decodeUndefined;
 exports.encodeFloat = encodeFloat;
 
-},{"./0uint.js":152,"./common.js":162,"./token.js":170}],160:[function(require,module,exports){
+},{"./0uint.js":163,"./common.js":173,"./token.js":181}],171:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -54836,7 +58318,7 @@ class Bl {
 
 exports.Bl = Bl;
 
-},{"./byte-utils.js":161}],161:[function(require,module,exports){
+},{"./byte-utils.js":172}],172:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -55083,7 +58565,7 @@ exports.toHex = toHex;
 exports.toString = toString;
 exports.useBuffer = useBuffer;
 
-},{}],162:[function(require,module,exports){
+},{}],173:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -55107,7 +58589,7 @@ exports.decodeErrPrefix = decodeErrPrefix;
 exports.encodeErrPrefix = encodeErrPrefix;
 exports.uintMinorPrefixBytes = uintMinorPrefixBytes;
 
-},{}],163:[function(require,module,exports){
+},{}],174:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -55244,7 +58726,7 @@ exports.Tokeniser = Tokeniser;
 exports.decode = decode;
 exports.tokensToObject = tokensToObject;
 
-},{"./common.js":162,"./jump.js":169,"./token.js":170}],164:[function(require,module,exports){
+},{"./common.js":173,"./jump.js":180,"./token.js":181}],175:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -55494,7 +58976,7 @@ exports.encodeCustom = encodeCustom;
 exports.makeCborEncoders = makeCborEncoders;
 exports.objectToTokens = objectToTokens;
 
-},{"./0uint.js":152,"./1negint.js":153,"./2bytes.js":154,"./3string.js":155,"./4array.js":156,"./5map.js":157,"./6tag.js":158,"./7float.js":159,"./bl.js":160,"./byte-utils.js":161,"./common.js":162,"./is.js":165,"./jump.js":169,"./token.js":170}],165:[function(require,module,exports){
+},{"./0uint.js":163,"./1negint.js":164,"./2bytes.js":165,"./3string.js":166,"./4array.js":167,"./5map.js":168,"./6tag.js":169,"./7float.js":170,"./bl.js":171,"./byte-utils.js":172,"./common.js":173,"./is.js":176,"./jump.js":180,"./token.js":181}],176:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -55583,7 +59065,7 @@ function getObjectType(value) {
 
 exports.is = is;
 
-},{}],166:[function(require,module,exports){
+},{}],177:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -55999,7 +59481,7 @@ function decode(data, options) {
 exports.Tokenizer = Tokenizer;
 exports.decode = decode;
 
-},{"../byte-utils.js":161,"../common.js":162,"../decode.js":163,"../token.js":170}],167:[function(require,module,exports){
+},{"../byte-utils.js":172,"../common.js":173,"../decode.js":174,"../token.js":181}],178:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -56162,7 +59644,7 @@ function encode(data, options) {
 
 exports.encode = encode;
 
-},{"../byte-utils.js":161,"../common.js":162,"../encode.js":164,"../token.js":170}],168:[function(require,module,exports){
+},{"../byte-utils.js":172,"../common.js":173,"../encode.js":175,"../token.js":181}],179:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -56176,7 +59658,7 @@ exports.encode = encode.encode;
 exports.Tokenizer = decode.Tokenizer;
 exports.decode = decode.decode;
 
-},{"./decode.js":166,"./encode.js":167}],169:[function(require,module,exports){
+},{"./decode.js":177,"./encode.js":178}],180:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -56352,7 +59834,7 @@ exports.jump = jump;
 exports.quick = quick;
 exports.quickEncodeToken = quickEncodeToken;
 
-},{"./0uint.js":152,"./1negint.js":153,"./2bytes.js":154,"./3string.js":155,"./4array.js":156,"./5map.js":157,"./6tag.js":158,"./7float.js":159,"./byte-utils.js":161,"./common.js":162,"./token.js":170}],170:[function(require,module,exports){
+},{"./0uint.js":163,"./1negint.js":164,"./2bytes.js":165,"./3string.js":166,"./4array.js":167,"./5map.js":168,"./6tag.js":169,"./7float.js":170,"./byte-utils.js":172,"./common.js":173,"./token.js":181}],181:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -56400,7 +59882,3102 @@ class Token {
 exports.Token = Token;
 exports.Type = Type;
 
-},{}],171:[function(require,module,exports){
+},{}],182:[function(require,module,exports){
+const { Argument } = require('./lib/argument.js');
+const { Command } = require('./lib/command.js');
+const { CommanderError, InvalidArgumentError } = require('./lib/error.js');
+const { Help } = require('./lib/help.js');
+const { Option } = require('./lib/option.js');
+
+// @ts-check
+
+/**
+ * Expose the root command.
+ */
+
+exports = module.exports = new Command();
+exports.program = exports; // More explicit access to global command.
+// Implicit export of createArgument, createCommand, and createOption.
+
+/**
+ * Expose classes
+ */
+
+exports.Argument = Argument;
+exports.Command = Command;
+exports.CommanderError = CommanderError;
+exports.Help = Help;
+exports.InvalidArgumentError = InvalidArgumentError;
+exports.InvalidOptionArgumentError = InvalidArgumentError; // Deprecated
+exports.Option = Option;
+
+},{"./lib/argument.js":183,"./lib/command.js":184,"./lib/error.js":185,"./lib/help.js":186,"./lib/option.js":187}],183:[function(require,module,exports){
+const { InvalidArgumentError } = require('./error.js');
+
+// @ts-check
+
+class Argument {
+  /**
+   * Initialize a new command argument with the given name and description.
+   * The default is that the argument is required, and you can explicitly
+   * indicate this with <> around the name. Put [] around the name for an optional argument.
+   *
+   * @param {string} name
+   * @param {string} [description]
+   */
+
+  constructor(name, description) {
+    this.description = description || '';
+    this.variadic = false;
+    this.parseArg = undefined;
+    this.defaultValue = undefined;
+    this.defaultValueDescription = undefined;
+    this.argChoices = undefined;
+
+    switch (name[0]) {
+      case '<': // e.g. <required>
+        this.required = true;
+        this._name = name.slice(1, -1);
+        break;
+      case '[': // e.g. [optional]
+        this.required = false;
+        this._name = name.slice(1, -1);
+        break;
+      default:
+        this.required = true;
+        this._name = name;
+        break;
+    }
+
+    if (this._name.length > 3 && this._name.slice(-3) === '...') {
+      this.variadic = true;
+      this._name = this._name.slice(0, -3);
+    }
+  }
+
+  /**
+   * Return argument name.
+   *
+   * @return {string}
+   */
+
+  name() {
+    return this._name;
+  }
+
+  /**
+   * @api private
+   */
+
+  _concatValue(value, previous) {
+    if (previous === this.defaultValue || !Array.isArray(previous)) {
+      return [value];
+    }
+
+    return previous.concat(value);
+  }
+
+  /**
+   * Set the default value, and optionally supply the description to be displayed in the help.
+   *
+   * @param {any} value
+   * @param {string} [description]
+   * @return {Argument}
+   */
+
+  default(value, description) {
+    this.defaultValue = value;
+    this.defaultValueDescription = description;
+    return this;
+  }
+
+  /**
+   * Set the custom handler for processing CLI command arguments into argument values.
+   *
+   * @param {Function} [fn]
+   * @return {Argument}
+   */
+
+  argParser(fn) {
+    this.parseArg = fn;
+    return this;
+  }
+
+  /**
+   * Only allow argument value to be one of choices.
+   *
+   * @param {string[]} values
+   * @return {Argument}
+   */
+
+  choices(values) {
+    this.argChoices = values.slice();
+    this.parseArg = (arg, previous) => {
+      if (!this.argChoices.includes(arg)) {
+        throw new InvalidArgumentError(`Allowed choices are ${this.argChoices.join(', ')}.`);
+      }
+      if (this.variadic) {
+        return this._concatValue(arg, previous);
+      }
+      return arg;
+    };
+    return this;
+  }
+
+  /**
+   * Make argument required.
+   */
+  argRequired() {
+    this.required = true;
+    return this;
+  }
+
+  /**
+   * Make argument optional.
+   */
+  argOptional() {
+    this.required = false;
+    return this;
+  }
+}
+
+/**
+ * Takes an argument and returns its human readable equivalent for help usage.
+ *
+ * @param {Argument} arg
+ * @return {string}
+ * @api private
+ */
+
+function humanReadableArgName(arg) {
+  const nameOutput = arg.name() + (arg.variadic === true ? '...' : '');
+
+  return arg.required
+    ? '<' + nameOutput + '>'
+    : '[' + nameOutput + ']';
+}
+
+exports.Argument = Argument;
+exports.humanReadableArgName = humanReadableArgName;
+
+},{"./error.js":185}],184:[function(require,module,exports){
+(function (Buffer){(function (){
+const EventEmitter = require('events').EventEmitter;
+const childProcess = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const process = require('process');
+
+const { Argument, humanReadableArgName } = require('./argument.js');
+const { CommanderError } = require('./error.js');
+const { Help } = require('./help.js');
+const { Option, splitOptionFlags } = require('./option.js');
+const { suggestSimilar } = require('./suggestSimilar');
+
+// @ts-check
+
+class Command extends EventEmitter {
+  /**
+   * Initialize a new `Command`.
+   *
+   * @param {string} [name]
+   */
+
+  constructor(name) {
+    super();
+    /** @type {Command[]} */
+    this.commands = [];
+    /** @type {Option[]} */
+    this.options = [];
+    this.parent = null;
+    this._allowUnknownOption = false;
+    this._allowExcessArguments = true;
+    /** @type {Argument[]} */
+    this._args = [];
+    /** @type {string[]} */
+    this.args = []; // cli args with options removed
+    this.rawArgs = [];
+    this.processedArgs = []; // like .args but after custom processing and collecting variadic
+    this._scriptPath = null;
+    this._name = name || '';
+    this._optionValues = {};
+    this._optionValueSources = {}; // default < config < env < cli
+    this._storeOptionsAsProperties = false;
+    this._actionHandler = null;
+    this._executableHandler = false;
+    this._executableFile = null; // custom name for executable
+    this._executableDir = null; // custom search directory for subcommands
+    this._defaultCommandName = null;
+    this._exitCallback = null;
+    this._aliases = [];
+    this._combineFlagAndOptionalValue = true;
+    this._description = '';
+    this._argsDescription = undefined; // legacy
+    this._enablePositionalOptions = false;
+    this._passThroughOptions = false;
+    this._lifeCycleHooks = {}; // a hash of arrays
+    /** @type {boolean | string} */
+    this._showHelpAfterError = false;
+    this._showSuggestionAfterError = true;
+
+    // see .configureOutput() for docs
+    this._outputConfiguration = {
+      writeOut: (str) => process.stdout.write(str),
+      writeErr: (str) => process.stderr.write(str),
+      getOutHelpWidth: () => process.stdout.isTTY ? process.stdout.columns : undefined,
+      getErrHelpWidth: () => process.stderr.isTTY ? process.stderr.columns : undefined,
+      outputError: (str, write) => write(str)
+    };
+
+    this._hidden = false;
+    this._hasHelpOption = true;
+    this._helpFlags = '-h, --help';
+    this._helpDescription = 'display help for command';
+    this._helpShortFlag = '-h';
+    this._helpLongFlag = '--help';
+    this._addImplicitHelpCommand = undefined; // Deliberately undefined, not decided whether true or false
+    this._helpCommandName = 'help';
+    this._helpCommandnameAndArgs = 'help [command]';
+    this._helpCommandDescription = 'display help for command';
+    this._helpConfiguration = {};
+  }
+
+  /**
+   * Copy settings that are useful to have in common across root command and subcommands.
+   *
+   * (Used internally when adding a command using `.command()` so subcommands inherit parent settings.)
+   *
+   * @param {Command} sourceCommand
+   * @return {Command} `this` command for chaining
+   */
+  copyInheritedSettings(sourceCommand) {
+    this._outputConfiguration = sourceCommand._outputConfiguration;
+    this._hasHelpOption = sourceCommand._hasHelpOption;
+    this._helpFlags = sourceCommand._helpFlags;
+    this._helpDescription = sourceCommand._helpDescription;
+    this._helpShortFlag = sourceCommand._helpShortFlag;
+    this._helpLongFlag = sourceCommand._helpLongFlag;
+    this._helpCommandName = sourceCommand._helpCommandName;
+    this._helpCommandnameAndArgs = sourceCommand._helpCommandnameAndArgs;
+    this._helpCommandDescription = sourceCommand._helpCommandDescription;
+    this._helpConfiguration = sourceCommand._helpConfiguration;
+    this._exitCallback = sourceCommand._exitCallback;
+    this._storeOptionsAsProperties = sourceCommand._storeOptionsAsProperties;
+    this._combineFlagAndOptionalValue = sourceCommand._combineFlagAndOptionalValue;
+    this._allowExcessArguments = sourceCommand._allowExcessArguments;
+    this._enablePositionalOptions = sourceCommand._enablePositionalOptions;
+    this._showHelpAfterError = sourceCommand._showHelpAfterError;
+    this._showSuggestionAfterError = sourceCommand._showSuggestionAfterError;
+
+    return this;
+  }
+
+  /**
+   * Define a command.
+   *
+   * There are two styles of command: pay attention to where to put the description.
+   *
+   * @example
+   * // Command implemented using action handler (description is supplied separately to `.command`)
+   * program
+   *   .command('clone <source> [destination]')
+   *   .description('clone a repository into a newly created directory')
+   *   .action((source, destination) => {
+   *     console.log('clone command called');
+   *   });
+   *
+   * // Command implemented using separate executable file (description is second parameter to `.command`)
+   * program
+   *   .command('start <service>', 'start named service')
+   *   .command('stop [service]', 'stop named service, or all if no name supplied');
+   *
+   * @param {string} nameAndArgs - command name and arguments, args are `<required>` or `[optional]` and last may also be `variadic...`
+   * @param {Object|string} [actionOptsOrExecDesc] - configuration options (for action), or description (for executable)
+   * @param {Object} [execOpts] - configuration options (for executable)
+   * @return {Command} returns new command for action handler, or `this` for executable command
+   */
+
+  command(nameAndArgs, actionOptsOrExecDesc, execOpts) {
+    let desc = actionOptsOrExecDesc;
+    let opts = execOpts;
+    if (typeof desc === 'object' && desc !== null) {
+      opts = desc;
+      desc = null;
+    }
+    opts = opts || {};
+    const [, name, args] = nameAndArgs.match(/([^ ]+) *(.*)/);
+
+    const cmd = this.createCommand(name);
+    if (desc) {
+      cmd.description(desc);
+      cmd._executableHandler = true;
+    }
+    if (opts.isDefault) this._defaultCommandName = cmd._name;
+    cmd._hidden = !!(opts.noHelp || opts.hidden); // noHelp is deprecated old name for hidden
+    cmd._executableFile = opts.executableFile || null; // Custom name for executable file, set missing to null to match constructor
+    if (args) cmd.arguments(args);
+    this.commands.push(cmd);
+    cmd.parent = this;
+    cmd.copyInheritedSettings(this);
+
+    if (desc) return this;
+    return cmd;
+  }
+
+  /**
+   * Factory routine to create a new unattached command.
+   *
+   * See .command() for creating an attached subcommand, which uses this routine to
+   * create the command. You can override createCommand to customise subcommands.
+   *
+   * @param {string} [name]
+   * @return {Command} new command
+   */
+
+  createCommand(name) {
+    return new Command(name);
+  }
+
+  /**
+   * You can customise the help with a subclass of Help by overriding createHelp,
+   * or by overriding Help properties using configureHelp().
+   *
+   * @return {Help}
+   */
+
+  createHelp() {
+    return Object.assign(new Help(), this.configureHelp());
+  }
+
+  /**
+   * You can customise the help by overriding Help properties using configureHelp(),
+   * or with a subclass of Help by overriding createHelp().
+   *
+   * @param {Object} [configuration] - configuration options
+   * @return {Command|Object} `this` command for chaining, or stored configuration
+   */
+
+  configureHelp(configuration) {
+    if (configuration === undefined) return this._helpConfiguration;
+
+    this._helpConfiguration = configuration;
+    return this;
+  }
+
+  /**
+   * The default output goes to stdout and stderr. You can customise this for special
+   * applications. You can also customise the display of errors by overriding outputError.
+   *
+   * The configuration properties are all functions:
+   *
+   *     // functions to change where being written, stdout and stderr
+   *     writeOut(str)
+   *     writeErr(str)
+   *     // matching functions to specify width for wrapping help
+   *     getOutHelpWidth()
+   *     getErrHelpWidth()
+   *     // functions based on what is being written out
+   *     outputError(str, write) // used for displaying errors, and not used for displaying help
+   *
+   * @param {Object} [configuration] - configuration options
+   * @return {Command|Object} `this` command for chaining, or stored configuration
+   */
+
+  configureOutput(configuration) {
+    if (configuration === undefined) return this._outputConfiguration;
+
+    Object.assign(this._outputConfiguration, configuration);
+    return this;
+  }
+
+  /**
+   * Display the help or a custom message after an error occurs.
+   *
+   * @param {boolean|string} [displayHelp]
+   * @return {Command} `this` command for chaining
+   */
+  showHelpAfterError(displayHelp = true) {
+    if (typeof displayHelp !== 'string') displayHelp = !!displayHelp;
+    this._showHelpAfterError = displayHelp;
+    return this;
+  }
+
+  /**
+   * Display suggestion of similar commands for unknown commands, or options for unknown options.
+   *
+   * @param {boolean} [displaySuggestion]
+   * @return {Command} `this` command for chaining
+   */
+  showSuggestionAfterError(displaySuggestion = true) {
+    this._showSuggestionAfterError = !!displaySuggestion;
+    return this;
+  }
+
+  /**
+   * Add a prepared subcommand.
+   *
+   * See .command() for creating an attached subcommand which inherits settings from its parent.
+   *
+   * @param {Command} cmd - new subcommand
+   * @param {Object} [opts] - configuration options
+   * @return {Command} `this` command for chaining
+   */
+
+  addCommand(cmd, opts) {
+    if (!cmd._name) {
+      throw new Error(`Command passed to .addCommand() must have a name
+- specify the name in Command constructor or using .name()`);
+    }
+
+    opts = opts || {};
+    if (opts.isDefault) this._defaultCommandName = cmd._name;
+    if (opts.noHelp || opts.hidden) cmd._hidden = true; // modifying passed command due to existing implementation
+
+    this.commands.push(cmd);
+    cmd.parent = this;
+    return this;
+  }
+
+  /**
+   * Factory routine to create a new unattached argument.
+   *
+   * See .argument() for creating an attached argument, which uses this routine to
+   * create the argument. You can override createArgument to return a custom argument.
+   *
+   * @param {string} name
+   * @param {string} [description]
+   * @return {Argument} new argument
+   */
+
+  createArgument(name, description) {
+    return new Argument(name, description);
+  }
+
+  /**
+   * Define argument syntax for command.
+   *
+   * The default is that the argument is required, and you can explicitly
+   * indicate this with <> around the name. Put [] around the name for an optional argument.
+   *
+   * @example
+   * program.argument('<input-file>');
+   * program.argument('[output-file]');
+   *
+   * @param {string} name
+   * @param {string} [description]
+   * @param {Function|*} [fn] - custom argument processing function
+   * @param {*} [defaultValue]
+   * @return {Command} `this` command for chaining
+   */
+  argument(name, description, fn, defaultValue) {
+    const argument = this.createArgument(name, description);
+    if (typeof fn === 'function') {
+      argument.default(defaultValue).argParser(fn);
+    } else {
+      argument.default(fn);
+    }
+    this.addArgument(argument);
+    return this;
+  }
+
+  /**
+   * Define argument syntax for command, adding multiple at once (without descriptions).
+   *
+   * See also .argument().
+   *
+   * @example
+   * program.arguments('<cmd> [env]');
+   *
+   * @param {string} names
+   * @return {Command} `this` command for chaining
+   */
+
+  arguments(names) {
+    names.split(/ +/).forEach((detail) => {
+      this.argument(detail);
+    });
+    return this;
+  }
+
+  /**
+   * Define argument syntax for command, adding a prepared argument.
+   *
+   * @param {Argument} argument
+   * @return {Command} `this` command for chaining
+   */
+  addArgument(argument) {
+    const previousArgument = this._args.slice(-1)[0];
+    if (previousArgument && previousArgument.variadic) {
+      throw new Error(`only the last argument can be variadic '${previousArgument.name()}'`);
+    }
+    if (argument.required && argument.defaultValue !== undefined && argument.parseArg === undefined) {
+      throw new Error(`a default value for a required argument is never used: '${argument.name()}'`);
+    }
+    this._args.push(argument);
+    return this;
+  }
+
+  /**
+   * Override default decision whether to add implicit help command.
+   *
+   *    addHelpCommand() // force on
+   *    addHelpCommand(false); // force off
+   *    addHelpCommand('help [cmd]', 'display help for [cmd]'); // force on with custom details
+   *
+   * @return {Command} `this` command for chaining
+   */
+
+  addHelpCommand(enableOrNameAndArgs, description) {
+    if (enableOrNameAndArgs === false) {
+      this._addImplicitHelpCommand = false;
+    } else {
+      this._addImplicitHelpCommand = true;
+      if (typeof enableOrNameAndArgs === 'string') {
+        this._helpCommandName = enableOrNameAndArgs.split(' ')[0];
+        this._helpCommandnameAndArgs = enableOrNameAndArgs;
+      }
+      this._helpCommandDescription = description || this._helpCommandDescription;
+    }
+    return this;
+  }
+
+  /**
+   * @return {boolean}
+   * @api private
+   */
+
+  _hasImplicitHelpCommand() {
+    if (this._addImplicitHelpCommand === undefined) {
+      return this.commands.length && !this._actionHandler && !this._findCommand('help');
+    }
+    return this._addImplicitHelpCommand;
+  }
+
+  /**
+   * Add hook for life cycle event.
+   *
+   * @param {string} event
+   * @param {Function} listener
+   * @return {Command} `this` command for chaining
+   */
+
+  hook(event, listener) {
+    const allowedValues = ['preAction', 'postAction'];
+    if (!allowedValues.includes(event)) {
+      throw new Error(`Unexpected value for event passed to hook : '${event}'.
+Expecting one of '${allowedValues.join("', '")}'`);
+    }
+    if (this._lifeCycleHooks[event]) {
+      this._lifeCycleHooks[event].push(listener);
+    } else {
+      this._lifeCycleHooks[event] = [listener];
+    }
+    return this;
+  }
+
+  /**
+   * Register callback to use as replacement for calling process.exit.
+   *
+   * @param {Function} [fn] optional callback which will be passed a CommanderError, defaults to throwing
+   * @return {Command} `this` command for chaining
+   */
+
+  exitOverride(fn) {
+    if (fn) {
+      this._exitCallback = fn;
+    } else {
+      this._exitCallback = (err) => {
+        if (err.code !== 'commander.executeSubCommandAsync') {
+          throw err;
+        } else {
+          // Async callback from spawn events, not useful to throw.
+        }
+      };
+    }
+    return this;
+  }
+
+  /**
+   * Call process.exit, and _exitCallback if defined.
+   *
+   * @param {number} exitCode exit code for using with process.exit
+   * @param {string} code an id string representing the error
+   * @param {string} message human-readable description of the error
+   * @return never
+   * @api private
+   */
+
+  _exit(exitCode, code, message) {
+    if (this._exitCallback) {
+      this._exitCallback(new CommanderError(exitCode, code, message));
+      // Expecting this line is not reached.
+    }
+    process.exit(exitCode);
+  }
+
+  /**
+   * Register callback `fn` for the command.
+   *
+   * @example
+   * program
+   *   .command('serve')
+   *   .description('start service')
+   *   .action(function() {
+   *      // do work here
+   *   });
+   *
+   * @param {Function} fn
+   * @return {Command} `this` command for chaining
+   */
+
+  action(fn) {
+    const listener = (args) => {
+      // The .action callback takes an extra parameter which is the command or options.
+      const expectedArgsCount = this._args.length;
+      const actionArgs = args.slice(0, expectedArgsCount);
+      if (this._storeOptionsAsProperties) {
+        actionArgs[expectedArgsCount] = this; // backwards compatible "options"
+      } else {
+        actionArgs[expectedArgsCount] = this.opts();
+      }
+      actionArgs.push(this);
+
+      return fn.apply(this, actionArgs);
+    };
+    this._actionHandler = listener;
+    return this;
+  }
+
+  /**
+   * Factory routine to create a new unattached option.
+   *
+   * See .option() for creating an attached option, which uses this routine to
+   * create the option. You can override createOption to return a custom option.
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   * @return {Option} new option
+   */
+
+  createOption(flags, description) {
+    return new Option(flags, description);
+  }
+
+  /**
+   * Add an option.
+   *
+   * @param {Option} option
+   * @return {Command} `this` command for chaining
+   */
+  addOption(option) {
+    const oname = option.name();
+    const name = option.attributeName();
+
+    // store default value
+    if (option.negate) {
+      // --no-foo is special and defaults foo to true, unless a --foo option is already defined
+      const positiveLongFlag = option.long.replace(/^--no-/, '--');
+      if (!this._findOption(positiveLongFlag)) {
+        this.setOptionValueWithSource(name, option.defaultValue === undefined ? true : option.defaultValue, 'default');
+      }
+    } else if (option.defaultValue !== undefined) {
+      this.setOptionValueWithSource(name, option.defaultValue, 'default');
+    }
+
+    // register the option
+    this.options.push(option);
+
+    // handler for cli and env supplied values
+    const handleOptionValue = (val, invalidValueMessage, valueSource) => {
+      // val is null for optional option used without an optional-argument.
+      // val is undefined for boolean and negated option.
+      if (val == null && option.presetArg !== undefined) {
+        val = option.presetArg;
+      }
+
+      // custom processing
+      const oldValue = this.getOptionValue(name);
+      if (val !== null && option.parseArg) {
+        try {
+          val = option.parseArg(val, oldValue);
+        } catch (err) {
+          if (err.code === 'commander.invalidArgument') {
+            const message = `${invalidValueMessage} ${err.message}`;
+            this.error(message, { exitCode: err.exitCode, code: err.code });
+          }
+          throw err;
+        }
+      } else if (val !== null && option.variadic) {
+        val = option._concatValue(val, oldValue);
+      }
+
+      // Fill-in appropriate missing values. Long winded but easy to follow.
+      if (val == null) {
+        if (option.negate) {
+          val = false;
+        } else if (option.isBoolean() || option.optional) {
+          val = true;
+        } else {
+          val = ''; // not normal, parseArg might have failed or be a mock function for testing
+        }
+      }
+      this.setOptionValueWithSource(name, val, valueSource);
+    };
+
+    this.on('option:' + oname, (val) => {
+      const invalidValueMessage = `error: option '${option.flags}' argument '${val}' is invalid.`;
+      handleOptionValue(val, invalidValueMessage, 'cli');
+    });
+
+    if (option.envVar) {
+      this.on('optionEnv:' + oname, (val) => {
+        const invalidValueMessage = `error: option '${option.flags}' value '${val}' from env '${option.envVar}' is invalid.`;
+        handleOptionValue(val, invalidValueMessage, 'env');
+      });
+    }
+
+    return this;
+  }
+
+  /**
+   * Internal implementation shared by .option() and .requiredOption()
+   *
+   * @api private
+   */
+  _optionEx(config, flags, description, fn, defaultValue) {
+    if (typeof flags === 'object' && flags instanceof Option) {
+      throw new Error('To add an Option object use addOption() instead of option() or requiredOption()');
+    }
+    const option = this.createOption(flags, description);
+    option.makeOptionMandatory(!!config.mandatory);
+    if (typeof fn === 'function') {
+      option.default(defaultValue).argParser(fn);
+    } else if (fn instanceof RegExp) {
+      // deprecated
+      const regex = fn;
+      fn = (val, def) => {
+        const m = regex.exec(val);
+        return m ? m[0] : def;
+      };
+      option.default(defaultValue).argParser(fn);
+    } else {
+      option.default(fn);
+    }
+
+    return this.addOption(option);
+  }
+
+  /**
+   * Define option with `flags`, `description` and optional
+   * coercion `fn`.
+   *
+   * The `flags` string contains the short and/or long flags,
+   * separated by comma, a pipe or space. The following are all valid
+   * all will output this way when `--help` is used.
+   *
+   *     "-p, --pepper"
+   *     "-p|--pepper"
+   *     "-p --pepper"
+   *
+   * @example
+   * // simple boolean defaulting to undefined
+   * program.option('-p, --pepper', 'add pepper');
+   *
+   * program.pepper
+   * // => undefined
+   *
+   * --pepper
+   * program.pepper
+   * // => true
+   *
+   * // simple boolean defaulting to true (unless non-negated option is also defined)
+   * program.option('-C, --no-cheese', 'remove cheese');
+   *
+   * program.cheese
+   * // => true
+   *
+   * --no-cheese
+   * program.cheese
+   * // => false
+   *
+   * // required argument
+   * program.option('-C, --chdir <path>', 'change the working directory');
+   *
+   * --chdir /tmp
+   * program.chdir
+   * // => "/tmp"
+   *
+   * // optional argument
+   * program.option('-c, --cheese [type]', 'add cheese [marble]');
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   * @param {Function|*} [fn] - custom option processing function or default value
+   * @param {*} [defaultValue]
+   * @return {Command} `this` command for chaining
+   */
+
+  option(flags, description, fn, defaultValue) {
+    return this._optionEx({}, flags, description, fn, defaultValue);
+  }
+
+  /**
+  * Add a required option which must have a value after parsing. This usually means
+  * the option must be specified on the command line. (Otherwise the same as .option().)
+  *
+  * The `flags` string contains the short and/or long flags, separated by comma, a pipe or space.
+  *
+  * @param {string} flags
+  * @param {string} [description]
+  * @param {Function|*} [fn] - custom option processing function or default value
+  * @param {*} [defaultValue]
+  * @return {Command} `this` command for chaining
+  */
+
+  requiredOption(flags, description, fn, defaultValue) {
+    return this._optionEx({ mandatory: true }, flags, description, fn, defaultValue);
+  }
+
+  /**
+   * Alter parsing of short flags with optional values.
+   *
+   * @example
+   * // for `.option('-f,--flag [value]'):
+   * program.combineFlagAndOptionalValue(true);  // `-f80` is treated like `--flag=80`, this is the default behaviour
+   * program.combineFlagAndOptionalValue(false) // `-fb` is treated like `-f -b`
+   *
+   * @param {Boolean} [combine=true] - if `true` or omitted, an optional value can be specified directly after the flag.
+   */
+  combineFlagAndOptionalValue(combine = true) {
+    this._combineFlagAndOptionalValue = !!combine;
+    return this;
+  }
+
+  /**
+   * Allow unknown options on the command line.
+   *
+   * @param {Boolean} [allowUnknown=true] - if `true` or omitted, no error will be thrown
+   * for unknown options.
+   */
+  allowUnknownOption(allowUnknown = true) {
+    this._allowUnknownOption = !!allowUnknown;
+    return this;
+  }
+
+  /**
+   * Allow excess command-arguments on the command line. Pass false to make excess arguments an error.
+   *
+   * @param {Boolean} [allowExcess=true] - if `true` or omitted, no error will be thrown
+   * for excess arguments.
+   */
+  allowExcessArguments(allowExcess = true) {
+    this._allowExcessArguments = !!allowExcess;
+    return this;
+  }
+
+  /**
+   * Enable positional options. Positional means global options are specified before subcommands which lets
+   * subcommands reuse the same option names, and also enables subcommands to turn on passThroughOptions.
+   * The default behaviour is non-positional and global options may appear anywhere on the command line.
+   *
+   * @param {Boolean} [positional=true]
+   */
+  enablePositionalOptions(positional = true) {
+    this._enablePositionalOptions = !!positional;
+    return this;
+  }
+
+  /**
+   * Pass through options that come after command-arguments rather than treat them as command-options,
+   * so actual command-options come before command-arguments. Turning this on for a subcommand requires
+   * positional options to have been enabled on the program (parent commands).
+   * The default behaviour is non-positional and options may appear before or after command-arguments.
+   *
+   * @param {Boolean} [passThrough=true]
+   * for unknown options.
+   */
+  passThroughOptions(passThrough = true) {
+    this._passThroughOptions = !!passThrough;
+    if (!!this.parent && passThrough && !this.parent._enablePositionalOptions) {
+      throw new Error('passThroughOptions can not be used without turning on enablePositionalOptions for parent command(s)');
+    }
+    return this;
+  }
+
+  /**
+    * Whether to store option values as properties on command object,
+    * or store separately (specify false). In both cases the option values can be accessed using .opts().
+    *
+    * @param {boolean} [storeAsProperties=true]
+    * @return {Command} `this` command for chaining
+    */
+
+  storeOptionsAsProperties(storeAsProperties = true) {
+    this._storeOptionsAsProperties = !!storeAsProperties;
+    if (this.options.length) {
+      throw new Error('call .storeOptionsAsProperties() before adding options');
+    }
+    return this;
+  }
+
+  /**
+   * Retrieve option value.
+   *
+   * @param {string} key
+   * @return {Object} value
+   */
+
+  getOptionValue(key) {
+    if (this._storeOptionsAsProperties) {
+      return this[key];
+    }
+    return this._optionValues[key];
+  }
+
+  /**
+   * Store option value.
+   *
+   * @param {string} key
+   * @param {Object} value
+   * @return {Command} `this` command for chaining
+   */
+
+  setOptionValue(key, value) {
+    if (this._storeOptionsAsProperties) {
+      this[key] = value;
+    } else {
+      this._optionValues[key] = value;
+    }
+    return this;
+  }
+
+  /**
+   * Store option value and where the value came from.
+    *
+    * @param {string} key
+    * @param {Object} value
+    * @param {string} source - expected values are default/config/env/cli
+    * @return {Command} `this` command for chaining
+    */
+
+  setOptionValueWithSource(key, value, source) {
+    this.setOptionValue(key, value);
+    this._optionValueSources[key] = source;
+    return this;
+  }
+
+  /**
+    * Get source of option value.
+    * Expected values are default | config | env | cli
+    *
+    * @param {string} key
+    * @return {string}
+    */
+
+  getOptionValueSource(key) {
+    return this._optionValueSources[key];
+  }
+
+  /**
+   * Get user arguments from implied or explicit arguments.
+   * Side-effects: set _scriptPath if args included script. Used for default program name, and subcommand searches.
+   *
+   * @api private
+   */
+
+  _prepareUserArgs(argv, parseOptions) {
+    if (argv !== undefined && !Array.isArray(argv)) {
+      throw new Error('first parameter to parse must be array or undefined');
+    }
+    parseOptions = parseOptions || {};
+
+    // Default to using process.argv
+    if (argv === undefined) {
+      argv = process.argv;
+      // @ts-ignore: unknown property
+      if (process.versions && process.versions.electron) {
+        parseOptions.from = 'electron';
+      }
+    }
+    this.rawArgs = argv.slice();
+
+    // make it a little easier for callers by supporting various argv conventions
+    let userArgs;
+    switch (parseOptions.from) {
+      case undefined:
+      case 'node':
+        this._scriptPath = argv[1];
+        userArgs = argv.slice(2);
+        break;
+      case 'electron':
+        // @ts-ignore: unknown property
+        if (process.defaultApp) {
+          this._scriptPath = argv[1];
+          userArgs = argv.slice(2);
+        } else {
+          userArgs = argv.slice(1);
+        }
+        break;
+      case 'user':
+        userArgs = argv.slice(0);
+        break;
+      default:
+        throw new Error(`unexpected parse option { from: '${parseOptions.from}' }`);
+    }
+
+    // Find default name for program from arguments.
+    if (!this._name && this._scriptPath) this.nameFromFilename(this._scriptPath);
+    this._name = this._name || 'program';
+
+    return userArgs;
+  }
+
+  /**
+   * Parse `argv`, setting options and invoking commands when defined.
+   *
+   * The default expectation is that the arguments are from node and have the application as argv[0]
+   * and the script being run in argv[1], with user parameters after that.
+   *
+   * @example
+   * program.parse(process.argv);
+   * program.parse(); // implicitly use process.argv and auto-detect node vs electron conventions
+   * program.parse(my-args, { from: 'user' }); // just user supplied arguments, nothing special about argv[0]
+   *
+   * @param {string[]} [argv] - optional, defaults to process.argv
+   * @param {Object} [parseOptions] - optionally specify style of options with from: node/user/electron
+   * @param {string} [parseOptions.from] - where the args are from: 'node', 'user', 'electron'
+   * @return {Command} `this` command for chaining
+   */
+
+  parse(argv, parseOptions) {
+    const userArgs = this._prepareUserArgs(argv, parseOptions);
+    this._parseCommand([], userArgs);
+
+    return this;
+  }
+
+  /**
+   * Parse `argv`, setting options and invoking commands when defined.
+   *
+   * Use parseAsync instead of parse if any of your action handlers are async. Returns a Promise.
+   *
+   * The default expectation is that the arguments are from node and have the application as argv[0]
+   * and the script being run in argv[1], with user parameters after that.
+   *
+   * @example
+   * await program.parseAsync(process.argv);
+   * await program.parseAsync(); // implicitly use process.argv and auto-detect node vs electron conventions
+   * await program.parseAsync(my-args, { from: 'user' }); // just user supplied arguments, nothing special about argv[0]
+   *
+   * @param {string[]} [argv]
+   * @param {Object} [parseOptions]
+   * @param {string} parseOptions.from - where the args are from: 'node', 'user', 'electron'
+   * @return {Promise}
+   */
+
+  async parseAsync(argv, parseOptions) {
+    const userArgs = this._prepareUserArgs(argv, parseOptions);
+    await this._parseCommand([], userArgs);
+
+    return this;
+  }
+
+  /**
+   * Execute a sub-command executable.
+   *
+   * @api private
+   */
+
+  _executeSubCommand(subcommand, args) {
+    args = args.slice();
+    let launchWithNode = false; // Use node for source targets so do not need to get permissions correct, and on Windows.
+    const sourceExt = ['.js', '.ts', '.tsx', '.mjs', '.cjs'];
+
+    function findFile(baseDir, baseName) {
+      // Look for specified file
+      const localBin = path.resolve(baseDir, baseName);
+      if (fs.existsSync(localBin)) return localBin;
+
+      // Stop looking if candidate already has an expected extension.
+      if (sourceExt.includes(path.extname(baseName))) return undefined;
+
+      // Try all the extensions.
+      const foundExt = sourceExt.find(ext => fs.existsSync(`${localBin}${ext}`));
+      if (foundExt) return `${localBin}${foundExt}`;
+
+      return undefined;
+    }
+
+    // Not checking for help first. Unlikely to have mandatory and executable, and can't robustly test for help flags in external command.
+    this._checkForMissingMandatoryOptions();
+    this._checkForConflictingOptions();
+
+    // executableFile and executableDir might be full path, or just a name
+    let executableFile = subcommand._executableFile || `${this._name}-${subcommand._name}`;
+    let executableDir = this._executableDir || '';
+    if (this._scriptPath) {
+      let resolvedScriptPath; // resolve possible symlink for installed npm binary
+      try {
+        resolvedScriptPath = fs.realpathSync(this._scriptPath);
+      } catch (err) {
+        resolvedScriptPath = this._scriptPath;
+      }
+      executableDir = path.resolve(path.dirname(resolvedScriptPath), executableDir);
+    }
+
+    // Look for a local file in preference to a command in PATH.
+    if (executableDir) {
+      let localFile = findFile(executableDir, executableFile);
+
+      // Legacy search using prefix of script name instead of command name
+      if (!localFile && !subcommand._executableFile && this._scriptPath) {
+        const legacyName = path.basename(this._scriptPath, path.extname(this._scriptPath));
+        if (legacyName !== this._name) {
+          localFile = findFile(executableDir, `${legacyName}-${subcommand._name}`);
+        }
+      }
+      executableFile = localFile || executableFile;
+    }
+
+    launchWithNode = sourceExt.includes(path.extname(executableFile));
+
+    let proc;
+    if (process.platform !== 'win32') {
+      if (launchWithNode) {
+        args.unshift(executableFile);
+        // add executable arguments to spawn
+        args = incrementNodeInspectorPort(process.execArgv).concat(args);
+
+        proc = childProcess.spawn(process.argv[0], args, { stdio: 'inherit' });
+      } else {
+        proc = childProcess.spawn(executableFile, args, { stdio: 'inherit' });
+      }
+    } else {
+      args.unshift(executableFile);
+      // add executable arguments to spawn
+      args = incrementNodeInspectorPort(process.execArgv).concat(args);
+      proc = childProcess.spawn(process.execPath, args, { stdio: 'inherit' });
+    }
+
+    if (!proc.killed) { // testing mainly to avoid leak warnings during unit tests with mocked spawn
+      const signals = ['SIGUSR1', 'SIGUSR2', 'SIGTERM', 'SIGINT', 'SIGHUP'];
+      signals.forEach((signal) => {
+        // @ts-ignore
+        process.on(signal, () => {
+          if (proc.killed === false && proc.exitCode === null) {
+            proc.kill(signal);
+          }
+        });
+      });
+    }
+
+    // By default terminate process when spawned process terminates.
+    // Suppressing the exit if exitCallback defined is a bit messy and of limited use, but does allow process to stay running!
+    const exitCallback = this._exitCallback;
+    if (!exitCallback) {
+      proc.on('close', process.exit.bind(process));
+    } else {
+      proc.on('close', () => {
+        exitCallback(new CommanderError(process.exitCode || 0, 'commander.executeSubCommandAsync', '(close)'));
+      });
+    }
+    proc.on('error', (err) => {
+      // @ts-ignore
+      if (err.code === 'ENOENT') {
+        const executableDirMessage = executableDir
+          ? `searched for local subcommand relative to directory '${executableDir}'`
+          : 'no directory for search for local subcommand, use .executableDir() to supply a custom directory';
+        const executableMissing = `'${executableFile}' does not exist
+ - if '${subcommand._name}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
+ - if the default executable name is not suitable, use the executableFile option to supply a custom name or path
+ - ${executableDirMessage}`;
+        throw new Error(executableMissing);
+      // @ts-ignore
+      } else if (err.code === 'EACCES') {
+        throw new Error(`'${executableFile}' not executable`);
+      }
+      if (!exitCallback) {
+        process.exit(1);
+      } else {
+        const wrappedError = new CommanderError(1, 'commander.executeSubCommandAsync', '(error)');
+        wrappedError.nestedError = err;
+        exitCallback(wrappedError);
+      }
+    });
+
+    // Store the reference to the child process
+    this.runningCommand = proc;
+  }
+
+  /**
+   * @api private
+   */
+
+  _dispatchSubcommand(commandName, operands, unknown) {
+    const subCommand = this._findCommand(commandName);
+    if (!subCommand) this.help({ error: true });
+
+    if (subCommand._executableHandler) {
+      this._executeSubCommand(subCommand, operands.concat(unknown));
+    } else {
+      return subCommand._parseCommand(operands, unknown);
+    }
+  }
+
+  /**
+   * Check this.args against expected this._args.
+   *
+   * @api private
+   */
+
+  _checkNumberOfArguments() {
+    // too few
+    this._args.forEach((arg, i) => {
+      if (arg.required && this.args[i] == null) {
+        this.missingArgument(arg.name());
+      }
+    });
+    // too many
+    if (this._args.length > 0 && this._args[this._args.length - 1].variadic) {
+      return;
+    }
+    if (this.args.length > this._args.length) {
+      this._excessArguments(this.args);
+    }
+  }
+
+  /**
+   * Process this.args using this._args and save as this.processedArgs!
+   *
+   * @api private
+   */
+
+  _processArguments() {
+    const myParseArg = (argument, value, previous) => {
+      // Extra processing for nice error message on parsing failure.
+      let parsedValue = value;
+      if (value !== null && argument.parseArg) {
+        try {
+          parsedValue = argument.parseArg(value, previous);
+        } catch (err) {
+          if (err.code === 'commander.invalidArgument') {
+            const message = `error: command-argument value '${value}' is invalid for argument '${argument.name()}'. ${err.message}`;
+            this.error(message, { exitCode: err.exitCode, code: err.code });
+          }
+          throw err;
+        }
+      }
+      return parsedValue;
+    };
+
+    this._checkNumberOfArguments();
+
+    const processedArgs = [];
+    this._args.forEach((declaredArg, index) => {
+      let value = declaredArg.defaultValue;
+      if (declaredArg.variadic) {
+        // Collect together remaining arguments for passing together as an array.
+        if (index < this.args.length) {
+          value = this.args.slice(index);
+          if (declaredArg.parseArg) {
+            value = value.reduce((processed, v) => {
+              return myParseArg(declaredArg, v, processed);
+            }, declaredArg.defaultValue);
+          }
+        } else if (value === undefined) {
+          value = [];
+        }
+      } else if (index < this.args.length) {
+        value = this.args[index];
+        if (declaredArg.parseArg) {
+          value = myParseArg(declaredArg, value, declaredArg.defaultValue);
+        }
+      }
+      processedArgs[index] = value;
+    });
+    this.processedArgs = processedArgs;
+  }
+
+  /**
+   * Once we have a promise we chain, but call synchronously until then.
+   *
+   * @param {Promise|undefined} promise
+   * @param {Function} fn
+   * @return {Promise|undefined}
+   * @api private
+   */
+
+  _chainOrCall(promise, fn) {
+    // thenable
+    if (promise && promise.then && typeof promise.then === 'function') {
+      // already have a promise, chain callback
+      return promise.then(() => fn());
+    }
+    // callback might return a promise
+    return fn();
+  }
+
+  /**
+   *
+   * @param {Promise|undefined} promise
+   * @param {string} event
+   * @return {Promise|undefined}
+   * @api private
+   */
+
+  _chainOrCallHooks(promise, event) {
+    let result = promise;
+    const hooks = [];
+    getCommandAndParents(this)
+      .reverse()
+      .filter(cmd => cmd._lifeCycleHooks[event] !== undefined)
+      .forEach(hookedCommand => {
+        hookedCommand._lifeCycleHooks[event].forEach((callback) => {
+          hooks.push({ hookedCommand, callback });
+        });
+      });
+    if (event === 'postAction') {
+      hooks.reverse();
+    }
+
+    hooks.forEach((hookDetail) => {
+      result = this._chainOrCall(result, () => {
+        return hookDetail.callback(hookDetail.hookedCommand, this);
+      });
+    });
+    return result;
+  }
+
+  /**
+   * Process arguments in context of this command.
+   * Returns action result, in case it is a promise.
+   *
+   * @api private
+   */
+
+  _parseCommand(operands, unknown) {
+    const parsed = this.parseOptions(unknown);
+    this._parseOptionsEnv(); // after cli, so parseArg not called on both cli and env
+    operands = operands.concat(parsed.operands);
+    unknown = parsed.unknown;
+    this.args = operands.concat(unknown);
+
+    if (operands && this._findCommand(operands[0])) {
+      return this._dispatchSubcommand(operands[0], operands.slice(1), unknown);
+    }
+    if (this._hasImplicitHelpCommand() && operands[0] === this._helpCommandName) {
+      if (operands.length === 1) {
+        this.help();
+      }
+      return this._dispatchSubcommand(operands[1], [], [this._helpLongFlag]);
+    }
+    if (this._defaultCommandName) {
+      outputHelpIfRequested(this, unknown); // Run the help for default command from parent rather than passing to default command
+      return this._dispatchSubcommand(this._defaultCommandName, operands, unknown);
+    }
+    if (this.commands.length && this.args.length === 0 && !this._actionHandler && !this._defaultCommandName) {
+      // probably missing subcommand and no handler, user needs help (and exit)
+      this.help({ error: true });
+    }
+
+    outputHelpIfRequested(this, parsed.unknown);
+    this._checkForMissingMandatoryOptions();
+    this._checkForConflictingOptions();
+
+    // We do not always call this check to avoid masking a "better" error, like unknown command.
+    const checkForUnknownOptions = () => {
+      if (parsed.unknown.length > 0) {
+        this.unknownOption(parsed.unknown[0]);
+      }
+    };
+
+    const commandEvent = `command:${this.name()}`;
+    if (this._actionHandler) {
+      checkForUnknownOptions();
+      this._processArguments();
+
+      let actionResult;
+      actionResult = this._chainOrCallHooks(actionResult, 'preAction');
+      actionResult = this._chainOrCall(actionResult, () => this._actionHandler(this.processedArgs));
+      if (this.parent) {
+        actionResult = this._chainOrCall(actionResult, () => {
+          this.parent.emit(commandEvent, operands, unknown); // legacy
+        });
+      }
+      actionResult = this._chainOrCallHooks(actionResult, 'postAction');
+      return actionResult;
+    }
+    if (this.parent && this.parent.listenerCount(commandEvent)) {
+      checkForUnknownOptions();
+      this._processArguments();
+      this.parent.emit(commandEvent, operands, unknown); // legacy
+    } else if (operands.length) {
+      if (this._findCommand('*')) { // legacy default command
+        return this._dispatchSubcommand('*', operands, unknown);
+      }
+      if (this.listenerCount('command:*')) {
+        // skip option check, emit event for possible misspelling suggestion
+        this.emit('command:*', operands, unknown);
+      } else if (this.commands.length) {
+        this.unknownCommand();
+      } else {
+        checkForUnknownOptions();
+        this._processArguments();
+      }
+    } else if (this.commands.length) {
+      checkForUnknownOptions();
+      // This command has subcommands and nothing hooked up at this level, so display help (and exit).
+      this.help({ error: true });
+    } else {
+      checkForUnknownOptions();
+      this._processArguments();
+      // fall through for caller to handle after calling .parse()
+    }
+  }
+
+  /**
+   * Find matching command.
+   *
+   * @api private
+   */
+  _findCommand(name) {
+    if (!name) return undefined;
+    return this.commands.find(cmd => cmd._name === name || cmd._aliases.includes(name));
+  }
+
+  /**
+   * Return an option matching `arg` if any.
+   *
+   * @param {string} arg
+   * @return {Option}
+   * @api private
+   */
+
+  _findOption(arg) {
+    return this.options.find(option => option.is(arg));
+  }
+
+  /**
+   * Display an error message if a mandatory option does not have a value.
+   * Called after checking for help flags in leaf subcommand.
+   *
+   * @api private
+   */
+
+  _checkForMissingMandatoryOptions() {
+    // Walk up hierarchy so can call in subcommand after checking for displaying help.
+    for (let cmd = this; cmd; cmd = cmd.parent) {
+      cmd.options.forEach((anOption) => {
+        if (anOption.mandatory && (cmd.getOptionValue(anOption.attributeName()) === undefined)) {
+          cmd.missingMandatoryOptionValue(anOption);
+        }
+      });
+    }
+  }
+
+  /**
+   * Display an error message if conflicting options are used together in this.
+   *
+   * @api private
+   */
+  _checkForConflictingLocalOptions() {
+    const definedNonDefaultOptions = this.options.filter(
+      (option) => {
+        const optionKey = option.attributeName();
+        if (this.getOptionValue(optionKey) === undefined) {
+          return false;
+        }
+        return this.getOptionValueSource(optionKey) !== 'default';
+      }
+    );
+
+    const optionsWithConflicting = definedNonDefaultOptions.filter(
+      (option) => option.conflictsWith.length > 0
+    );
+
+    optionsWithConflicting.forEach((option) => {
+      const conflictingAndDefined = definedNonDefaultOptions.find((defined) =>
+        option.conflictsWith.includes(defined.attributeName())
+      );
+      if (conflictingAndDefined) {
+        this._conflictingOption(option, conflictingAndDefined);
+      }
+    });
+  }
+
+  /**
+   * Display an error message if conflicting options are used together.
+   * Called after checking for help flags in leaf subcommand.
+   *
+   * @api private
+   */
+  _checkForConflictingOptions() {
+    // Walk up hierarchy so can call in subcommand after checking for displaying help.
+    for (let cmd = this; cmd; cmd = cmd.parent) {
+      cmd._checkForConflictingLocalOptions();
+    }
+  }
+
+  /**
+   * Parse options from `argv` removing known options,
+   * and return argv split into operands and unknown arguments.
+   *
+   * Examples:
+   *
+   *     argv => operands, unknown
+   *     --known kkk op => [op], []
+   *     op --known kkk => [op], []
+   *     sub --unknown uuu op => [sub], [--unknown uuu op]
+   *     sub -- --unknown uuu op => [sub --unknown uuu op], []
+   *
+   * @param {String[]} argv
+   * @return {{operands: String[], unknown: String[]}}
+   */
+
+  parseOptions(argv) {
+    const operands = []; // operands, not options or values
+    const unknown = []; // first unknown option and remaining unknown args
+    let dest = operands;
+    const args = argv.slice();
+
+    function maybeOption(arg) {
+      return arg.length > 1 && arg[0] === '-';
+    }
+
+    // parse options
+    let activeVariadicOption = null;
+    while (args.length) {
+      const arg = args.shift();
+
+      // literal
+      if (arg === '--') {
+        if (dest === unknown) dest.push(arg);
+        dest.push(...args);
+        break;
+      }
+
+      if (activeVariadicOption && !maybeOption(arg)) {
+        this.emit(`option:${activeVariadicOption.name()}`, arg);
+        continue;
+      }
+      activeVariadicOption = null;
+
+      if (maybeOption(arg)) {
+        const option = this._findOption(arg);
+        // recognised option, call listener to assign value with possible custom processing
+        if (option) {
+          if (option.required) {
+            const value = args.shift();
+            if (value === undefined) this.optionMissingArgument(option);
+            this.emit(`option:${option.name()}`, value);
+          } else if (option.optional) {
+            let value = null;
+            // historical behaviour is optional value is following arg unless an option
+            if (args.length > 0 && !maybeOption(args[0])) {
+              value = args.shift();
+            }
+            this.emit(`option:${option.name()}`, value);
+          } else { // boolean flag
+            this.emit(`option:${option.name()}`);
+          }
+          activeVariadicOption = option.variadic ? option : null;
+          continue;
+        }
+      }
+
+      // Look for combo options following single dash, eat first one if known.
+      if (arg.length > 2 && arg[0] === '-' && arg[1] !== '-') {
+        const option = this._findOption(`-${arg[1]}`);
+        if (option) {
+          if (option.required || (option.optional && this._combineFlagAndOptionalValue)) {
+            // option with value following in same argument
+            this.emit(`option:${option.name()}`, arg.slice(2));
+          } else {
+            // boolean option, emit and put back remainder of arg for further processing
+            this.emit(`option:${option.name()}`);
+            args.unshift(`-${arg.slice(2)}`);
+          }
+          continue;
+        }
+      }
+
+      // Look for known long flag with value, like --foo=bar
+      if (/^--[^=]+=/.test(arg)) {
+        const index = arg.indexOf('=');
+        const option = this._findOption(arg.slice(0, index));
+        if (option && (option.required || option.optional)) {
+          this.emit(`option:${option.name()}`, arg.slice(index + 1));
+          continue;
+        }
+      }
+
+      // Not a recognised option by this command.
+      // Might be a command-argument, or subcommand option, or unknown option, or help command or option.
+
+      // An unknown option means further arguments also classified as unknown so can be reprocessed by subcommands.
+      if (maybeOption(arg)) {
+        dest = unknown;
+      }
+
+      // If using positionalOptions, stop processing our options at subcommand.
+      if ((this._enablePositionalOptions || this._passThroughOptions) && operands.length === 0 && unknown.length === 0) {
+        if (this._findCommand(arg)) {
+          operands.push(arg);
+          if (args.length > 0) unknown.push(...args);
+          break;
+        } else if (arg === this._helpCommandName && this._hasImplicitHelpCommand()) {
+          operands.push(arg);
+          if (args.length > 0) operands.push(...args);
+          break;
+        } else if (this._defaultCommandName) {
+          unknown.push(arg);
+          if (args.length > 0) unknown.push(...args);
+          break;
+        }
+      }
+
+      // If using passThroughOptions, stop processing options at first command-argument.
+      if (this._passThroughOptions) {
+        dest.push(arg);
+        if (args.length > 0) dest.push(...args);
+        break;
+      }
+
+      // add arg
+      dest.push(arg);
+    }
+
+    return { operands, unknown };
+  }
+
+  /**
+   * Return an object containing local option values as key-value pairs.
+   *
+   * @return {Object}
+   */
+  opts() {
+    if (this._storeOptionsAsProperties) {
+      // Preserve original behaviour so backwards compatible when still using properties
+      const result = {};
+      const len = this.options.length;
+
+      for (let i = 0; i < len; i++) {
+        const key = this.options[i].attributeName();
+        result[key] = key === this._versionOptionName ? this._version : this[key];
+      }
+      return result;
+    }
+
+    return this._optionValues;
+  }
+
+  /**
+   * Return an object containing merged local and global option values as key-value pairs.
+   *
+   * @return {Object}
+   */
+  optsWithGlobals() {
+    // globals overwrite locals
+    return getCommandAndParents(this).reduce(
+      (combinedOptions, cmd) => Object.assign(combinedOptions, cmd.opts()),
+      {}
+    );
+  }
+
+  /**
+   * Display error message and exit (or call exitOverride).
+   *
+   * @param {string} message
+   * @param {Object} [errorOptions]
+   * @param {string} [errorOptions.code] - an id string representing the error
+   * @param {number} [errorOptions.exitCode] - used with process.exit
+   */
+  error(message, errorOptions) {
+    // output handling
+    this._outputConfiguration.outputError(`${message}\n`, this._outputConfiguration.writeErr);
+    if (typeof this._showHelpAfterError === 'string') {
+      this._outputConfiguration.writeErr(`${this._showHelpAfterError}\n`);
+    } else if (this._showHelpAfterError) {
+      this._outputConfiguration.writeErr('\n');
+      this.outputHelp({ error: true });
+    }
+
+    // exit handling
+    const config = errorOptions || {};
+    const exitCode = config.exitCode || 1;
+    const code = config.code || 'commander.error';
+    this._exit(exitCode, code, message);
+  }
+
+  /**
+   * Apply any option related environment variables, if option does
+   * not have a value from cli or client code.
+   *
+   * @api private
+   */
+  _parseOptionsEnv() {
+    this.options.forEach((option) => {
+      if (option.envVar && option.envVar in process.env) {
+        const optionKey = option.attributeName();
+        // Priority check. Do not overwrite cli or options from unknown source (client-code).
+        if (this.getOptionValue(optionKey) === undefined || ['default', 'config', 'env'].includes(this.getOptionValueSource(optionKey))) {
+          if (option.required || option.optional) { // option can take a value
+            // keep very simple, optional always takes value
+            this.emit(`optionEnv:${option.name()}`, process.env[option.envVar]);
+          } else { // boolean
+            // keep very simple, only care that envVar defined and not the value
+            this.emit(`optionEnv:${option.name()}`);
+          }
+        }
+      }
+    });
+  }
+
+  /**
+   * Argument `name` is missing.
+   *
+   * @param {string} name
+   * @api private
+   */
+
+  missingArgument(name) {
+    const message = `error: missing required argument '${name}'`;
+    this.error(message, { code: 'commander.missingArgument' });
+  }
+
+  /**
+   * `Option` is missing an argument.
+   *
+   * @param {Option} option
+   * @api private
+   */
+
+  optionMissingArgument(option) {
+    const message = `error: option '${option.flags}' argument missing`;
+    this.error(message, { code: 'commander.optionMissingArgument' });
+  }
+
+  /**
+   * `Option` does not have a value, and is a mandatory option.
+   *
+   * @param {Option} option
+   * @api private
+   */
+
+  missingMandatoryOptionValue(option) {
+    const message = `error: required option '${option.flags}' not specified`;
+    this.error(message, { code: 'commander.missingMandatoryOptionValue' });
+  }
+
+  /**
+   * `Option` conflicts with another option.
+   *
+   * @param {Option} option
+   * @param {Option} conflictingOption
+   * @api private
+   */
+  _conflictingOption(option, conflictingOption) {
+    // The calling code does not know whether a negated option is the source of the
+    // value, so do some work to take an educated guess.
+    const findBestOptionFromValue = (option) => {
+      const optionKey = option.attributeName();
+      const optionValue = this.getOptionValue(optionKey);
+      const negativeOption = this.options.find(target => target.negate && optionKey === target.attributeName());
+      const positiveOption = this.options.find(target => !target.negate && optionKey === target.attributeName());
+      if (negativeOption && (
+        (negativeOption.presetArg === undefined && optionValue === false) ||
+        (negativeOption.presetArg !== undefined && optionValue === negativeOption.presetArg)
+      )) {
+        return negativeOption;
+      }
+      return positiveOption || option;
+    };
+
+    const getErrorMessage = (option) => {
+      const bestOption = findBestOptionFromValue(option);
+      const optionKey = bestOption.attributeName();
+      const source = this.getOptionValueSource(optionKey);
+      if (source === 'env') {
+        return `environment variable '${bestOption.envVar}'`;
+      }
+      return `option '${bestOption.flags}'`;
+    };
+
+    const message = `error: ${getErrorMessage(option)} cannot be used with ${getErrorMessage(conflictingOption)}`;
+    this.error(message, { code: 'commander.conflictingOption' });
+  }
+
+  /**
+   * Unknown option `flag`.
+   *
+   * @param {string} flag
+   * @api private
+   */
+
+  unknownOption(flag) {
+    if (this._allowUnknownOption) return;
+    let suggestion = '';
+
+    if (flag.startsWith('--') && this._showSuggestionAfterError) {
+      // Looping to pick up the global options too
+      let candidateFlags = [];
+      let command = this;
+      do {
+        const moreFlags = command.createHelp().visibleOptions(command)
+          .filter(option => option.long)
+          .map(option => option.long);
+        candidateFlags = candidateFlags.concat(moreFlags);
+        command = command.parent;
+      } while (command && !command._enablePositionalOptions);
+      suggestion = suggestSimilar(flag, candidateFlags);
+    }
+
+    const message = `error: unknown option '${flag}'${suggestion}`;
+    this.error(message, { code: 'commander.unknownOption' });
+  }
+
+  /**
+   * Excess arguments, more than expected.
+   *
+   * @param {string[]} receivedArgs
+   * @api private
+   */
+
+  _excessArguments(receivedArgs) {
+    if (this._allowExcessArguments) return;
+
+    const expected = this._args.length;
+    const s = (expected === 1) ? '' : 's';
+    const forSubcommand = this.parent ? ` for '${this.name()}'` : '';
+    const message = `error: too many arguments${forSubcommand}. Expected ${expected} argument${s} but got ${receivedArgs.length}.`;
+    this.error(message, { code: 'commander.excessArguments' });
+  }
+
+  /**
+   * Unknown command.
+   *
+   * @api private
+   */
+
+  unknownCommand() {
+    const unknownName = this.args[0];
+    let suggestion = '';
+
+    if (this._showSuggestionAfterError) {
+      const candidateNames = [];
+      this.createHelp().visibleCommands(this).forEach((command) => {
+        candidateNames.push(command.name());
+        // just visible alias
+        if (command.alias()) candidateNames.push(command.alias());
+      });
+      suggestion = suggestSimilar(unknownName, candidateNames);
+    }
+
+    const message = `error: unknown command '${unknownName}'${suggestion}`;
+    this.error(message, { code: 'commander.unknownCommand' });
+  }
+
+  /**
+   * Set the program version to `str`.
+   *
+   * This method auto-registers the "-V, --version" flag
+   * which will print the version number when passed.
+   *
+   * You can optionally supply the  flags and description to override the defaults.
+   *
+   * @param {string} str
+   * @param {string} [flags]
+   * @param {string} [description]
+   * @return {this | string} `this` command for chaining, or version string if no arguments
+   */
+
+  version(str, flags, description) {
+    if (str === undefined) return this._version;
+    this._version = str;
+    flags = flags || '-V, --version';
+    description = description || 'output the version number';
+    const versionOption = this.createOption(flags, description);
+    this._versionOptionName = versionOption.attributeName();
+    this.options.push(versionOption);
+    this.on('option:' + versionOption.name(), () => {
+      this._outputConfiguration.writeOut(`${str}\n`);
+      this._exit(0, 'commander.version', str);
+    });
+    return this;
+  }
+
+  /**
+   * Set the description to `str`.
+   *
+   * @param {string} [str]
+   * @param {Object} [argsDescription]
+   * @return {string|Command}
+   */
+  description(str, argsDescription) {
+    if (str === undefined && argsDescription === undefined) return this._description;
+    this._description = str;
+    if (argsDescription) {
+      this._argsDescription = argsDescription;
+    }
+    return this;
+  }
+
+  /**
+   * Set an alias for the command.
+   *
+   * You may call more than once to add multiple aliases. Only the first alias is shown in the auto-generated help.
+   *
+   * @param {string} [alias]
+   * @return {string|Command}
+   */
+
+  alias(alias) {
+    if (alias === undefined) return this._aliases[0]; // just return first, for backwards compatibility
+
+    /** @type {Command} */
+    let command = this;
+    if (this.commands.length !== 0 && this.commands[this.commands.length - 1]._executableHandler) {
+      // assume adding alias for last added executable subcommand, rather than this
+      command = this.commands[this.commands.length - 1];
+    }
+
+    if (alias === command._name) throw new Error('Command alias can\'t be the same as its name');
+
+    command._aliases.push(alias);
+    return this;
+  }
+
+  /**
+   * Set aliases for the command.
+   *
+   * Only the first alias is shown in the auto-generated help.
+   *
+   * @param {string[]} [aliases]
+   * @return {string[]|Command}
+   */
+
+  aliases(aliases) {
+    // Getter for the array of aliases is the main reason for having aliases() in addition to alias().
+    if (aliases === undefined) return this._aliases;
+
+    aliases.forEach((alias) => this.alias(alias));
+    return this;
+  }
+
+  /**
+   * Set / get the command usage `str`.
+   *
+   * @param {string} [str]
+   * @return {String|Command}
+   */
+
+  usage(str) {
+    if (str === undefined) {
+      if (this._usage) return this._usage;
+
+      const args = this._args.map((arg) => {
+        return humanReadableArgName(arg);
+      });
+      return [].concat(
+        (this.options.length || this._hasHelpOption ? '[options]' : []),
+        (this.commands.length ? '[command]' : []),
+        (this._args.length ? args : [])
+      ).join(' ');
+    }
+
+    this._usage = str;
+    return this;
+  }
+
+  /**
+   * Get or set the name of the command.
+   *
+   * @param {string} [str]
+   * @return {string|Command}
+   */
+
+  name(str) {
+    if (str === undefined) return this._name;
+    this._name = str;
+    return this;
+  }
+
+  /**
+   * Set the name of the command from script filename, such as process.argv[1],
+   * or require.main.filename, or __filename.
+   *
+   * (Used internally and public although not documented in README.)
+   *
+   * @example
+   * program.nameFromFilename(require.main.filename);
+   *
+   * @param {string} filename
+   * @return {Command}
+   */
+
+  nameFromFilename(filename) {
+    this._name = path.basename(filename, path.extname(filename));
+
+    return this;
+  }
+
+  /**
+   * Get or set the directory for searching for executable subcommands of this command.
+   *
+   * @example
+   * program.executableDir(__dirname);
+   * // or
+   * program.executableDir('subcommands');
+   *
+   * @param {string} [path]
+   * @return {string|Command}
+   */
+
+  executableDir(path) {
+    if (path === undefined) return this._executableDir;
+    this._executableDir = path;
+    return this;
+  }
+
+  /**
+   * Return program help documentation.
+   *
+   * @param {{ error: boolean }} [contextOptions] - pass {error:true} to wrap for stderr instead of stdout
+   * @return {string}
+   */
+
+  helpInformation(contextOptions) {
+    const helper = this.createHelp();
+    if (helper.helpWidth === undefined) {
+      helper.helpWidth = (contextOptions && contextOptions.error) ? this._outputConfiguration.getErrHelpWidth() : this._outputConfiguration.getOutHelpWidth();
+    }
+    return helper.formatHelp(this, helper);
+  }
+
+  /**
+   * @api private
+   */
+
+  _getHelpContext(contextOptions) {
+    contextOptions = contextOptions || {};
+    const context = { error: !!contextOptions.error };
+    let write;
+    if (context.error) {
+      write = (arg) => this._outputConfiguration.writeErr(arg);
+    } else {
+      write = (arg) => this._outputConfiguration.writeOut(arg);
+    }
+    context.write = contextOptions.write || write;
+    context.command = this;
+    return context;
+  }
+
+  /**
+   * Output help information for this command.
+   *
+   * Outputs built-in help, and custom text added using `.addHelpText()`.
+   *
+   * @param {{ error: boolean } | Function} [contextOptions] - pass {error:true} to write to stderr instead of stdout
+   */
+
+  outputHelp(contextOptions) {
+    let deprecatedCallback;
+    if (typeof contextOptions === 'function') {
+      deprecatedCallback = contextOptions;
+      contextOptions = undefined;
+    }
+    const context = this._getHelpContext(contextOptions);
+
+    getCommandAndParents(this).reverse().forEach(command => command.emit('beforeAllHelp', context));
+    this.emit('beforeHelp', context);
+
+    let helpInformation = this.helpInformation(context);
+    if (deprecatedCallback) {
+      helpInformation = deprecatedCallback(helpInformation);
+      if (typeof helpInformation !== 'string' && !Buffer.isBuffer(helpInformation)) {
+        throw new Error('outputHelp callback must return a string or a Buffer');
+      }
+    }
+    context.write(helpInformation);
+
+    this.emit(this._helpLongFlag); // deprecated
+    this.emit('afterHelp', context);
+    getCommandAndParents(this).forEach(command => command.emit('afterAllHelp', context));
+  }
+
+  /**
+   * You can pass in flags and a description to override the help
+   * flags and help description for your command. Pass in false to
+   * disable the built-in help option.
+   *
+   * @param {string | boolean} [flags]
+   * @param {string} [description]
+   * @return {Command} `this` command for chaining
+   */
+
+  helpOption(flags, description) {
+    if (typeof flags === 'boolean') {
+      this._hasHelpOption = flags;
+      return this;
+    }
+    this._helpFlags = flags || this._helpFlags;
+    this._helpDescription = description || this._helpDescription;
+
+    const helpFlags = splitOptionFlags(this._helpFlags);
+    this._helpShortFlag = helpFlags.shortFlag;
+    this._helpLongFlag = helpFlags.longFlag;
+
+    return this;
+  }
+
+  /**
+   * Output help information and exit.
+   *
+   * Outputs built-in help, and custom text added using `.addHelpText()`.
+   *
+   * @param {{ error: boolean }} [contextOptions] - pass {error:true} to write to stderr instead of stdout
+   */
+
+  help(contextOptions) {
+    this.outputHelp(contextOptions);
+    let exitCode = process.exitCode || 0;
+    if (exitCode === 0 && contextOptions && typeof contextOptions !== 'function' && contextOptions.error) {
+      exitCode = 1;
+    }
+    // message: do not have all displayed text available so only passing placeholder.
+    this._exit(exitCode, 'commander.help', '(outputHelp)');
+  }
+
+  /**
+   * Add additional text to be displayed with the built-in help.
+   *
+   * Position is 'before' or 'after' to affect just this command,
+   * and 'beforeAll' or 'afterAll' to affect this command and all its subcommands.
+   *
+   * @param {string} position - before or after built-in help
+   * @param {string | Function} text - string to add, or a function returning a string
+   * @return {Command} `this` command for chaining
+   */
+  addHelpText(position, text) {
+    const allowedValues = ['beforeAll', 'before', 'after', 'afterAll'];
+    if (!allowedValues.includes(position)) {
+      throw new Error(`Unexpected value for position to addHelpText.
+Expecting one of '${allowedValues.join("', '")}'`);
+    }
+    const helpEvent = `${position}Help`;
+    this.on(helpEvent, (context) => {
+      let helpStr;
+      if (typeof text === 'function') {
+        helpStr = text({ error: context.error, command: context.command });
+      } else {
+        helpStr = text;
+      }
+      // Ignore falsy value when nothing to output.
+      if (helpStr) {
+        context.write(`${helpStr}\n`);
+      }
+    });
+    return this;
+  }
+}
+
+/**
+ * Output help information if help flags specified
+ *
+ * @param {Command} cmd - command to output help for
+ * @param {Array} args - array of options to search for help flags
+ * @api private
+ */
+
+function outputHelpIfRequested(cmd, args) {
+  const helpOption = cmd._hasHelpOption && args.find(arg => arg === cmd._helpLongFlag || arg === cmd._helpShortFlag);
+  if (helpOption) {
+    cmd.outputHelp();
+    // (Do not have all displayed text available so only passing placeholder.)
+    cmd._exit(0, 'commander.helpDisplayed', '(outputHelp)');
+  }
+}
+
+/**
+ * Scan arguments and increment port number for inspect calls (to avoid conflicts when spawning new command).
+ *
+ * @param {string[]} args - array of arguments from node.execArgv
+ * @returns {string[]}
+ * @api private
+ */
+
+function incrementNodeInspectorPort(args) {
+  // Testing for these options:
+  //  --inspect[=[host:]port]
+  //  --inspect-brk[=[host:]port]
+  //  --inspect-port=[host:]port
+  return args.map((arg) => {
+    if (!arg.startsWith('--inspect')) {
+      return arg;
+    }
+    let debugOption;
+    let debugHost = '127.0.0.1';
+    let debugPort = '9229';
+    let match;
+    if ((match = arg.match(/^(--inspect(-brk)?)$/)) !== null) {
+      // e.g. --inspect
+      debugOption = match[1];
+    } else if ((match = arg.match(/^(--inspect(-brk|-port)?)=([^:]+)$/)) !== null) {
+      debugOption = match[1];
+      if (/^\d+$/.test(match[3])) {
+        // e.g. --inspect=1234
+        debugPort = match[3];
+      } else {
+        // e.g. --inspect=localhost
+        debugHost = match[3];
+      }
+    } else if ((match = arg.match(/^(--inspect(-brk|-port)?)=([^:]+):(\d+)$/)) !== null) {
+      // e.g. --inspect=localhost:1234
+      debugOption = match[1];
+      debugHost = match[3];
+      debugPort = match[4];
+    }
+
+    if (debugOption && debugPort !== '0') {
+      return `${debugOption}=${debugHost}:${parseInt(debugPort) + 1}`;
+    }
+    return arg;
+  });
+}
+
+/**
+ * @param {Command} startCommand
+ * @returns {Command[]}
+ * @api private
+ */
+
+function getCommandAndParents(startCommand) {
+  const result = [];
+  for (let command = startCommand; command; command = command.parent) {
+    result.push(command);
+  }
+  return result;
+}
+
+exports.Command = Command;
+
+}).call(this)}).call(this,{"isBuffer":require("../../../../../.nvm/versions/node/v16.0.0/lib/node_modules/browserify/node_modules/is-buffer/index.js")})
+},{"../../../../../.nvm/versions/node/v16.0.0/lib/node_modules/browserify/node_modules/is-buffer/index.js":7,"./argument.js":183,"./error.js":185,"./help.js":186,"./option.js":187,"./suggestSimilar":188,"child_process":1,"events":5,"fs":1,"path":9,"process":484}],185:[function(require,module,exports){
+// @ts-check
+
+/**
+ * CommanderError class
+ * @class
+ */
+class CommanderError extends Error {
+  /**
+   * Constructs the CommanderError class
+   * @param {number} exitCode suggested exit code which could be used with process.exit
+   * @param {string} code an id string representing the error
+   * @param {string} message human-readable description of the error
+   * @constructor
+   */
+  constructor(exitCode, code, message) {
+    super(message);
+    // properly capture stack trace in Node.js
+    Error.captureStackTrace(this, this.constructor);
+    this.name = this.constructor.name;
+    this.code = code;
+    this.exitCode = exitCode;
+    this.nestedError = undefined;
+  }
+}
+
+/**
+ * InvalidArgumentError class
+ * @class
+ */
+class InvalidArgumentError extends CommanderError {
+  /**
+   * Constructs the InvalidArgumentError class
+   * @param {string} [message] explanation of why argument is invalid
+   * @constructor
+   */
+  constructor(message) {
+    super(1, 'commander.invalidArgument', message);
+    // properly capture stack trace in Node.js
+    Error.captureStackTrace(this, this.constructor);
+    this.name = this.constructor.name;
+  }
+}
+
+exports.CommanderError = CommanderError;
+exports.InvalidArgumentError = InvalidArgumentError;
+
+},{}],186:[function(require,module,exports){
+const { humanReadableArgName } = require('./argument.js');
+
+/**
+ * TypeScript import types for JSDoc, used by Visual Studio Code IntelliSense and `npm run typescript-checkJS`
+ * https://www.typescriptlang.org/docs/handbook/jsdoc-supported-types.html#import-types
+ * @typedef { import("./argument.js").Argument } Argument
+ * @typedef { import("./command.js").Command } Command
+ * @typedef { import("./option.js").Option } Option
+ */
+
+// @ts-check
+
+// Although this is a class, methods are static in style to allow override using subclass or just functions.
+class Help {
+  constructor() {
+    this.helpWidth = undefined;
+    this.sortSubcommands = false;
+    this.sortOptions = false;
+  }
+
+  /**
+   * Get an array of the visible subcommands. Includes a placeholder for the implicit help command, if there is one.
+   *
+   * @param {Command} cmd
+   * @returns {Command[]}
+   */
+
+  visibleCommands(cmd) {
+    const visibleCommands = cmd.commands.filter(cmd => !cmd._hidden);
+    if (cmd._hasImplicitHelpCommand()) {
+      // Create a command matching the implicit help command.
+      const [, helpName, helpArgs] = cmd._helpCommandnameAndArgs.match(/([^ ]+) *(.*)/);
+      const helpCommand = cmd.createCommand(helpName)
+        .helpOption(false);
+      helpCommand.description(cmd._helpCommandDescription);
+      if (helpArgs) helpCommand.arguments(helpArgs);
+      visibleCommands.push(helpCommand);
+    }
+    if (this.sortSubcommands) {
+      visibleCommands.sort((a, b) => {
+        // @ts-ignore: overloaded return type
+        return a.name().localeCompare(b.name());
+      });
+    }
+    return visibleCommands;
+  }
+
+  /**
+   * Get an array of the visible options. Includes a placeholder for the implicit help option, if there is one.
+   *
+   * @param {Command} cmd
+   * @returns {Option[]}
+   */
+
+  visibleOptions(cmd) {
+    const visibleOptions = cmd.options.filter((option) => !option.hidden);
+    // Implicit help
+    const showShortHelpFlag = cmd._hasHelpOption && cmd._helpShortFlag && !cmd._findOption(cmd._helpShortFlag);
+    const showLongHelpFlag = cmd._hasHelpOption && !cmd._findOption(cmd._helpLongFlag);
+    if (showShortHelpFlag || showLongHelpFlag) {
+      let helpOption;
+      if (!showShortHelpFlag) {
+        helpOption = cmd.createOption(cmd._helpLongFlag, cmd._helpDescription);
+      } else if (!showLongHelpFlag) {
+        helpOption = cmd.createOption(cmd._helpShortFlag, cmd._helpDescription);
+      } else {
+        helpOption = cmd.createOption(cmd._helpFlags, cmd._helpDescription);
+      }
+      visibleOptions.push(helpOption);
+    }
+    if (this.sortOptions) {
+      const getSortKey = (option) => {
+        // WYSIWYG for order displayed in help with short before long, no special handling for negated.
+        return option.short ? option.short.replace(/^-/, '') : option.long.replace(/^--/, '');
+      };
+      visibleOptions.sort((a, b) => {
+        return getSortKey(a).localeCompare(getSortKey(b));
+      });
+    }
+    return visibleOptions;
+  }
+
+  /**
+   * Get an array of the arguments if any have a description.
+   *
+   * @param {Command} cmd
+   * @returns {Argument[]}
+   */
+
+  visibleArguments(cmd) {
+    // Side effect! Apply the legacy descriptions before the arguments are displayed.
+    if (cmd._argsDescription) {
+      cmd._args.forEach(argument => {
+        argument.description = argument.description || cmd._argsDescription[argument.name()] || '';
+      });
+    }
+
+    // If there are any arguments with a description then return all the arguments.
+    if (cmd._args.find(argument => argument.description)) {
+      return cmd._args;
+    }
+    return [];
+  }
+
+  /**
+   * Get the command term to show in the list of subcommands.
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+
+  subcommandTerm(cmd) {
+    // Legacy. Ignores custom usage string, and nested commands.
+    const args = cmd._args.map(arg => humanReadableArgName(arg)).join(' ');
+    return cmd._name +
+      (cmd._aliases[0] ? '|' + cmd._aliases[0] : '') +
+      (cmd.options.length ? ' [options]' : '') + // simplistic check for non-help option
+      (args ? ' ' + args : '');
+  }
+
+  /**
+   * Get the option term to show in the list of options.
+   *
+   * @param {Option} option
+   * @returns {string}
+   */
+
+  optionTerm(option) {
+    return option.flags;
+  }
+
+  /**
+   * Get the argument term to show in the list of arguments.
+   *
+   * @param {Argument} argument
+   * @returns {string}
+   */
+
+  argumentTerm(argument) {
+    return argument.name();
+  }
+
+  /**
+   * Get the longest command term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+
+  longestSubcommandTermLength(cmd, helper) {
+    return helper.visibleCommands(cmd).reduce((max, command) => {
+      return Math.max(max, helper.subcommandTerm(command).length);
+    }, 0);
+  }
+
+  /**
+   * Get the longest option term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+
+  longestOptionTermLength(cmd, helper) {
+    return helper.visibleOptions(cmd).reduce((max, option) => {
+      return Math.max(max, helper.optionTerm(option).length);
+    }, 0);
+  }
+
+  /**
+   * Get the longest argument term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+
+  longestArgumentTermLength(cmd, helper) {
+    return helper.visibleArguments(cmd).reduce((max, argument) => {
+      return Math.max(max, helper.argumentTerm(argument).length);
+    }, 0);
+  }
+
+  /**
+   * Get the command usage to be displayed at the top of the built-in help.
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+
+  commandUsage(cmd) {
+    // Usage
+    let cmdName = cmd._name;
+    if (cmd._aliases[0]) {
+      cmdName = cmdName + '|' + cmd._aliases[0];
+    }
+    let parentCmdNames = '';
+    for (let parentCmd = cmd.parent; parentCmd; parentCmd = parentCmd.parent) {
+      parentCmdNames = parentCmd.name() + ' ' + parentCmdNames;
+    }
+    return parentCmdNames + cmdName + ' ' + cmd.usage();
+  }
+
+  /**
+   * Get the description for the command.
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+
+  commandDescription(cmd) {
+    // @ts-ignore: overloaded return type
+    return cmd.description();
+  }
+
+  /**
+   * Get the command description to show in the list of subcommands.
+   *
+   * @param {Command} cmd
+   * @returns {string}
+   */
+
+  subcommandDescription(cmd) {
+    // @ts-ignore: overloaded return type
+    return cmd.description();
+  }
+
+  /**
+   * Get the option description to show in the list of options.
+   *
+   * @param {Option} option
+   * @return {string}
+   */
+
+  optionDescription(option) {
+    const extraInfo = [];
+
+    if (option.argChoices) {
+      extraInfo.push(
+        // use stringify to match the display of the default value
+        `choices: ${option.argChoices.map((choice) => JSON.stringify(choice)).join(', ')}`);
+    }
+    if (option.defaultValue !== undefined) {
+      // default for boolean and negated more for programmer than end user,
+      // but show true/false for boolean option as may be for hand-rolled env or config processing.
+      const showDefault = option.required || option.optional ||
+        (option.isBoolean() && typeof option.defaultValue === 'boolean');
+      if (showDefault) {
+        extraInfo.push(`default: ${option.defaultValueDescription || JSON.stringify(option.defaultValue)}`);
+      }
+    }
+    // preset for boolean and negated are more for programmer than end user
+    if (option.presetArg !== undefined && option.optional) {
+      extraInfo.push(`preset: ${JSON.stringify(option.presetArg)}`);
+    }
+    if (option.envVar !== undefined) {
+      extraInfo.push(`env: ${option.envVar}`);
+    }
+    if (extraInfo.length > 0) {
+      return `${option.description} (${extraInfo.join(', ')})`;
+    }
+
+    return option.description;
+  }
+
+  /**
+   * Get the argument description to show in the list of arguments.
+   *
+   * @param {Argument} argument
+   * @return {string}
+   */
+
+  argumentDescription(argument) {
+    const extraInfo = [];
+    if (argument.argChoices) {
+      extraInfo.push(
+        // use stringify to match the display of the default value
+        `choices: ${argument.argChoices.map((choice) => JSON.stringify(choice)).join(', ')}`);
+    }
+    if (argument.defaultValue !== undefined) {
+      extraInfo.push(`default: ${argument.defaultValueDescription || JSON.stringify(argument.defaultValue)}`);
+    }
+    if (extraInfo.length > 0) {
+      const extraDescripton = `(${extraInfo.join(', ')})`;
+      if (argument.description) {
+        return `${argument.description} ${extraDescripton}`;
+      }
+      return extraDescripton;
+    }
+    return argument.description;
+  }
+
+  /**
+   * Generate the built-in help text.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {string}
+   */
+
+  formatHelp(cmd, helper) {
+    const termWidth = helper.padWidth(cmd, helper);
+    const helpWidth = helper.helpWidth || 80;
+    const itemIndentWidth = 2;
+    const itemSeparatorWidth = 2; // between term and description
+    function formatItem(term, description) {
+      if (description) {
+        const fullText = `${term.padEnd(termWidth + itemSeparatorWidth)}${description}`;
+        return helper.wrap(fullText, helpWidth - itemIndentWidth, termWidth + itemSeparatorWidth);
+      }
+      return term;
+    }
+    function formatList(textArray) {
+      return textArray.join('\n').replace(/^/gm, ' '.repeat(itemIndentWidth));
+    }
+
+    // Usage
+    let output = [`Usage: ${helper.commandUsage(cmd)}`, ''];
+
+    // Description
+    const commandDescription = helper.commandDescription(cmd);
+    if (commandDescription.length > 0) {
+      output = output.concat([commandDescription, '']);
+    }
+
+    // Arguments
+    const argumentList = helper.visibleArguments(cmd).map((argument) => {
+      return formatItem(helper.argumentTerm(argument), helper.argumentDescription(argument));
+    });
+    if (argumentList.length > 0) {
+      output = output.concat(['Arguments:', formatList(argumentList), '']);
+    }
+
+    // Options
+    const optionList = helper.visibleOptions(cmd).map((option) => {
+      return formatItem(helper.optionTerm(option), helper.optionDescription(option));
+    });
+    if (optionList.length > 0) {
+      output = output.concat(['Options:', formatList(optionList), '']);
+    }
+
+    // Commands
+    const commandList = helper.visibleCommands(cmd).map((cmd) => {
+      return formatItem(helper.subcommandTerm(cmd), helper.subcommandDescription(cmd));
+    });
+    if (commandList.length > 0) {
+      output = output.concat(['Commands:', formatList(commandList), '']);
+    }
+
+    return output.join('\n');
+  }
+
+  /**
+   * Calculate the pad width from the maximum term length.
+   *
+   * @param {Command} cmd
+   * @param {Help} helper
+   * @returns {number}
+   */
+
+  padWidth(cmd, helper) {
+    return Math.max(
+      helper.longestOptionTermLength(cmd, helper),
+      helper.longestSubcommandTermLength(cmd, helper),
+      helper.longestArgumentTermLength(cmd, helper)
+    );
+  }
+
+  /**
+   * Wrap the given string to width characters per line, with lines after the first indented.
+   * Do not wrap if insufficient room for wrapping (minColumnWidth), or string is manually formatted.
+   *
+   * @param {string} str
+   * @param {number} width
+   * @param {number} indent
+   * @param {number} [minColumnWidth=40]
+   * @return {string}
+   *
+   */
+
+  wrap(str, width, indent, minColumnWidth = 40) {
+    // Detect manually wrapped and indented strings by searching for line breaks
+    // followed by multiple spaces/tabs.
+    if (str.match(/[\n]\s+/)) return str;
+    // Do not wrap if not enough room for a wrapped column of text (as could end up with a word per line).
+    const columnWidth = width - indent;
+    if (columnWidth < minColumnWidth) return str;
+
+    const leadingStr = str.slice(0, indent);
+    const columnText = str.slice(indent);
+
+    const indentString = ' '.repeat(indent);
+    const regex = new RegExp('.{1,' + (columnWidth - 1) + '}([\\s\u200B]|$)|[^\\s\u200B]+?([\\s\u200B]|$)', 'g');
+    const lines = columnText.match(regex) || [];
+    return leadingStr + lines.map((line, i) => {
+      if (line.slice(-1) === '\n') {
+        line = line.slice(0, line.length - 1);
+      }
+      return ((i > 0) ? indentString : '') + line.trimRight();
+    }).join('\n');
+  }
+}
+
+exports.Help = Help;
+
+},{"./argument.js":183}],187:[function(require,module,exports){
+const { InvalidArgumentError } = require('./error.js');
+
+// @ts-check
+
+class Option {
+  /**
+   * Initialize a new `Option` with the given `flags` and `description`.
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   */
+
+  constructor(flags, description) {
+    this.flags = flags;
+    this.description = description || '';
+
+    this.required = flags.includes('<'); // A value must be supplied when the option is specified.
+    this.optional = flags.includes('['); // A value is optional when the option is specified.
+    // variadic test ignores <value,...> et al which might be used to describe custom splitting of single argument
+    this.variadic = /\w\.\.\.[>\]]$/.test(flags); // The option can take multiple values.
+    this.mandatory = false; // The option must have a value after parsing, which usually means it must be specified on command line.
+    const optionFlags = splitOptionFlags(flags);
+    this.short = optionFlags.shortFlag;
+    this.long = optionFlags.longFlag;
+    this.negate = false;
+    if (this.long) {
+      this.negate = this.long.startsWith('--no-');
+    }
+    this.defaultValue = undefined;
+    this.defaultValueDescription = undefined;
+    this.presetArg = undefined;
+    this.envVar = undefined;
+    this.parseArg = undefined;
+    this.hidden = false;
+    this.argChoices = undefined;
+    this.conflictsWith = [];
+  }
+
+  /**
+   * Set the default value, and optionally supply the description to be displayed in the help.
+   *
+   * @param {any} value
+   * @param {string} [description]
+   * @return {Option}
+   */
+
+  default(value, description) {
+    this.defaultValue = value;
+    this.defaultValueDescription = description;
+    return this;
+  }
+
+  /**
+   * Preset to use when option used without option-argument, especially optional but also boolean and negated.
+   * The custom processing (parseArg) is called.
+   *
+   * @example
+   * new Option('--color').default('GREYSCALE').preset('RGB');
+   * new Option('--donate [amount]').preset('20').argParser(parseFloat);
+   *
+   * @param {any} arg
+   * @return {Option}
+   */
+
+  preset(arg) {
+    this.presetArg = arg;
+    return this;
+  }
+
+  /**
+   * Add option name(s) that conflict with this option.
+   * An error will be displayed if conflicting options are found during parsing.
+   *
+   * @example
+   * new Option('--rgb').conflicts('cmyk');
+   * new Option('--js').conflicts(['ts', 'jsx']);
+   *
+   * @param {string | string[]} names
+   * @return {Option}
+   */
+
+  conflicts(names) {
+    this.conflictsWith = this.conflictsWith.concat(names);
+    return this;
+  }
+
+  /**
+   * Set environment variable to check for option value.
+   * Priority order of option values is default < env < cli
+   *
+   * @param {string} name
+   * @return {Option}
+   */
+
+  env(name) {
+    this.envVar = name;
+    return this;
+  }
+
+  /**
+   * Set the custom handler for processing CLI option arguments into option values.
+   *
+   * @param {Function} [fn]
+   * @return {Option}
+   */
+
+  argParser(fn) {
+    this.parseArg = fn;
+    return this;
+  }
+
+  /**
+   * Whether the option is mandatory and must have a value after parsing.
+   *
+   * @param {boolean} [mandatory=true]
+   * @return {Option}
+   */
+
+  makeOptionMandatory(mandatory = true) {
+    this.mandatory = !!mandatory;
+    return this;
+  }
+
+  /**
+   * Hide option in help.
+   *
+   * @param {boolean} [hide=true]
+   * @return {Option}
+   */
+
+  hideHelp(hide = true) {
+    this.hidden = !!hide;
+    return this;
+  }
+
+  /**
+   * @api private
+   */
+
+  _concatValue(value, previous) {
+    if (previous === this.defaultValue || !Array.isArray(previous)) {
+      return [value];
+    }
+
+    return previous.concat(value);
+  }
+
+  /**
+   * Only allow option value to be one of choices.
+   *
+   * @param {string[]} values
+   * @return {Option}
+   */
+
+  choices(values) {
+    this.argChoices = values.slice();
+    this.parseArg = (arg, previous) => {
+      if (!this.argChoices.includes(arg)) {
+        throw new InvalidArgumentError(`Allowed choices are ${this.argChoices.join(', ')}.`);
+      }
+      if (this.variadic) {
+        return this._concatValue(arg, previous);
+      }
+      return arg;
+    };
+    return this;
+  }
+
+  /**
+   * Return option name.
+   *
+   * @return {string}
+   */
+
+  name() {
+    if (this.long) {
+      return this.long.replace(/^--/, '');
+    }
+    return this.short.replace(/^-/, '');
+  }
+
+  /**
+   * Return option name, in a camelcase format that can be used
+   * as a object attribute key.
+   *
+   * @return {string}
+   * @api private
+   */
+
+  attributeName() {
+    return camelcase(this.name().replace(/^no-/, ''));
+  }
+
+  /**
+   * Check if `arg` matches the short or long flag.
+   *
+   * @param {string} arg
+   * @return {boolean}
+   * @api private
+   */
+
+  is(arg) {
+    return this.short === arg || this.long === arg;
+  }
+
+  /**
+   * Return whether a boolean option.
+   *
+   * Options are one of boolean, negated, required argument, or optional argument.
+   *
+   * @return {boolean}
+   * @api private
+   */
+
+  isBoolean() {
+    return !this.required && !this.optional && !this.negate;
+  }
+}
+
+/**
+ * Convert string from kebab-case to camelCase.
+ *
+ * @param {string} str
+ * @return {string}
+ * @api private
+ */
+
+function camelcase(str) {
+  return str.split('-').reduce((str, word) => {
+    return str + word[0].toUpperCase() + word.slice(1);
+  });
+}
+
+/**
+ * Split the short and long flag out of something like '-m,--mixed <value>'
+ *
+ * @api private
+ */
+
+function splitOptionFlags(flags) {
+  let shortFlag;
+  let longFlag;
+  // Use original very loose parsing to maintain backwards compatibility for now,
+  // which allowed for example unintended `-sw, --short-word` [sic].
+  const flagParts = flags.split(/[ |,]+/);
+  if (flagParts.length > 1 && !/^[[<]/.test(flagParts[1])) shortFlag = flagParts.shift();
+  longFlag = flagParts.shift();
+  // Add support for lone short flag without significantly changing parsing!
+  if (!shortFlag && /^-[^-]$/.test(longFlag)) {
+    shortFlag = longFlag;
+    longFlag = undefined;
+  }
+  return { shortFlag, longFlag };
+}
+
+exports.Option = Option;
+exports.splitOptionFlags = splitOptionFlags;
+
+},{"./error.js":185}],188:[function(require,module,exports){
+const maxDistance = 3;
+
+function editDistance(a, b) {
+  // https://en.wikipedia.org/wiki/Damerau–Levenshtein_distance
+  // Calculating optimal string alignment distance, no substring is edited more than once.
+  // (Simple implementation.)
+
+  // Quick early exit, return worst case.
+  if (Math.abs(a.length - b.length) > maxDistance) return Math.max(a.length, b.length);
+
+  // distance between prefix substrings of a and b
+  const d = [];
+
+  // pure deletions turn a into empty string
+  for (let i = 0; i <= a.length; i++) {
+    d[i] = [i];
+  }
+  // pure insertions turn empty string into b
+  for (let j = 0; j <= b.length; j++) {
+    d[0][j] = j;
+  }
+
+  // fill matrix
+  for (let j = 1; j <= b.length; j++) {
+    for (let i = 1; i <= a.length; i++) {
+      let cost = 1;
+      if (a[i - 1] === b[j - 1]) {
+        cost = 0;
+      } else {
+        cost = 1;
+      }
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1, // deletion
+        d[i][j - 1] + 1, // insertion
+        d[i - 1][j - 1] + cost // substitution
+      );
+      // transposition
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+
+  return d[a.length][b.length];
+}
+
+/**
+ * Find close matches, restricted to same number of edits.
+ *
+ * @param {string} word
+ * @param {string[]} candidates
+ * @returns {string}
+ */
+
+function suggestSimilar(word, candidates) {
+  if (!candidates || candidates.length === 0) return '';
+  // remove possible duplicates
+  candidates = Array.from(new Set(candidates));
+
+  const searchingOptions = word.startsWith('--');
+  if (searchingOptions) {
+    word = word.slice(2);
+    candidates = candidates.map(candidate => candidate.slice(2));
+  }
+
+  let similar = [];
+  let bestDistance = maxDistance;
+  const minSimilarity = 0.4;
+  candidates.forEach((candidate) => {
+    if (candidate.length <= 1) return; // no one character guesses
+
+    const distance = editDistance(word, candidate);
+    const length = Math.max(word.length, candidate.length);
+    const similarity = (length - distance) / length;
+    if (similarity > minSimilarity) {
+      if (distance < bestDistance) {
+        // better edit distance, throw away previous worse matches
+        bestDistance = distance;
+        similar = [candidate];
+      } else if (distance === bestDistance) {
+        similar.push(candidate);
+      }
+    }
+  });
+
+  similar.sort((a, b) => a.localeCompare(b));
+  if (searchingOptions) {
+    similar = similar.map(candidate => `--${candidate}`);
+  }
+
+  if (similar.length > 1) {
+    return `\n(Did you mean one of ${similar.join(', ')}?)`;
+  }
+  if (similar.length === 1) {
+    return `\n(Did you mean ${similar[0]}?)`;
+  }
+  return '';
+}
+
+exports.suggestSimilar = suggestSimilar;
+
+},{}],189:[function(require,module,exports){
 module.exports = function (xs, fn) {
     var res = [];
     for (var i = 0; i < xs.length; i++) {
@@ -56415,7 +62992,7 @@ var isArray = Array.isArray || function (xs) {
     return Object.prototype.toString.call(xs) === '[object Array]';
 };
 
-},{}],172:[function(require,module,exports){
+},{}],190:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const utils_1 = require("./utils");
@@ -56483,7 +63060,7 @@ exports.default = {
     encode,
 };
 
-},{"./utils":175}],173:[function(require,module,exports){
+},{"./utils":193}],191:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -56600,7 +63177,7 @@ function decode(data) {
 }
 exports.decode = decode;
 
-},{"./encryption":172,"./signing":174,"@ipld/dag-cbor":176}],174:[function(require,module,exports){
+},{"./encryption":190,"./signing":192,"@ipld/dag-cbor":194}],192:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const utils_1 = require("./utils");
@@ -56661,7 +63238,7 @@ exports.default = {
     decode,
 };
 
-},{"./utils":175,"multiformats/cid":433}],175:[function(require,module,exports){
+},{"./utils":193,"multiformats/cid":452}],193:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fromBase64url = exports.toBase64url = void 0;
@@ -56675,7 +63252,7 @@ function fromBase64url(s) {
 }
 exports.fromBase64url = fromBase64url;
 
-},{"multiformats/bases/base64":428}],176:[function(require,module,exports){
+},{"multiformats/bases/base64":447}],194:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -56766,7 +63343,120 @@ exports.decode = decode;
 exports.encode = encode;
 exports.name = name;
 
-},{"cborg":151,"multiformats/cid":433}],177:[function(require,module,exports){
+},{"cborg":162,"multiformats/cid":452}],195:[function(require,module,exports){
+(function (process){(function (){
+const fs = require('fs')
+const path = require('path')
+const os = require('os')
+
+const LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg
+
+// Parser src into an Object
+function parse (src) {
+  const obj = {}
+
+  // Convert buffer to string
+  let lines = src.toString()
+
+  // Convert line breaks to same format
+  lines = lines.replace(/\r\n?/mg, '\n')
+
+  let match
+  while ((match = LINE.exec(lines)) != null) {
+    const key = match[1]
+
+    // Default undefined or null to empty string
+    let value = (match[2] || '')
+
+    // Remove whitespace
+    value = value.trim()
+
+    // Check if double quoted
+    const maybeQuote = value[0]
+
+    // Remove surrounding quotes
+    value = value.replace(/^(['"`])([\s\S]*)\1$/mg, '$2')
+
+    // Expand newlines if double quoted
+    if (maybeQuote === '"') {
+      value = value.replace(/\\n/g, '\n')
+      value = value.replace(/\\r/g, '\r')
+    }
+
+    // Add to object
+    obj[key] = value
+  }
+
+  return obj
+}
+
+function _log (message) {
+  console.log(`[dotenv][DEBUG] ${message}`)
+}
+
+function _resolveHome (envPath) {
+  return envPath[0] === '~' ? path.join(os.homedir(), envPath.slice(1)) : envPath
+}
+
+// Populates process.env from .env file
+function config (options) {
+  let dotenvPath = path.resolve(process.cwd(), '.env')
+  let encoding = 'utf8'
+  const debug = Boolean(options && options.debug)
+  const override = Boolean(options && options.override)
+
+  if (options) {
+    if (options.path != null) {
+      dotenvPath = _resolveHome(options.path)
+    }
+    if (options.encoding != null) {
+      encoding = options.encoding
+    }
+  }
+
+  try {
+    // Specifying an encoding returns a string instead of a buffer
+    const parsed = DotenvModule.parse(fs.readFileSync(dotenvPath, { encoding }))
+
+    Object.keys(parsed).forEach(function (key) {
+      if (!Object.prototype.hasOwnProperty.call(process.env, key)) {
+        process.env[key] = parsed[key]
+      } else {
+        if (override === true) {
+          process.env[key] = parsed[key]
+        }
+
+        if (debug) {
+          if (override === true) {
+            _log(`"${key}" is already defined in \`process.env\` and WAS overwritten`)
+          } else {
+            _log(`"${key}" is already defined in \`process.env\` and was NOT overwritten`)
+          }
+        }
+      }
+    })
+
+    return { parsed }
+  } catch (e) {
+    if (debug) {
+      _log(`Failed to load ${dotenvPath} ${e.message}`)
+    }
+
+    return { error: e }
+  }
+}
+
+const DotenvModule = {
+  config,
+  parse
+}
+
+module.exports.config = DotenvModule.config
+module.exports.parse = DotenvModule.parse
+module.exports = DotenvModule
+
+}).call(this)}).call(this,require('_process'))
+},{"_process":10,"fs":1,"os":8,"path":9}],196:[function(require,module,exports){
 'use strict';
 
 var elliptic = exports;
@@ -56781,7 +63471,7 @@ elliptic.curves = require('./elliptic/curves');
 elliptic.ec = require('./elliptic/ec');
 elliptic.eddsa = require('./elliptic/eddsa');
 
-},{"../package.json":192,"./elliptic/curve":180,"./elliptic/curves":183,"./elliptic/ec":184,"./elliptic/eddsa":187,"./elliptic/utils":191,"brorand":149}],178:[function(require,module,exports){
+},{"../package.json":211,"./elliptic/curve":199,"./elliptic/curves":202,"./elliptic/ec":203,"./elliptic/eddsa":206,"./elliptic/utils":210,"brorand":160}],197:[function(require,module,exports){
 'use strict';
 
 var BN = require('bn.js');
@@ -57164,7 +63854,7 @@ BasePoint.prototype.dblp = function dblp(k) {
   return r;
 };
 
-},{"../utils":191,"bn.js":147}],179:[function(require,module,exports){
+},{"../utils":210,"bn.js":158}],198:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -57601,7 +64291,7 @@ Point.prototype.eqXToP = function eqXToP(x) {
 Point.prototype.toP = Point.prototype.normalize;
 Point.prototype.mixedAdd = Point.prototype.add;
 
-},{"../utils":191,"./base":178,"bn.js":147,"inherits":214}],180:[function(require,module,exports){
+},{"../utils":210,"./base":197,"bn.js":158,"inherits":233}],199:[function(require,module,exports){
 'use strict';
 
 var curve = exports;
@@ -57611,7 +64301,7 @@ curve.short = require('./short');
 curve.mont = require('./mont');
 curve.edwards = require('./edwards');
 
-},{"./base":178,"./edwards":179,"./mont":181,"./short":182}],181:[function(require,module,exports){
+},{"./base":197,"./edwards":198,"./mont":200,"./short":201}],200:[function(require,module,exports){
 'use strict';
 
 var BN = require('bn.js');
@@ -57791,7 +64481,7 @@ Point.prototype.getX = function getX() {
   return this.x.fromRed();
 };
 
-},{"../utils":191,"./base":178,"bn.js":147,"inherits":214}],182:[function(require,module,exports){
+},{"../utils":210,"./base":197,"bn.js":158,"inherits":233}],201:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -58731,7 +65421,7 @@ JPoint.prototype.isInfinity = function isInfinity() {
   return this.z.cmpn(0) === 0;
 };
 
-},{"../utils":191,"./base":178,"bn.js":147,"inherits":214}],183:[function(require,module,exports){
+},{"../utils":210,"./base":197,"bn.js":158,"inherits":233}],202:[function(require,module,exports){
 'use strict';
 
 var curves = exports;
@@ -58939,7 +65629,7 @@ defineCurve('secp256k1', {
   ],
 });
 
-},{"./curve":180,"./precomputed/secp256k1":190,"./utils":191,"hash.js":201}],184:[function(require,module,exports){
+},{"./curve":199,"./precomputed/secp256k1":209,"./utils":210,"hash.js":220}],203:[function(require,module,exports){
 'use strict';
 
 var BN = require('bn.js');
@@ -59184,7 +65874,7 @@ EC.prototype.getKeyRecoveryParam = function(e, signature, Q, enc) {
   throw new Error('Unable to find valid recovery factor');
 };
 
-},{"../curves":183,"../utils":191,"./key":185,"./signature":186,"bn.js":147,"brorand":149,"hmac-drbg":213}],185:[function(require,module,exports){
+},{"../curves":202,"../utils":210,"./key":204,"./signature":205,"bn.js":158,"brorand":160,"hmac-drbg":232}],204:[function(require,module,exports){
 'use strict';
 
 var BN = require('bn.js');
@@ -59307,7 +65997,7 @@ KeyPair.prototype.inspect = function inspect() {
          ' pub: ' + (this.pub && this.pub.inspect()) + ' >';
 };
 
-},{"../utils":191,"bn.js":147}],186:[function(require,module,exports){
+},{"../utils":210,"bn.js":158}],205:[function(require,module,exports){
 'use strict';
 
 var BN = require('bn.js');
@@ -59475,7 +66165,7 @@ Signature.prototype.toDER = function toDER(enc) {
   return utils.encode(res, enc);
 };
 
-},{"../utils":191,"bn.js":147}],187:[function(require,module,exports){
+},{"../utils":210,"bn.js":158}],206:[function(require,module,exports){
 'use strict';
 
 var hash = require('hash.js');
@@ -59595,7 +66285,7 @@ EDDSA.prototype.isPoint = function isPoint(val) {
   return val instanceof this.pointClass;
 };
 
-},{"../curves":183,"../utils":191,"./key":188,"./signature":189,"hash.js":201}],188:[function(require,module,exports){
+},{"../curves":202,"../utils":210,"./key":207,"./signature":208,"hash.js":220}],207:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -59692,7 +66382,7 @@ KeyPair.prototype.getPublic = function getPublic(enc) {
 
 module.exports = KeyPair;
 
-},{"../utils":191}],189:[function(require,module,exports){
+},{"../utils":210}],208:[function(require,module,exports){
 'use strict';
 
 var BN = require('bn.js');
@@ -59759,7 +66449,7 @@ Signature.prototype.toHex = function toHex() {
 
 module.exports = Signature;
 
-},{"../utils":191,"bn.js":147}],190:[function(require,module,exports){
+},{"../utils":210,"bn.js":158}],209:[function(require,module,exports){
 module.exports = {
   doubles: {
     step: 4,
@@ -60541,7 +67231,7 @@ module.exports = {
   },
 };
 
-},{}],191:[function(require,module,exports){
+},{}],210:[function(require,module,exports){
 'use strict';
 
 var utils = exports;
@@ -60662,7 +67352,7 @@ function intFromLE(bytes) {
 utils.intFromLE = intFromLE;
 
 
-},{"bn.js":147,"minimalistic-assert":408,"minimalistic-crypto-utils":409}],192:[function(require,module,exports){
+},{"bn.js":158,"minimalistic-assert":427,"minimalistic-crypto-utils":428}],211:[function(require,module,exports){
 module.exports={
   "name": "elliptic",
   "version": "6.5.4",
@@ -60720,7 +67410,7 @@ module.exports={
   }
 }
 
-},{}],193:[function(require,module,exports){
+},{}],212:[function(require,module,exports){
 'use strict';
 
 /**
@@ -60791,13 +67481,13 @@ function createError(err, code, props) {
 
 module.exports = createError;
 
-},{}],194:[function(require,module,exports){
+},{}],213:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "ethers/5.6.5";
 
-},{}],195:[function(require,module,exports){
+},{}],214:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -60853,7 +67543,7 @@ Object.defineProperty(exports, "version", { enumerable: true, get: function () {
 var logger = new logger_1.Logger(_version_1.version);
 exports.logger = logger;
 
-},{"./_version":194,"./utils":197,"@ethersproject/abstract-signer":26,"@ethersproject/bignumber":35,"@ethersproject/constants":41,"@ethersproject/contracts":44,"@ethersproject/logger":62,"@ethersproject/providers":79,"@ethersproject/wallet":113,"@ethersproject/wordlists":118}],196:[function(require,module,exports){
+},{"./_version":213,"./utils":216,"@ethersproject/abstract-signer":37,"@ethersproject/bignumber":46,"@ethersproject/constants":52,"@ethersproject/contracts":55,"@ethersproject/logger":73,"@ethersproject/providers":90,"@ethersproject/wallet":124,"@ethersproject/wordlists":129}],215:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -60907,7 +67597,7 @@ Object.defineProperty(exports, "wordlists", { enumerable: true, get: function ()
 Object.defineProperty(exports, "version", { enumerable: true, get: function () { return ethers_1.version; } });
 Object.defineProperty(exports, "Wordlist", { enumerable: true, get: function () { return ethers_1.Wordlist; } });
 
-},{"./ethers":195}],197:[function(require,module,exports){
+},{"./ethers":214}],216:[function(require,module,exports){
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -61056,15 +67746,15 @@ var strings_2 = require("@ethersproject/strings");
 Object.defineProperty(exports, "UnicodeNormalizationForm", { enumerable: true, get: function () { return strings_2.UnicodeNormalizationForm; } });
 Object.defineProperty(exports, "Utf8ErrorReason", { enumerable: true, get: function () { return strings_2.Utf8ErrorReason; } });
 
-},{"@ethersproject/abi":21,"@ethersproject/address":28,"@ethersproject/base64":30,"@ethersproject/basex":31,"@ethersproject/bytes":37,"@ethersproject/hash":47,"@ethersproject/hdnode":52,"@ethersproject/json-wallets":55,"@ethersproject/keccak256":59,"@ethersproject/logger":62,"@ethersproject/properties":68,"@ethersproject/random":90,"@ethersproject/rlp":93,"@ethersproject/sha2":96,"@ethersproject/signing-key":200,"@ethersproject/solidity":102,"@ethersproject/strings":106,"@ethersproject/transactions":109,"@ethersproject/units":111,"@ethersproject/wallet":113,"@ethersproject/web":116}],198:[function(require,module,exports){
+},{"@ethersproject/abi":32,"@ethersproject/address":39,"@ethersproject/base64":41,"@ethersproject/basex":42,"@ethersproject/bytes":48,"@ethersproject/hash":58,"@ethersproject/hdnode":63,"@ethersproject/json-wallets":66,"@ethersproject/keccak256":70,"@ethersproject/logger":73,"@ethersproject/properties":79,"@ethersproject/random":101,"@ethersproject/rlp":104,"@ethersproject/sha2":107,"@ethersproject/signing-key":219,"@ethersproject/solidity":113,"@ethersproject/strings":117,"@ethersproject/transactions":120,"@ethersproject/units":122,"@ethersproject/wallet":124,"@ethersproject/web":127}],217:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.version = void 0;
 exports.version = "signing-key/5.6.1";
 
-},{}],199:[function(require,module,exports){
-arguments[4][99][0].apply(exports,arguments)
-},{"dup":99,"elliptic":177}],200:[function(require,module,exports){
+},{}],218:[function(require,module,exports){
+arguments[4][110][0].apply(exports,arguments)
+},{"dup":110,"elliptic":196}],219:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.computePublicKey = exports.recoverPublicKey = exports.SigningKey = void 0;
@@ -61153,7 +67843,7 @@ function computePublicKey(key, compressed) {
 }
 exports.computePublicKey = computePublicKey;
 
-},{"./_version":198,"./elliptic":199,"@ethersproject/bytes":37,"@ethersproject/logger":62,"@ethersproject/properties":68}],201:[function(require,module,exports){
+},{"./_version":217,"./elliptic":218,"@ethersproject/bytes":48,"@ethersproject/logger":73,"@ethersproject/properties":79}],220:[function(require,module,exports){
 var hash = exports;
 
 hash.utils = require('./hash/utils');
@@ -61170,7 +67860,7 @@ hash.sha384 = hash.sha.sha384;
 hash.sha512 = hash.sha.sha512;
 hash.ripemd160 = hash.ripemd.ripemd160;
 
-},{"./hash/common":202,"./hash/hmac":203,"./hash/ripemd":204,"./hash/sha":205,"./hash/utils":212}],202:[function(require,module,exports){
+},{"./hash/common":221,"./hash/hmac":222,"./hash/ripemd":223,"./hash/sha":224,"./hash/utils":231}],221:[function(require,module,exports){
 'use strict';
 
 var utils = require('./utils');
@@ -61264,7 +67954,7 @@ BlockHash.prototype._pad = function pad() {
   return res;
 };
 
-},{"./utils":212,"minimalistic-assert":408}],203:[function(require,module,exports){
+},{"./utils":231,"minimalistic-assert":427}],222:[function(require,module,exports){
 'use strict';
 
 var utils = require('./utils');
@@ -61313,7 +68003,7 @@ Hmac.prototype.digest = function digest(enc) {
   return this.outer.digest(enc);
 };
 
-},{"./utils":212,"minimalistic-assert":408}],204:[function(require,module,exports){
+},{"./utils":231,"minimalistic-assert":427}],223:[function(require,module,exports){
 'use strict';
 
 var utils = require('./utils');
@@ -61461,7 +68151,7 @@ var sh = [
   8, 5, 12, 9, 12, 5, 14, 6, 8, 13, 6, 5, 15, 13, 11, 11
 ];
 
-},{"./common":202,"./utils":212}],205:[function(require,module,exports){
+},{"./common":221,"./utils":231}],224:[function(require,module,exports){
 'use strict';
 
 exports.sha1 = require('./sha/1');
@@ -61470,7 +68160,7 @@ exports.sha256 = require('./sha/256');
 exports.sha384 = require('./sha/384');
 exports.sha512 = require('./sha/512');
 
-},{"./sha/1":206,"./sha/224":207,"./sha/256":208,"./sha/384":209,"./sha/512":210}],206:[function(require,module,exports){
+},{"./sha/1":225,"./sha/224":226,"./sha/256":227,"./sha/384":228,"./sha/512":229}],225:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -61546,7 +68236,7 @@ SHA1.prototype._digest = function digest(enc) {
     return utils.split32(this.h, 'big');
 };
 
-},{"../common":202,"../utils":212,"./common":211}],207:[function(require,module,exports){
+},{"../common":221,"../utils":231,"./common":230}],226:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -61578,7 +68268,7 @@ SHA224.prototype._digest = function digest(enc) {
 };
 
 
-},{"../utils":212,"./256":208}],208:[function(require,module,exports){
+},{"../utils":231,"./256":227}],227:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -61685,7 +68375,7 @@ SHA256.prototype._digest = function digest(enc) {
     return utils.split32(this.h, 'big');
 };
 
-},{"../common":202,"../utils":212,"./common":211,"minimalistic-assert":408}],209:[function(require,module,exports){
+},{"../common":221,"../utils":231,"./common":230,"minimalistic-assert":427}],228:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -61722,7 +68412,7 @@ SHA384.prototype._digest = function digest(enc) {
     return utils.split32(this.h.slice(0, 12), 'big');
 };
 
-},{"../utils":212,"./512":210}],210:[function(require,module,exports){
+},{"../utils":231,"./512":229}],229:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -62054,7 +68744,7 @@ function g1_512_lo(xh, xl) {
   return r;
 }
 
-},{"../common":202,"../utils":212,"minimalistic-assert":408}],211:[function(require,module,exports){
+},{"../common":221,"../utils":231,"minimalistic-assert":427}],230:[function(require,module,exports){
 'use strict';
 
 var utils = require('../utils');
@@ -62105,7 +68795,7 @@ function g1_256(x) {
 }
 exports.g1_256 = g1_256;
 
-},{"../utils":212}],212:[function(require,module,exports){
+},{"../utils":231}],231:[function(require,module,exports){
 'use strict';
 
 var assert = require('minimalistic-assert');
@@ -62385,7 +69075,7 @@ function shr64_lo(ah, al, num) {
 }
 exports.shr64_lo = shr64_lo;
 
-},{"inherits":214,"minimalistic-assert":408}],213:[function(require,module,exports){
+},{"inherits":233,"minimalistic-assert":427}],232:[function(require,module,exports){
 'use strict';
 
 var hash = require('hash.js');
@@ -62500,7 +69190,7 @@ HmacDRBG.prototype.generate = function generate(len, enc, add, addEnc) {
   return utils.encode(res, enc);
 };
 
-},{"hash.js":201,"minimalistic-assert":408,"minimalistic-crypto-utils":409}],214:[function(require,module,exports){
+},{"hash.js":220,"minimalistic-assert":427,"minimalistic-crypto-utils":428}],233:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
@@ -62529,7 +69219,7 @@ if (typeof Object.create === 'function') {
   }
 }
 
-},{}],215:[function(require,module,exports){
+},{}],234:[function(require,module,exports){
 'use strict';
 
 const word = '[a-fA-F\\d:]';
@@ -62567,7 +69257,7 @@ ip.v6 = options => options && options.exact ? v6exact : new RegExp(`${b(options)
 
 module.exports = ip;
 
-},{}],216:[function(require,module,exports){
+},{}],235:[function(require,module,exports){
 'use strict';
 
 var agent_browser = () => {
@@ -62575,7 +69265,7 @@ var agent_browser = () => {
 
 module.exports = agent_browser;
 
-},{}],217:[function(require,module,exports){
+},{}],236:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62647,7 +69337,7 @@ async function toFileObject(input, normaliseContent) {
 
 exports.normaliseCandidateMultiple = normaliseCandidateMultiple;
 
-},{"./utils.js":223,"browser-readablestream-to-it":150,"err-code":193,"ipfs-unixfs":385,"it-map":404,"it-peekable":405}],218:[function(require,module,exports){
+},{"./utils.js":242,"browser-readablestream-to-it":161,"err-code":212,"ipfs-unixfs":404,"it-map":423,"it-peekable":424}],237:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62716,7 +69406,7 @@ async function toFileObject(input, normaliseContent) {
 
 exports.normaliseCandidateSingle = normaliseCandidateSingle;
 
-},{"./utils.js":223,"browser-readablestream-to-it":150,"err-code":193,"ipfs-unixfs":385,"it-peekable":405}],219:[function(require,module,exports){
+},{"./utils.js":242,"browser-readablestream-to-it":161,"err-code":212,"ipfs-unixfs":404,"it-peekable":424}],238:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62773,7 +69463,7 @@ async function itToBlob(stream) {
 
 exports.normaliseContent = normaliseContent;
 
-},{"./utils.js":223,"browser-readablestream-to-it":150,"err-code":193,"it-all":400,"it-peekable":405}],220:[function(require,module,exports){
+},{"./utils.js":242,"browser-readablestream-to-it":161,"err-code":212,"it-all":419,"it-peekable":424}],239:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62846,7 +69536,7 @@ function toBytes(chunk) {
 
 exports.normaliseContent = normaliseContent;
 
-},{"./utils.js":223,"blob-to-it":146,"browser-readablestream-to-it":150,"err-code":193,"it-all":400,"it-map":404,"it-peekable":405,"uint8arrays/from-string":462}],221:[function(require,module,exports){
+},{"./utils.js":242,"blob-to-it":157,"browser-readablestream-to-it":161,"err-code":212,"it-all":419,"it-map":423,"it-peekable":424,"uint8arrays/from-string":481}],240:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62860,7 +69550,7 @@ function normaliseInput(input) {
 
 exports.normaliseInput = normaliseInput;
 
-},{"./normalise-candidate-multiple.js":217,"./normalise-content.browser.js":219}],222:[function(require,module,exports){
+},{"./normalise-candidate-multiple.js":236,"./normalise-content.browser.js":238}],241:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62874,7 +69564,7 @@ function normaliseInput(input) {
 
 exports.normaliseInput = normaliseInput;
 
-},{"./normalise-candidate-single.js":218,"./normalise-content.js":220}],223:[function(require,module,exports){
+},{"./normalise-candidate-single.js":237,"./normalise-content.js":239}],242:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62895,7 +69585,7 @@ exports.isBytes = isBytes;
 exports.isFileObject = isFileObject;
 exports.isReadableStream = isReadableStream;
 
-},{}],224:[function(require,module,exports){
+},{}],243:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62912,7 +69602,7 @@ function modeToString(mode) {
 
 exports.modeToString = modeToString;
 
-},{}],225:[function(require,module,exports){
+},{}],244:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -62958,7 +69648,7 @@ class Multibases {
 
 exports.Multibases = Multibases;
 
-},{}],226:[function(require,module,exports){
+},{}],245:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63002,7 +69692,7 @@ class Multicodecs {
 
 exports.Multicodecs = Multicodecs;
 
-},{}],227:[function(require,module,exports){
+},{}],246:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63046,7 +69736,7 @@ class Multihashes {
 
 exports.Multihashes = Multihashes;
 
-},{}],228:[function(require,module,exports){
+},{}],247:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63106,7 +69796,7 @@ async function multipartRequest(source, abortController, headers = {}) {
 
 exports.multipartRequest = multipartRequest;
 
-},{"./files/normalise-input-multiple.browser.js":221,"./mode-to-string.js":224}],229:[function(require,module,exports){
+},{"./files/normalise-input-multiple.browser.js":240,"./mode-to-string.js":243}],248:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63195,7 +69885,7 @@ function toPin(input) {
 
 exports.normaliseInput = normaliseInput;
 
-},{"err-code":193,"multiformats/cid":433}],230:[function(require,module,exports){
+},{"err-code":212,"multiformats/cid":452}],249:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63218,7 +69908,7 @@ function toUrlString(url) {
 
 exports.toUrlString = toUrlString;
 
-},{"multiaddr":418,"multiaddr-to-uri":411}],231:[function(require,module,exports){
+},{"multiaddr":437,"multiaddr-to-uri":430}],250:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63305,7 +69995,7 @@ function toCoreInterface({name, hash, size, mode, mtime, mtimeNsecs}) {
 
 exports.createAddAll = createAddAll;
 
-},{"./lib/abort-signal.js":304,"./lib/configure.js":305,"./lib/object-to-camel.js":310,"./lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228,"multiformats/cid":433}],232:[function(require,module,exports){
+},{"./lib/abort-signal.js":323,"./lib/configure.js":324,"./lib/object-to-camel.js":329,"./lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247,"multiformats/cid":452}],251:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63331,7 +70021,7 @@ function createAdd(options) {
 
 exports.createAdd = createAdd;
 
-},{"./add-all.js":231,"./lib/configure.js":305,"ipfs-core-utils/files/normalise-input-single":222,"it-last":403}],233:[function(require,module,exports){
+},{"./add-all.js":250,"./lib/configure.js":324,"ipfs-core-utils/files/normalise-input-single":241,"it-last":422}],252:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63352,7 +70042,7 @@ function createBitswap(config) {
 
 exports.createBitswap = createBitswap;
 
-},{"./stat.js":234,"./unwant.js":235,"./wantlist-for-peer.js":236,"./wantlist.js":237}],234:[function(require,module,exports){
+},{"./stat.js":253,"./unwant.js":254,"./wantlist-for-peer.js":255,"./wantlist.js":256}],253:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63388,7 +70078,7 @@ function toCoreInterface(res) {
 
 exports.createStat = createStat;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],235:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],254:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63413,7 +70103,7 @@ const createUnwant = configure.configure(api => {
 
 exports.createUnwant = createUnwant;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],236:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],255:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63439,7 +70129,7 @@ const createWantlistForPeer = configure.configure(api => {
 
 exports.createWantlistForPeer = createWantlistForPeer;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],237:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],256:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63462,7 +70152,7 @@ const createWantlist = configure.configure(api => {
 
 exports.createWantlist = createWantlist;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],238:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],257:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63487,7 +70177,7 @@ const createGet = configure.configure(api => {
 
 exports.createGet = createGet;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],239:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],258:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63508,7 +70198,7 @@ function createBlock(config) {
 
 exports.createBlock = createBlock;
 
-},{"./get.js":238,"./put.js":240,"./rm.js":241,"./stat.js":242}],240:[function(require,module,exports){
+},{"./get.js":257,"./put.js":259,"./rm.js":260,"./stat.js":261}],259:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63552,7 +70242,7 @@ const createPut = configure.configure(api => {
 
 exports.createPut = createPut;
 
-},{"../lib/abort-signal.js":304,"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228,"multiformats/cid":433}],241:[function(require,module,exports){
+},{"../lib/abort-signal.js":323,"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247,"multiformats/cid":452}],260:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63591,7 +70281,7 @@ function toCoreInterface(removed) {
 
 exports.createRm = createRm;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],242:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],261:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63621,7 +70311,7 @@ const createStat = configure.configure(api => {
 
 exports.createStat = createStat;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],243:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],262:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63648,7 +70338,7 @@ const createAdd = configure.configure(api => {
 
 exports.createAdd = createAdd;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],244:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],263:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63675,7 +70365,7 @@ const createClear = configure.configure(api => {
 
 exports.createClear = createClear;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],245:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],264:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63698,7 +70388,7 @@ function createBootstrap(config) {
 
 exports.createBootstrap = createBootstrap;
 
-},{"./add.js":243,"./clear.js":244,"./list.js":246,"./reset.js":247,"./rm.js":248}],246:[function(require,module,exports){
+},{"./add.js":262,"./clear.js":263,"./list.js":265,"./reset.js":266,"./rm.js":267}],265:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63722,7 +70412,7 @@ const createList = configure.configure(api => {
 
 exports.createList = createList;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],247:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],266:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63749,7 +70439,7 @@ const createReset = configure.configure(api => {
 
 exports.createReset = createReset;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],248:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],267:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63776,7 +70466,7 @@ const createRm = configure.configure(api => {
 
 exports.createRm = createRm;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],249:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],268:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63801,7 +70491,7 @@ const createCat = configure.configure(api => {
 
 exports.createCat = createCat;
 
-},{"./lib/configure.js":305,"./lib/to-url-search-params.js":313}],250:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/to-url-search-params.js":332}],269:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63823,7 +70513,7 @@ const createCommands = configure.configure(api => {
 
 exports.createCommands = createCommands;
 
-},{"./lib/configure.js":305,"./lib/to-url-search-params.js":313}],251:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/to-url-search-params.js":332}],270:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63846,7 +70536,7 @@ const createGetAll = configure.configure(api => {
 
 exports.createGetAll = createGetAll;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],252:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],271:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63875,7 +70565,7 @@ const createGet = configure.configure(api => {
 
 exports.createGet = createGet;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],253:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],272:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63898,7 +70588,7 @@ function createConfig(config) {
 
 exports.createConfig = createConfig;
 
-},{"./get-all.js":251,"./get.js":252,"./profiles/index.js":255,"./replace.js":257,"./set.js":258}],254:[function(require,module,exports){
+},{"./get-all.js":270,"./get.js":271,"./profiles/index.js":274,"./replace.js":276,"./set.js":277}],273:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63927,7 +70617,7 @@ const createApply = configure.configure(api => {
 
 exports.createApply = createApply;
 
-},{"../../lib/configure.js":305,"../../lib/to-url-search-params.js":313}],255:[function(require,module,exports){
+},{"../../lib/configure.js":324,"../../lib/to-url-search-params.js":332}],274:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63944,7 +70634,7 @@ function createProfiles(config) {
 
 exports.createProfiles = createProfiles;
 
-},{"./apply.js":254,"./list.js":256}],256:[function(require,module,exports){
+},{"./apply.js":273,"./list.js":275}],275:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63968,7 +70658,7 @@ const createList = configure.configure(api => {
 
 exports.createList = createList;
 
-},{"../../lib/configure.js":305,"../../lib/object-to-camel.js":310,"../../lib/to-url-search-params.js":313}],257:[function(require,module,exports){
+},{"../../lib/configure.js":324,"../../lib/object-to-camel.js":329,"../../lib/to-url-search-params.js":332}],276:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -63995,7 +70685,7 @@ const createReplace = configure.configure(api => {
 
 exports.createReplace = createReplace;
 
-},{"../lib/abort-signal.js":304,"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228,"uint8arrays/from-string":462}],258:[function(require,module,exports){
+},{"../lib/abort-signal.js":323,"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247,"uint8arrays/from-string":481}],277:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64051,7 +70741,7 @@ const encodeParam = (key, value) => {
 
 exports.createSet = createSet;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],259:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],278:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64073,7 +70763,7 @@ const createExport = configure.configure(api => {
 
 exports.createExport = createExport;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],260:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],279:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64118,7 +70808,7 @@ const createGet = (codecs, options) => {
 
 exports.createGet = createGet;
 
-},{"../block/get.js":238,"../lib/configure.js":305,"../lib/resolve.js":312,"err-code":193,"it-first":401,"it-last":403}],261:[function(require,module,exports){
+},{"../block/get.js":257,"../lib/configure.js":324,"../lib/resolve.js":331,"err-code":212,"it-first":420,"it-last":422}],280:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64160,7 +70850,7 @@ const createImport = configure.configure(api => {
 
 exports.createImport = createImport;
 
-},{"../lib/abort-signal.js":304,"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228,"multiformats/cid":433}],262:[function(require,module,exports){
+},{"../lib/abort-signal.js":323,"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247,"multiformats/cid":452}],281:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64183,7 +70873,7 @@ function createDag(codecs, config) {
 
 exports.createDag = createDag;
 
-},{"./export.js":259,"./get.js":260,"./import.js":261,"./put.js":263,"./resolve.js":264}],263:[function(require,module,exports){
+},{"./export.js":278,"./get.js":279,"./import.js":280,"./put.js":282,"./resolve.js":283}],282:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64231,7 +70921,7 @@ const createPut = (codecs, options) => {
 
 exports.createPut = createPut;
 
-},{"../lib/abort-signal.js":304,"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228,"multiformats/cid":433}],264:[function(require,module,exports){
+},{"../lib/abort-signal.js":323,"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247,"multiformats/cid":452}],283:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64261,7 +70951,7 @@ const createResolve = configure.configure(api => {
 
 exports.createResolve = createResolve;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],265:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],284:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64289,7 +70979,7 @@ const createFindPeer = configure.configure(api => {
 
 exports.createFindPeer = createFindPeer;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"./map-event.js":269}],266:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"./map-event.js":288}],285:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64317,7 +71007,7 @@ const createFindProvs = configure.configure(api => {
 
 exports.createFindProvs = createFindProvs;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"./map-event.js":269}],267:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"./map-event.js":288}],286:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64346,7 +71036,7 @@ const createGet = configure.configure(api => {
 
 exports.createGet = createGet;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"./map-event.js":269,"uint8arrays/to-string":463}],268:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"./map-event.js":288,"uint8arrays/to-string":482}],287:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64371,7 +71061,7 @@ function createDht(config) {
 
 exports.createDht = createDht;
 
-},{"./find-peer.js":265,"./find-provs.js":266,"./get.js":267,"./provide.js":270,"./put.js":271,"./query.js":272}],269:[function(require,module,exports){
+},{"./find-peer.js":284,"./find-provs.js":285,"./get.js":286,"./provide.js":289,"./put.js":290,"./query.js":291}],288:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64473,7 +71163,7 @@ const mapEvent = event => {
 
 exports.mapEvent = mapEvent;
 
-},{"./response-types.js":273,"multiaddr":418,"uint8arrays/from-string":462}],270:[function(require,module,exports){
+},{"./response-types.js":292,"multiaddr":437,"uint8arrays/from-string":481}],289:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64502,7 +71192,7 @@ const createProvide = configure.configure(api => {
 
 exports.createProvide = createProvide;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"./map-event.js":269}],271:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"./map-event.js":288}],290:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64535,7 +71225,7 @@ const createPut = configure.configure(api => {
 
 exports.createPut = createPut;
 
-},{"../lib/abort-signal.js":304,"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"./map-event.js":269,"ipfs-core-utils/multipart-request":228,"uint8arrays/to-string":463}],272:[function(require,module,exports){
+},{"../lib/abort-signal.js":323,"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"./map-event.js":288,"ipfs-core-utils/multipart-request":247,"uint8arrays/to-string":482}],291:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64563,7 +71253,7 @@ const createQuery = configure.configure(api => {
 
 exports.createQuery = createQuery;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"./map-event.js":269}],273:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"./map-event.js":288}],292:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64586,7 +71276,7 @@ exports.QueryError = QueryError;
 exports.SendingQuery = SendingQuery;
 exports.Value = Value;
 
-},{}],274:[function(require,module,exports){
+},{}],293:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64608,7 +71298,7 @@ const createCmds = configure.configure(api => {
 
 exports.createCmds = createCmds;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],275:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],294:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64627,7 +71317,7 @@ function createDiag(config) {
 
 exports.createDiag = createDiag;
 
-},{"./cmds.js":274,"./net.js":276,"./sys.js":277}],276:[function(require,module,exports){
+},{"./cmds.js":293,"./net.js":295,"./sys.js":296}],295:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64649,7 +71339,7 @@ const createNet = configure.configure(api => {
 
 exports.createNet = createNet;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],277:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],296:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64671,7 +71361,7 @@ const createSys = configure.configure(api => {
 
 exports.createSys = createSys;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],278:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],297:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64697,7 +71387,7 @@ const createDns = configure.configure(api => {
 
 exports.createDns = createDns;
 
-},{"./lib/configure.js":305,"./lib/to-url-search-params.js":313}],279:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/to-url-search-params.js":332}],298:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64723,7 +71413,7 @@ const createChmod = configure.configure(api => {
 
 exports.createChmod = createChmod;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],280:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],299:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64750,7 +71440,7 @@ const createCp = configure.configure(api => {
 
 exports.createCp = createCp;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],281:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],300:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64780,7 +71470,7 @@ const createFlush = configure.configure(api => {
 
 exports.createFlush = createFlush;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],282:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],301:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64815,7 +71505,7 @@ function createFiles(config) {
 
 exports.createFiles = createFiles;
 
-},{"./chmod.js":279,"./cp.js":280,"./flush.js":281,"./ls.js":283,"./mkdir.js":284,"./mv.js":285,"./read.js":286,"./rm.js":287,"./stat.js":288,"./touch.js":289,"./write.js":290}],283:[function(require,module,exports){
+},{"./chmod.js":298,"./cp.js":299,"./flush.js":300,"./ls.js":302,"./mkdir.js":303,"./mv.js":304,"./read.js":305,"./rm.js":306,"./stat.js":307,"./touch.js":308,"./write.js":309}],302:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64863,7 +71553,7 @@ function toCoreInterface(entry) {
 
 exports.createLs = createLs;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel-with-metadata.js":309,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],284:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel-with-metadata.js":328,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],303:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64888,7 +71578,7 @@ const createMkdir = configure.configure(api => {
 
 exports.createMkdir = createMkdir;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],285:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],304:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64916,7 +71606,7 @@ const createMv = configure.configure(api => {
 
 exports.createMv = createMv;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],286:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],305:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64947,7 +71637,7 @@ const createRead = configure.configure(api => {
 
 exports.createRead = createRead;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"stream-to-it/source.js":459}],287:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"stream-to-it/source.js":478}],306:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -64982,7 +71672,7 @@ const createRm = configure.configure(api => {
 
 exports.createRm = createRm;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"ipfs-utils/src/http.js":391}],288:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"ipfs-utils/src/http.js":410}],307:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65016,7 +71706,7 @@ function toCoreInterface(entry) {
 
 exports.createStat = createStat;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel-with-metadata.js":309,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],289:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel-with-metadata.js":328,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],308:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65041,7 +71731,7 @@ const createTouch = configure.configure(api => {
 
 exports.createTouch = createTouch;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],290:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],309:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65079,7 +71769,7 @@ const createWrite = configure.configure(api => {
 
 exports.createWrite = createWrite;
 
-},{"../lib/abort-signal.js":304,"../lib/configure.js":305,"../lib/mode-to-string.js":308,"../lib/parse-mtime.js":311,"../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228}],291:[function(require,module,exports){
+},{"../lib/abort-signal.js":323,"../lib/configure.js":324,"../lib/mode-to-string.js":327,"../lib/parse-mtime.js":330,"../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247}],310:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65101,7 +71791,7 @@ const createGetEndpointConfig = configure.configure(api => {
 
 exports.createGetEndpointConfig = createGetEndpointConfig;
 
-},{"./lib/configure.js":305}],292:[function(require,module,exports){
+},{"./lib/configure.js":324}],311:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65132,7 +71822,7 @@ const createGet = configure.configure(api => {
 
 exports.createGet = createGet;
 
-},{"./lib/configure.js":305,"./lib/to-url-search-params.js":313,"multiformats/cid":433}],293:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/to-url-search-params.js":332,"multiformats/cid":452}],312:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65164,7 +71854,7 @@ const createId = configure.configure(api => {
 
 exports.createId = createId;
 
-},{"./lib/configure.js":305,"./lib/object-to-camel.js":310,"./lib/to-url-search-params.js":313,"multiaddr":418}],294:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/object-to-camel.js":329,"./lib/to-url-search-params.js":332,"multiaddr":437}],313:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65333,7 +72023,7 @@ Object.defineProperty(exports, 'urlSource', {
 exports.create = create;
 exports.globSource = globSource;
 
-},{"./add-all.js":231,"./add.js":232,"./bitswap/index.js":233,"./block/index.js":239,"./bootstrap/index.js":245,"./cat.js":249,"./commands.js":250,"./config/index.js":253,"./dag/index.js":262,"./dht/index.js":268,"./diag/index.js":275,"./dns.js":278,"./files/index.js":282,"./get-endpoint-config.js":291,"./get.js":292,"./id.js":293,"./is-online.js":295,"./key/index.js":299,"./log/index.js":314,"./ls.js":318,"./mount.js":319,"./name/index.js":320,"./object/index.js":329,"./pin/index.js":341,"./ping.js":356,"./pubsub/index.js":357,"./refs/index.js":364,"./repo/index.js":367,"./resolve.js":370,"./start.js":371,"./stats/index.js":373,"./stop.js":374,"./swarm/index.js":378,"./version.js":381,"@ipld/dag-cbor":129,"@ipld/dag-json":130,"@ipld/dag-pb":131,"dag-jose":173,"ipfs-core-utils/multibases":225,"ipfs-core-utils/multicodecs":226,"ipfs-core-utils/multihashes":227,"ipfs-utils/src/files/glob-source.js":389,"ipfs-utils/src/files/url-source.js":390,"multiaddr":418,"multiformats/basics":431,"multiformats/cid":433,"multiformats/hashes/identity":438}],295:[function(require,module,exports){
+},{"./add-all.js":250,"./add.js":251,"./bitswap/index.js":252,"./block/index.js":258,"./bootstrap/index.js":264,"./cat.js":268,"./commands.js":269,"./config/index.js":272,"./dag/index.js":281,"./dht/index.js":287,"./diag/index.js":294,"./dns.js":297,"./files/index.js":301,"./get-endpoint-config.js":310,"./get.js":311,"./id.js":312,"./is-online.js":314,"./key/index.js":318,"./log/index.js":333,"./ls.js":337,"./mount.js":338,"./name/index.js":339,"./object/index.js":348,"./pin/index.js":360,"./ping.js":375,"./pubsub/index.js":376,"./refs/index.js":383,"./repo/index.js":386,"./resolve.js":389,"./start.js":390,"./stats/index.js":392,"./stop.js":393,"./swarm/index.js":397,"./version.js":400,"@ipld/dag-cbor":140,"@ipld/dag-json":141,"@ipld/dag-pb":142,"dag-jose":191,"ipfs-core-utils/multibases":244,"ipfs-core-utils/multicodecs":245,"ipfs-core-utils/multihashes":246,"ipfs-utils/src/files/glob-source.js":408,"ipfs-utils/src/files/url-source.js":409,"multiaddr":437,"multiformats/basics":450,"multiformats/cid":452,"multiformats/hashes/identity":457}],314:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65351,7 +72041,7 @@ const createIsOnline = options => {
 
 exports.createIsOnline = createIsOnline;
 
-},{"./id.js":293}],296:[function(require,module,exports){
+},{"./id.js":312}],315:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65372,7 +72062,7 @@ const createExport = configure.configure(api => {
 
 exports.createExport = createExport;
 
-},{"../lib/configure.js":305,"err-code":193}],297:[function(require,module,exports){
+},{"../lib/configure.js":324,"err-code":212}],316:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65402,7 +72092,7 @@ const createGen = configure.configure(api => {
 
 exports.createGen = createGen;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],298:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],317:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65431,7 +72121,7 @@ const createImport = configure.configure(api => {
 
 exports.createImport = createImport;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],299:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],318:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65458,7 +72148,7 @@ function createKey(config) {
 
 exports.createKey = createKey;
 
-},{"./export.js":296,"./gen.js":297,"./import.js":298,"./info.js":300,"./list.js":301,"./rename.js":302,"./rm.js":303}],300:[function(require,module,exports){
+},{"./export.js":315,"./gen.js":316,"./import.js":317,"./info.js":319,"./list.js":320,"./rename.js":321,"./rm.js":322}],319:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65479,7 +72169,7 @@ const createInfo = configure.configure(api => {
 
 exports.createInfo = createInfo;
 
-},{"../lib/configure.js":305,"err-code":193}],301:[function(require,module,exports){
+},{"../lib/configure.js":324,"err-code":212}],320:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65503,7 +72193,7 @@ const createList = configure.configure(api => {
 
 exports.createList = createList;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],302:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],321:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65532,7 +72222,7 @@ const createRename = configure.configure(api => {
 
 exports.createRename = createRename;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],303:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],322:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65559,7 +72249,7 @@ const createRm = configure.configure(api => {
 
 exports.createRm = createRm;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],304:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],323:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65575,7 +72265,7 @@ function abortSignal(...signals) {
 
 exports.abortSignal = abortSignal;
 
-},{"any-signal":143}],305:[function(require,module,exports){
+},{"any-signal":154}],324:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65590,7 +72280,7 @@ const configure = fn => {
 
 exports.configure = configure;
 
-},{"./core.js":306}],306:[function(require,module,exports){
+},{"./core.js":325}],325:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65741,7 +72431,7 @@ exports.Client = Client;
 exports.HTTPError = HTTPError;
 exports.errorHandler = errorHandler;
 
-},{"debug":382,"ipfs-core-utils/agent":216,"ipfs-core-utils/to-url-string":230,"ipfs-utils/src/env.js":387,"ipfs-utils/src/http.js":391,"merge-options":407,"multiaddr":418,"parse-duration":446}],307:[function(require,module,exports){
+},{"debug":401,"ipfs-core-utils/agent":235,"ipfs-core-utils/to-url-string":249,"ipfs-utils/src/env.js":406,"ipfs-utils/src/http.js":410,"merge-options":426,"multiaddr":437,"parse-duration":465}],326:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65765,9 +72455,9 @@ exports.rpcToBytes = rpcToBytes;
 exports.rpcToText = rpcToText;
 exports.textToUrlSafeRpc = textToUrlSafeRpc;
 
-},{"multiformats/bases/base64":428,"uint8arrays/from-string":462,"uint8arrays/to-string":463}],308:[function(require,module,exports){
-arguments[4][224][0].apply(exports,arguments)
-},{"dup":224}],309:[function(require,module,exports){
+},{"multiformats/bases/base64":447,"uint8arrays/from-string":481,"uint8arrays/to-string":482}],327:[function(require,module,exports){
+arguments[4][243][0].apply(exports,arguments)
+},{"dup":243}],328:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65791,7 +72481,7 @@ function objectToCamelWithMetadata(entry) {
 
 exports.objectToCamelWithMetadata = objectToCamelWithMetadata;
 
-},{"./object-to-camel.js":310}],310:[function(require,module,exports){
+},{"./object-to-camel.js":329}],329:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65816,7 +72506,7 @@ function objectToCamel(obj) {
 
 exports.objectToCamel = objectToCamel;
 
-},{}],311:[function(require,module,exports){
+},{}],330:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65869,7 +72559,7 @@ function parseMtime(input) {
 
 exports.parseMtime = parseMtime;
 
-},{"err-code":193}],312:[function(require,module,exports){
+},{"err-code":212}],331:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65918,7 +72608,7 @@ async function* resolve(cid$1, path, codecs, getBlock, options) {
 
 exports.resolve = resolve;
 
-},{"err-code":193,"multiformats/cid":433}],313:[function(require,module,exports){
+},{"err-code":212,"multiformats/cid":452}],332:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65959,7 +72649,7 @@ function toUrlSearchParams({arg, searchParams, hashAlg, mtime, mode, ...options}
 
 exports.toUrlSearchParams = toUrlSearchParams;
 
-},{"./mode-to-string.js":308,"./parse-mtime.js":311}],314:[function(require,module,exports){
+},{"./mode-to-string.js":327,"./parse-mtime.js":330}],333:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -65978,7 +72668,7 @@ function createLog(config) {
 
 exports.createLog = createLog;
 
-},{"./level.js":315,"./ls.js":316,"./tail.js":317}],315:[function(require,module,exports){
+},{"./level.js":334,"./ls.js":335,"./tail.js":336}],334:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66007,7 +72697,7 @@ const createLevel = configure.configure(api => {
 
 exports.createLevel = createLevel;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],316:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],335:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66030,7 +72720,7 @@ const createLs = configure.configure(api => {
 
 exports.createLs = createLs;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],317:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],336:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66052,7 +72742,7 @@ const createTail = configure.configure(api => {
 
 exports.createTail = createTail;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],318:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],337:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66136,7 +72826,7 @@ function typeOf(link) {
 
 exports.createLs = createLs;
 
-},{"./files/stat.js":288,"./lib/configure.js":305,"./lib/to-url-search-params.js":313,"multiformats/cid":433}],319:[function(require,module,exports){
+},{"./files/stat.js":307,"./lib/configure.js":324,"./lib/to-url-search-params.js":332,"multiformats/cid":452}],338:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66159,7 +72849,7 @@ const createMount = configure.configure(api => {
 
 exports.createMount = createMount;
 
-},{"./lib/configure.js":305,"./lib/object-to-camel.js":310,"./lib/to-url-search-params.js":313}],320:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/object-to-camel.js":329,"./lib/to-url-search-params.js":332}],339:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66178,7 +72868,7 @@ function createName(config) {
 
 exports.createName = createName;
 
-},{"./publish.js":321,"./pubsub/index.js":323,"./resolve.js":326}],321:[function(require,module,exports){
+},{"./publish.js":340,"./pubsub/index.js":342,"./resolve.js":345}],340:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66204,7 +72894,7 @@ const createPublish = configure.configure(api => {
 
 exports.createPublish = createPublish;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],322:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],341:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66230,7 +72920,7 @@ const createCancel = configure.configure(api => {
 
 exports.createCancel = createCancel;
 
-},{"../../lib/configure.js":305,"../../lib/object-to-camel.js":310,"../../lib/to-url-search-params.js":313}],323:[function(require,module,exports){
+},{"../../lib/configure.js":324,"../../lib/object-to-camel.js":329,"../../lib/to-url-search-params.js":332}],342:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66249,7 +72939,7 @@ function createPubsub(config) {
 
 exports.createPubsub = createPubsub;
 
-},{"./cancel.js":322,"./state.js":324,"./subs.js":325}],324:[function(require,module,exports){
+},{"./cancel.js":341,"./state.js":343,"./subs.js":344}],343:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66272,7 +72962,7 @@ const createState = configure.configure(api => {
 
 exports.createState = createState;
 
-},{"../../lib/configure.js":305,"../../lib/object-to-camel.js":310,"../../lib/to-url-search-params.js":313}],325:[function(require,module,exports){
+},{"../../lib/configure.js":324,"../../lib/object-to-camel.js":329,"../../lib/to-url-search-params.js":332}],344:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66295,7 +72985,7 @@ const createSubs = configure.configure(api => {
 
 exports.createSubs = createSubs;
 
-},{"../../lib/configure.js":305,"../../lib/to-url-search-params.js":313}],326:[function(require,module,exports){
+},{"../../lib/configure.js":324,"../../lib/to-url-search-params.js":332}],345:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66323,7 +73013,7 @@ const createResolve = configure.configure(api => {
 
 exports.createResolve = createResolve;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],327:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],346:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66350,7 +73040,7 @@ const createData = configure.configure(api => {
 
 exports.createData = createData;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],328:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],347:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66386,7 +73076,7 @@ const createGet = configure.configure(api => {
 
 exports.createGet = createGet;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433,"uint8arrays/from-string":462}],329:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452,"uint8arrays/from-string":481}],348:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66413,7 +73103,7 @@ function createObject(codecs, config) {
 
 exports.createObject = createObject;
 
-},{"./data.js":327,"./get.js":328,"./links.js":330,"./new.js":331,"./patch/index.js":334,"./put.js":337,"./stat.js":338}],330:[function(require,module,exports){
+},{"./data.js":346,"./get.js":347,"./links.js":349,"./new.js":350,"./patch/index.js":353,"./put.js":356,"./stat.js":357}],349:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66444,7 +73134,7 @@ const createLinks = configure.configure(api => {
 
 exports.createLinks = createLinks;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],331:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],350:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66471,7 +73161,7 @@ const createNew = configure.configure(api => {
 
 exports.createNew = createNew;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],332:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],351:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66502,7 +73192,7 @@ const createAddLink = configure.configure(api => {
 
 exports.createAddLink = createAddLink;
 
-},{"../../lib/configure.js":305,"../../lib/to-url-search-params.js":313,"multiformats/cid":433}],333:[function(require,module,exports){
+},{"../../lib/configure.js":324,"../../lib/to-url-search-params.js":332,"multiformats/cid":452}],352:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66533,7 +73223,7 @@ const createAppendData = configure.configure(api => {
 
 exports.createAppendData = createAppendData;
 
-},{"../../lib/abort-signal.js":304,"../../lib/configure.js":305,"../../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228,"multiformats/cid":433}],334:[function(require,module,exports){
+},{"../../lib/abort-signal.js":323,"../../lib/configure.js":324,"../../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247,"multiformats/cid":452}],353:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66554,7 +73244,7 @@ function createPatch(config) {
 
 exports.createPatch = createPatch;
 
-},{"./add-link.js":332,"./append-data.js":333,"./rm-link.js":335,"./set-data.js":336}],335:[function(require,module,exports){
+},{"./add-link.js":351,"./append-data.js":352,"./rm-link.js":354,"./set-data.js":355}],354:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66584,7 +73274,7 @@ const createRmLink = configure.configure(api => {
 
 exports.createRmLink = createRmLink;
 
-},{"../../lib/configure.js":305,"../../lib/to-url-search-params.js":313,"multiformats/cid":433}],336:[function(require,module,exports){
+},{"../../lib/configure.js":324,"../../lib/to-url-search-params.js":332,"multiformats/cid":452}],355:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66615,7 +73305,7 @@ const createSetData = configure.configure(api => {
 
 exports.createSetData = createSetData;
 
-},{"../../lib/abort-signal.js":304,"../../lib/configure.js":305,"../../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228,"multiformats/cid":433}],337:[function(require,module,exports){
+},{"../../lib/abort-signal.js":323,"../../lib/configure.js":324,"../../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247,"multiformats/cid":452}],356:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66641,7 +73331,7 @@ const createPut = (codecs, options) => {
 
 exports.createPut = createPut;
 
-},{"../dag/put.js":263,"../lib/configure.js":305}],338:[function(require,module,exports){
+},{"../dag/put.js":282,"../lib/configure.js":324}],357:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66671,7 +73361,7 @@ const createStat = configure.configure(api => {
 
 exports.createStat = createStat;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],339:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],358:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66711,7 +73401,7 @@ const createAddAll = configure.configure(api => {
 
 exports.createAddAll = createAddAll;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"ipfs-core-utils/pins/normalise-input":229,"multiformats/cid":433}],340:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"ipfs-core-utils/pins/normalise-input":248,"multiformats/cid":452}],359:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66739,7 +73429,7 @@ function createAdd(config) {
 
 exports.createAdd = createAdd;
 
-},{"../lib/configure.js":305,"./add-all.js":339,"it-last":403}],341:[function(require,module,exports){
+},{"../lib/configure.js":324,"./add-all.js":358,"it-last":422}],360:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66764,7 +73454,7 @@ function createPin(config) {
 
 exports.createPin = createPin;
 
-},{"./add-all.js":339,"./add.js":340,"./ls.js":342,"./remote/index.js":344,"./rm-all.js":354,"./rm.js":355}],342:[function(require,module,exports){
+},{"./add-all.js":358,"./add.js":359,"./ls.js":361,"./remote/index.js":363,"./rm-all.js":373,"./rm.js":374}],361:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66813,7 +73503,7 @@ const createLs = configure.configure(api => {
 
 exports.createLs = createLs;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],343:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],362:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66838,7 +73528,7 @@ function createAdd(client) {
 
 exports.createAdd = createAdd;
 
-},{"./utils.js":353}],344:[function(require,module,exports){
+},{"./utils.js":372}],363:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66863,7 +73553,7 @@ function createRemote(config) {
 
 exports.createRemote = createRemote;
 
-},{"../../lib/core.js":306,"./add.js":343,"./ls.js":345,"./rm-all.js":346,"./rm.js":347,"./service/index.js":349}],345:[function(require,module,exports){
+},{"../../lib/core.js":325,"./add.js":362,"./ls.js":364,"./rm-all.js":365,"./rm.js":366,"./service/index.js":368}],364:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66887,7 +73577,7 @@ function createLs(client) {
 
 exports.createLs = createLs;
 
-},{"./utils.js":353}],346:[function(require,module,exports){
+},{"./utils.js":372}],365:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66911,7 +73601,7 @@ function createRmAll(client) {
 
 exports.createRmAll = createRmAll;
 
-},{"./utils.js":353}],347:[function(require,module,exports){
+},{"./utils.js":372}],366:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66935,7 +73625,7 @@ function createRm(client) {
 
 exports.createRm = createRm;
 
-},{"./utils.js":353}],348:[function(require,module,exports){
+},{"./utils.js":372}],367:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66964,7 +73654,7 @@ function createAdd(client) {
 
 exports.createAdd = createAdd;
 
-},{"../../../lib/to-url-search-params.js":313,"./utils.js":352}],349:[function(require,module,exports){
+},{"../../../lib/to-url-search-params.js":332,"./utils.js":371}],368:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -66985,7 +73675,7 @@ function createService(config) {
 
 exports.createService = createService;
 
-},{"../../../lib/core.js":306,"./add.js":348,"./ls.js":350,"./rm.js":351}],350:[function(require,module,exports){
+},{"../../../lib/core.js":325,"./add.js":367,"./ls.js":369,"./rm.js":370}],369:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67010,7 +73700,7 @@ function createLs(client) {
 
 exports.createLs = createLs;
 
-},{"../../../lib/to-url-search-params.js":313,"./utils.js":352}],351:[function(require,module,exports){
+},{"../../../lib/to-url-search-params.js":332,"./utils.js":371}],370:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67030,7 +73720,7 @@ function createRm(client) {
 
 exports.createRm = createRm;
 
-},{"../../../lib/to-url-search-params.js":313}],352:[function(require,module,exports){
+},{"../../../lib/to-url-search-params.js":332}],371:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67076,7 +73766,7 @@ exports.decodeRemoteService = decodeRemoteService;
 exports.decodeStat = decodeStat;
 exports.encodeEndpoint = encodeEndpoint;
 
-},{}],353:[function(require,module,exports){
+},{}],372:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67148,7 +73838,7 @@ exports.encodeCID = encodeCID;
 exports.encodeQuery = encodeQuery;
 exports.encodeService = encodeService;
 
-},{"../../lib/to-url-search-params.js":313,"multiformats/cid":433}],354:[function(require,module,exports){
+},{"../../lib/to-url-search-params.js":332,"multiformats/cid":452}],373:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67188,7 +73878,7 @@ const createRmAll = configure.configure(api => {
 
 exports.createRmAll = createRmAll;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"ipfs-core-utils/pins/normalise-input":229,"multiformats/cid":433}],355:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"ipfs-core-utils/pins/normalise-input":248,"multiformats/cid":452}],374:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67216,7 +73906,7 @@ const createRm = config => {
 
 exports.createRm = createRm;
 
-},{"../lib/configure.js":305,"./rm-all.js":354,"it-last":403}],356:[function(require,module,exports){
+},{"../lib/configure.js":324,"./rm-all.js":373,"it-last":422}],375:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67243,7 +73933,7 @@ const createPing = configure.configure(api => {
 
 exports.createPing = createPing;
 
-},{"./lib/configure.js":305,"./lib/object-to-camel.js":310,"./lib/to-url-search-params.js":313}],357:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/object-to-camel.js":329,"./lib/to-url-search-params.js":332}],376:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67268,7 +73958,7 @@ function createPubsub(config) {
 
 exports.createPubsub = createPubsub;
 
-},{"./ls.js":358,"./peers.js":359,"./publish.js":360,"./subscribe.js":361,"./subscription-tracker.js":362,"./unsubscribe.js":363}],358:[function(require,module,exports){
+},{"./ls.js":377,"./peers.js":378,"./publish.js":379,"./subscribe.js":380,"./subscription-tracker.js":381,"./unsubscribe.js":382}],377:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67291,7 +73981,7 @@ const createLs = configure.configure(api => {
 
 exports.createLs = createLs;
 
-},{"../lib/configure.js":305,"../lib/http-rpc-wire-format.js":307,"../lib/to-url-search-params.js":313}],359:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/http-rpc-wire-format.js":326,"../lib/to-url-search-params.js":332}],378:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67318,7 +74008,7 @@ const createPeers = configure.configure(api => {
 
 exports.createPeers = createPeers;
 
-},{"../lib/configure.js":305,"../lib/http-rpc-wire-format.js":307,"../lib/to-url-search-params.js":313}],360:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/http-rpc-wire-format.js":326,"../lib/to-url-search-params.js":332}],379:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67349,7 +74039,7 @@ const createPublish = configure.configure(api => {
 
 exports.createPublish = createPublish;
 
-},{"../lib/abort-signal.js":304,"../lib/configure.js":305,"../lib/http-rpc-wire-format.js":307,"../lib/to-url-search-params.js":313,"ipfs-core-utils/multipart-request":228}],361:[function(require,module,exports){
+},{"../lib/abort-signal.js":323,"../lib/configure.js":324,"../lib/http-rpc-wire-format.js":326,"../lib/to-url-search-params.js":332,"ipfs-core-utils/multipart-request":247}],380:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67442,7 +74132,7 @@ const isAbortError = error => {
 
 exports.createSubscribe = createSubscribe;
 
-},{"../lib/configure.js":305,"../lib/http-rpc-wire-format.js":307,"../lib/to-url-search-params.js":313,"debug":382}],362:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/http-rpc-wire-format.js":326,"../lib/to-url-search-params.js":332,"debug":401}],381:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67485,7 +74175,7 @@ class SubscriptionTracker {
 
 exports.SubscriptionTracker = SubscriptionTracker;
 
-},{}],363:[function(require,module,exports){
+},{}],382:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67499,7 +74189,7 @@ const createUnsubscribe = (options, subsTracker) => {
 
 exports.createUnsubscribe = createUnsubscribe;
 
-},{}],364:[function(require,module,exports){
+},{}],383:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67529,7 +74219,7 @@ const createRefs = configure.configure((api, opts) => {
 
 exports.createRefs = createRefs;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313,"./local.js":365,"multiformats/cid":433}],365:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332,"./local.js":384,"multiformats/cid":452}],384:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67553,7 +74243,7 @@ const createLocal = configure.configure(api => {
 
 exports.createLocal = createLocal;
 
-},{"../lib/configure.js":305,"../lib/object-to-camel.js":310,"../lib/to-url-search-params.js":313}],366:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/object-to-camel.js":329,"../lib/to-url-search-params.js":332}],385:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67582,7 +74272,7 @@ const createGc = configure.configure(api => {
 
 exports.createGc = createGc;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiformats/cid":433}],367:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiformats/cid":452}],386:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67601,7 +74291,7 @@ function createRepo(config) {
 
 exports.createRepo = createRepo;
 
-},{"./gc.js":366,"./stat.js":368,"./version.js":369}],368:[function(require,module,exports){
+},{"./gc.js":385,"./stat.js":387,"./version.js":388}],387:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67630,7 +74320,7 @@ const createStat = configure.configure(api => {
 
 exports.createStat = createStat;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],369:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],388:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67652,7 +74342,7 @@ const createVersion = configure.configure(api => {
 
 exports.createVersion = createVersion;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],370:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],389:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67678,7 +74368,7 @@ const createResolve = configure.configure(api => {
 
 exports.createResolve = createResolve;
 
-},{"./lib/configure.js":305,"./lib/to-url-search-params.js":313}],371:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/to-url-search-params.js":332}],390:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67699,7 +74389,7 @@ const createStart = configure.configure(api => {
 
 exports.createStart = createStart;
 
-},{"./lib/configure.js":305,"err-code":193}],372:[function(require,module,exports){
+},{"./lib/configure.js":324,"err-code":212}],391:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67727,7 +74417,7 @@ const createBw = configure.configure(api => {
 
 exports.createBw = createBw;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],373:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],392:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67746,7 +74436,7 @@ function createStats(config) {
 
 exports.createStats = createStats;
 
-},{"../bitswap/stat.js":234,"../repo/stat.js":368,"./bw.js":372}],374:[function(require,module,exports){
+},{"../bitswap/stat.js":253,"../repo/stat.js":387,"./bw.js":391}],393:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67768,7 +74458,7 @@ const createStop = configure.configure(api => {
 
 exports.createStop = createStop;
 
-},{"./lib/configure.js":305,"./lib/to-url-search-params.js":313}],375:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/to-url-search-params.js":332}],394:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67795,7 +74485,7 @@ const createAddrs = configure.configure(api => {
 
 exports.createAddrs = createAddrs;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],376:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],395:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67821,7 +74511,7 @@ const createConnect = configure.configure(api => {
 
 exports.createConnect = createConnect;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],377:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],396:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67847,7 +74537,7 @@ const createDisconnect = configure.configure(api => {
 
 exports.createDisconnect = createDisconnect;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313}],378:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332}],397:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67870,7 +74560,7 @@ function createSwarm(config) {
 
 exports.createSwarm = createSwarm;
 
-},{"./addrs.js":375,"./connect.js":376,"./disconnect.js":377,"./local-addrs.js":379,"./peers.js":380}],379:[function(require,module,exports){
+},{"./addrs.js":394,"./connect.js":395,"./disconnect.js":396,"./local-addrs.js":398,"./peers.js":399}],398:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67894,7 +74584,7 @@ const createLocalAddrs = configure.configure(api => {
 
 exports.createLocalAddrs = createLocalAddrs;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],380:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],399:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67927,7 +74617,7 @@ const createPeers = configure.configure(api => {
 
 exports.createPeers = createPeers;
 
-},{"../lib/configure.js":305,"../lib/to-url-search-params.js":313,"multiaddr":418}],381:[function(require,module,exports){
+},{"../lib/configure.js":324,"../lib/to-url-search-params.js":332,"multiaddr":437}],400:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -67953,7 +74643,7 @@ const createVersion = configure.configure(api => {
 
 exports.createVersion = createVersion;
 
-},{"./lib/configure.js":305,"./lib/object-to-camel.js":310,"./lib/to-url-search-params.js":313}],382:[function(require,module,exports){
+},{"./lib/configure.js":324,"./lib/object-to-camel.js":329,"./lib/to-url-search-params.js":332}],401:[function(require,module,exports){
 (function (process){(function (){
 /* eslint-env browser */
 
@@ -68226,7 +74916,7 @@ formatters.j = function (v) {
 };
 
 }).call(this)}).call(this,require('_process'))
-},{"./common":383,"_process":3}],383:[function(require,module,exports){
+},{"./common":402,"_process":10}],402:[function(require,module,exports){
 
 /**
  * This is the common logic for both the Node.js and web browser
@@ -68502,7 +75192,7 @@ function setup(env) {
 
 module.exports = setup;
 
-},{"ms":384}],384:[function(require,module,exports){
+},{"ms":403}],403:[function(require,module,exports){
 /**
  * Helpers.
  */
@@ -68666,7 +75356,7 @@ function plural(ms, msAbs, n, name) {
   return Math.round(ms / n) + ' ' + name + (isPlural ? 's' : '');
 }
 
-},{}],385:[function(require,module,exports){
+},{}],404:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -68887,7 +75577,7 @@ exports.UnixFS = UnixFS;
 exports.parseMode = parseMode;
 exports.parseMtime = parseMtime;
 
-},{"./unixfs.js":386,"err-code":193}],386:[function(require,module,exports){
+},{"./unixfs.js":405,"err-code":212}],405:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -69316,7 +76006,7 @@ exports.Metadata = Metadata;
 exports.UnixTime = UnixTime;
 exports["default"] = $root;
 
-},{"protobufjs/minimal.js":447}],387:[function(require,module,exports){
+},{"protobufjs/minimal.js":466}],406:[function(require,module,exports){
 'use strict'
 const isElectron = require('is-electron')
 
@@ -69347,7 +76037,7 @@ module.exports = {
   isReactNative: IS_REACT_NATIVE
 }
 
-},{"is-electron":394}],388:[function(require,module,exports){
+},{"is-electron":413}],407:[function(require,module,exports){
 'use strict'
 
 const { isElectronMain } = require('./env')
@@ -69359,7 +76049,7 @@ if (isElectronMain) {
   module.exports = require('native-fetch')
 }
 
-},{"./env":387,"electron-fetch":1,"native-fetch":444}],389:[function(require,module,exports){
+},{"./env":406,"electron-fetch":3,"native-fetch":463}],408:[function(require,module,exports){
 (function (process){(function (){
 'use strict'
 
@@ -69441,7 +76131,7 @@ module.exports = async function * globSource (cwd, pattern, options) {
 const toPosix = path => path.replace(/\\/g, '/')
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":3,"err-code":193,"fs":1,"it-glob":402,"path":2}],390:[function(require,module,exports){
+},{"_process":10,"err-code":212,"fs":3,"it-glob":421,"path":9}],409:[function(require,module,exports){
 'use strict'
 
 const HTTP = require('../http')
@@ -69474,7 +76164,7 @@ async function * readURLContent (url, options) {
 
 module.exports = urlSource
 
-},{"../http":391}],391:[function(require,module,exports){
+},{"../http":410}],410:[function(require,module,exports){
 /* eslint-disable no-undef */
 'use strict'
 
@@ -69834,7 +76524,7 @@ HTTP.options = (resource, options) => new HTTP(options).options(resource, option
 
 module.exports = HTTP
 
-},{"./http/error":392,"./http/fetch":393,"any-signal":143,"iso-url":397,"merge-options":407}],392:[function(require,module,exports){
+},{"./http/error":411,"./http/fetch":412,"any-signal":154,"iso-url":416,"merge-options":426}],411:[function(require,module,exports){
 'use strict'
 
 class TimeoutError extends Error {
@@ -69865,7 +76555,7 @@ class HTTPError extends Error {
 }
 exports.HTTPError = HTTPError
 
-},{}],393:[function(require,module,exports){
+},{}],412:[function(require,module,exports){
 'use strict'
 
 const { TimeoutError, AbortError } = require('./error')
@@ -70009,7 +76699,7 @@ module.exports = {
   Headers
 }
 
-},{"../fetch":388,"./error":392}],394:[function(require,module,exports){
+},{"../fetch":407,"./error":411}],413:[function(require,module,exports){
 (function (process){(function (){
 // https://github.com/electron/electron/issues/2288
 function isElectron() {
@@ -70034,7 +76724,7 @@ function isElectron() {
 module.exports = isElectron;
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":3}],395:[function(require,module,exports){
+},{"_process":10}],414:[function(require,module,exports){
 'use strict';
 const ipRegex = require('ip-regex');
 
@@ -70045,7 +76735,7 @@ isIp.version = string => isIp(string) ? (isIp.v4(string) ? 4 : 6) : undefined;
 
 module.exports = isIp;
 
-},{"ip-regex":215}],396:[function(require,module,exports){
+},{"ip-regex":234}],415:[function(require,module,exports){
 'use strict';
 
 module.exports = value => {
@@ -70057,7 +76747,7 @@ module.exports = value => {
 	return prototype === null || prototype === Object.prototype;
 };
 
-},{}],397:[function(require,module,exports){
+},{}],416:[function(require,module,exports){
 'use strict'
 
 const {
@@ -70076,7 +76766,7 @@ module.exports = {
   defaultBase
 }
 
-},{"./src/relative":398,"./src/url":399}],398:[function(require,module,exports){
+},{"./src/relative":417,"./src/url":418}],417:[function(require,module,exports){
 'use strict'
 
 const { URLWithLegacySupport, format } = require('./url')
@@ -70110,7 +76800,7 @@ module.exports = (url, location = {}, protocolMap = {}, defaultProtocol) => {
   return new URLWithLegacySupport(url, format(base)).toString()
 }
 
-},{"./url":399}],399:[function(require,module,exports){
+},{"./url":418}],418:[function(require,module,exports){
 'use strict'
 
 const isReactNative =
@@ -70303,7 +76993,7 @@ module.exports = {
   format
 }
 
-},{}],400:[function(require,module,exports){
+},{}],419:[function(require,module,exports){
 'use strict'
 
 /**
@@ -70324,7 +77014,7 @@ const all = async (source) => {
 
 module.exports = all
 
-},{}],401:[function(require,module,exports){
+},{}],420:[function(require,module,exports){
 'use strict'
 
 /**
@@ -70344,7 +77034,7 @@ const first = async (source) => {
 
 module.exports = first
 
-},{}],402:[function(require,module,exports){
+},{}],421:[function(require,module,exports){
 (function (process){(function (){
 'use strict'
 
@@ -70422,7 +77112,7 @@ async function * _glob (base, dir, pattern, options) {
 module.exports = glob
 
 }).call(this)}).call(this,require('_process'))
-},{"_process":3,"fs":1,"minimatch":410,"path":1}],403:[function(require,module,exports){
+},{"_process":10,"fs":3,"minimatch":429,"path":3}],422:[function(require,module,exports){
 'use strict'
 
 /**
@@ -70444,7 +77134,7 @@ const last = async (source) => {
 
 module.exports = last
 
-},{}],404:[function(require,module,exports){
+},{}],423:[function(require,module,exports){
 'use strict'
 
 /**
@@ -70464,7 +77154,7 @@ const map = async function * (source, func) {
 
 module.exports = map
 
-},{}],405:[function(require,module,exports){
+},{}],424:[function(require,module,exports){
 'use strict'
 
 /**
@@ -70542,7 +77232,7 @@ function peekableIterator (iterable) {
 
 module.exports = peekableIterator
 
-},{}],406:[function(require,module,exports){
+},{}],425:[function(require,module,exports){
 /*!
  * jQuery JavaScript Library v3.6.0
  * https://jquery.com/
@@ -81425,7 +88115,7 @@ if ( typeof noGlobal === "undefined" ) {
 return jQuery;
 } );
 
-},{}],407:[function(require,module,exports){
+},{}],426:[function(require,module,exports){
 'use strict';
 const isOptionObject = require('is-plain-obj');
 
@@ -81598,7 +88288,7 @@ module.exports = function (...options) {
 	return merged._;
 };
 
-},{"is-plain-obj":396}],408:[function(require,module,exports){
+},{"is-plain-obj":415}],427:[function(require,module,exports){
 module.exports = assert;
 
 function assert(val, msg) {
@@ -81611,7 +88301,7 @@ assert.equal = function assertEqual(l, r, msg) {
     throw new Error(msg || ('Assertion failed: ' + l + ' != ' + r));
 };
 
-},{}],409:[function(require,module,exports){
+},{}],428:[function(require,module,exports){
 'use strict';
 
 var utils = exports;
@@ -81671,7 +88361,7 @@ utils.encode = function encode(arr, enc) {
     return arr;
 };
 
-},{}],410:[function(require,module,exports){
+},{}],429:[function(require,module,exports){
 module.exports = minimatch
 minimatch.Minimatch = Minimatch
 
@@ -82620,7 +89310,7 @@ function regExpEscape (s) {
   return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
 }
 
-},{"brace-expansion":148,"path":2}],411:[function(require,module,exports){
+},{"brace-expansion":159,"path":9}],430:[function(require,module,exports){
 const { Multiaddr } = require('multiaddr')
 
 const reduceValue = (_, v) => v
@@ -82682,7 +89372,7 @@ module.exports = (multiaddr, opts) => {
     }, '')
 }
 
-},{"multiaddr":418}],412:[function(require,module,exports){
+},{"multiaddr":437}],431:[function(require,module,exports){
 module.exports = read
 
 var MSB = 0x80
@@ -82713,7 +89403,7 @@ function read(buf, offset) {
   return res
 }
 
-},{}],413:[function(require,module,exports){
+},{}],432:[function(require,module,exports){
 module.exports = encode
 
 var MSB = 0x80
@@ -82745,14 +89435,14 @@ function encode(num, out, offset) {
   return out
 }
 
-},{}],414:[function(require,module,exports){
+},{}],433:[function(require,module,exports){
 module.exports = {
     encode: require('./encode.js')
   , decode: require('./decode.js')
   , encodingLength: require('./length.js')
 }
 
-},{"./decode.js":412,"./encode.js":413,"./length.js":415}],415:[function(require,module,exports){
+},{"./decode.js":431,"./encode.js":432,"./length.js":434}],434:[function(require,module,exports){
 
 var N1 = Math.pow(2,  7)
 var N2 = Math.pow(2, 14)
@@ -82779,7 +89469,7 @@ module.exports = function (value) {
   )
 }
 
-},{}],416:[function(require,module,exports){
+},{}],435:[function(require,module,exports){
 'use strict'
 
 const convert = require('./convert')
@@ -83063,7 +89753,7 @@ function protoFromTuple (tup) {
   return proto
 }
 
-},{"./convert":417,"./protocols-table":420,"uint8arrays/concat":460,"uint8arrays/to-string":463,"varint":414}],417:[function(require,module,exports){
+},{"./convert":436,"./protocols-table":439,"uint8arrays/concat":479,"uint8arrays/to-string":482,"varint":433}],436:[function(require,module,exports){
 'use strict'
 
 const ip = require('./ip')
@@ -83319,7 +90009,7 @@ function bytes2onion (buf) {
   return addr + ':' + port
 }
 
-},{"./ip":419,"./protocols-table":420,"multiformats/bases/base32":425,"multiformats/bases/base58":427,"multiformats/cid":433,"multiformats/hashes/digest":436,"uint8arrays/concat":460,"uint8arrays/from-string":462,"uint8arrays/to-string":463,"varint":414}],418:[function(require,module,exports){
+},{"./ip":438,"./protocols-table":439,"multiformats/bases/base32":444,"multiformats/bases/base58":446,"multiformats/cid":452,"multiformats/hashes/digest":455,"uint8arrays/concat":479,"uint8arrays/from-string":481,"uint8arrays/to-string":482,"varint":433}],437:[function(require,module,exports){
 'use strict'
 
 const codec = require('./codec')
@@ -83945,7 +90635,7 @@ function multiaddr (addr) {
 
 module.exports = { Multiaddr, multiaddr, protocols, resolvers }
 
-},{"./codec":416,"./protocols-table":420,"err-code":193,"multiformats/bases/base58":427,"multiformats/cid":433,"uint8arrays/equals":461,"uint8arrays/to-string":463,"varint":414}],419:[function(require,module,exports){
+},{"./codec":435,"./protocols-table":439,"err-code":212,"multiformats/bases/base58":446,"multiformats/cid":452,"uint8arrays/equals":480,"uint8arrays/to-string":482,"varint":433}],438:[function(require,module,exports){
 'use strict'
 
 const isIp = require('is-ip')
@@ -84051,7 +90741,7 @@ module.exports = {
   toString
 }
 
-},{"is-ip":395,"uint8arrays/to-string":463}],420:[function(require,module,exports){
+},{"is-ip":414,"uint8arrays/to-string":482}],439:[function(require,module,exports){
 'use strict'
 /** @typedef {import("./types").Protocol} Protocol */
 
@@ -84158,7 +90848,7 @@ function p (code, size, name, resolvable, path) {
 
 module.exports = Protocols
 
-},{}],421:[function(require,module,exports){
+},{}],440:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84324,7 +91014,7 @@ exports.from = from;
 exports.or = or;
 exports.rfc4648 = rfc4648;
 
-},{"../../vendor/base-x.js":442,"../bytes.js":432}],422:[function(require,module,exports){
+},{"../../vendor/base-x.js":461,"../bytes.js":451}],441:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84339,7 +91029,7 @@ const base10 = base.baseX({
 
 exports.base10 = base10;
 
-},{"./base.js":421}],423:[function(require,module,exports){
+},{"./base.js":440}],442:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84362,7 +91052,7 @@ const base16upper = base.rfc4648({
 exports.base16 = base16;
 exports.base16upper = base16upper;
 
-},{"./base.js":421}],424:[function(require,module,exports){
+},{"./base.js":440}],443:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84378,7 +91068,7 @@ const base2 = base.rfc4648({
 
 exports.base2 = base2;
 
-},{"./base.js":421}],425:[function(require,module,exports){
+},{"./base.js":440}],444:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84450,7 +91140,7 @@ exports.base32padupper = base32padupper;
 exports.base32upper = base32upper;
 exports.base32z = base32z;
 
-},{"./base.js":421}],426:[function(require,module,exports){
+},{"./base.js":440}],445:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84471,7 +91161,7 @@ const base36upper = base.baseX({
 exports.base36 = base36;
 exports.base36upper = base36upper;
 
-},{"./base.js":421}],427:[function(require,module,exports){
+},{"./base.js":440}],446:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84492,7 +91182,7 @@ const base58flickr = base.baseX({
 exports.base58btc = base58btc;
 exports.base58flickr = base58flickr;
 
-},{"./base.js":421}],428:[function(require,module,exports){
+},{"./base.js":440}],447:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84529,7 +91219,7 @@ exports.base64pad = base64pad;
 exports.base64url = base64url;
 exports.base64urlpad = base64urlpad;
 
-},{"./base.js":421}],429:[function(require,module,exports){
+},{"./base.js":440}],448:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84545,7 +91235,7 @@ const base8 = base.rfc4648({
 
 exports.base8 = base8;
 
-},{"./base.js":421}],430:[function(require,module,exports){
+},{"./base.js":440}],449:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84562,7 +91252,7 @@ const identity = base.from({
 
 exports.identity = identity;
 
-},{"../bytes.js":432,"./base.js":421}],431:[function(require,module,exports){
+},{"../bytes.js":451,"./base.js":440}],450:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84616,7 +91306,7 @@ exports.bases = bases;
 exports.codecs = codecs;
 exports.hashes = hashes;
 
-},{"./bases/base10.js":422,"./bases/base16.js":423,"./bases/base2.js":424,"./bases/base32.js":425,"./bases/base36.js":426,"./bases/base58.js":427,"./bases/base64.js":428,"./bases/base8.js":429,"./bases/identity.js":430,"./bytes.js":432,"./cid.js":433,"./codecs/json.js":434,"./codecs/raw.js":435,"./hashes/digest.js":436,"./hashes/hasher.js":437,"./hashes/identity.js":438,"./hashes/sha2.js":439,"./index.js":440,"./varint.js":441}],432:[function(require,module,exports){
+},{"./bases/base10.js":441,"./bases/base16.js":442,"./bases/base2.js":443,"./bases/base32.js":444,"./bases/base36.js":445,"./bases/base58.js":446,"./bases/base64.js":447,"./bases/base8.js":448,"./bases/identity.js":449,"./bytes.js":451,"./cid.js":452,"./codecs/json.js":453,"./codecs/raw.js":454,"./hashes/digest.js":455,"./hashes/hasher.js":456,"./hashes/identity.js":457,"./hashes/sha2.js":458,"./index.js":459,"./varint.js":460}],451:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84663,7 +91353,7 @@ exports.isBinary = isBinary;
 exports.toHex = toHex;
 exports.toString = toString;
 
-},{}],433:[function(require,module,exports){
+},{}],452:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84980,7 +91670,7 @@ if (cid) {
 
 exports.CID = CID;
 
-},{"./bases/base32.js":425,"./bases/base58.js":427,"./bytes.js":432,"./hashes/digest.js":436,"./varint.js":441}],434:[function(require,module,exports){
+},{"./bases/base32.js":444,"./bases/base58.js":446,"./bytes.js":451,"./hashes/digest.js":455,"./varint.js":460}],453:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -84997,7 +91687,7 @@ exports.decode = decode;
 exports.encode = encode;
 exports.name = name;
 
-},{}],435:[function(require,module,exports){
+},{}],454:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -85014,7 +91704,7 @@ exports.decode = decode;
 exports.encode = encode;
 exports.name = name;
 
-},{"../bytes.js":432}],436:[function(require,module,exports){
+},{"../bytes.js":451}],455:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -85063,7 +91753,7 @@ exports.create = create;
 exports.decode = decode;
 exports.equals = equals;
 
-},{"../bytes.js":432,"../varint.js":441}],437:[function(require,module,exports){
+},{"../bytes.js":451,"../varint.js":460}],456:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -85090,7 +91780,7 @@ class Hasher {
 exports.Hasher = Hasher;
 exports.from = from;
 
-},{"./digest.js":436}],438:[function(require,module,exports){
+},{"./digest.js":455}],457:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -85111,7 +91801,7 @@ const identity = {
 
 exports.identity = identity;
 
-},{"../bytes.js":432,"./digest.js":436}],439:[function(require,module,exports){
+},{"../bytes.js":451,"./digest.js":455}],458:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -85133,7 +91823,7 @@ const sha512 = hasher.from({
 exports.sha256 = sha256;
 exports.sha512 = sha512;
 
-},{"./hasher.js":437}],440:[function(require,module,exports){
+},{"./hasher.js":456}],459:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -85152,7 +91842,7 @@ exports.bytes = bytes;
 exports.hasher = hasher;
 exports.digest = digest;
 
-},{"./bytes.js":432,"./cid.js":433,"./hashes/digest.js":436,"./hashes/hasher.js":437,"./varint.js":441}],441:[function(require,module,exports){
+},{"./bytes.js":451,"./cid.js":452,"./hashes/digest.js":455,"./hashes/hasher.js":456,"./varint.js":460}],460:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -85178,7 +91868,7 @@ exports.decode = decode;
 exports.encodeTo = encodeTo;
 exports.encodingLength = encodingLength;
 
-},{"../vendor/varint.js":443}],442:[function(require,module,exports){
+},{"../vendor/varint.js":462}],461:[function(require,module,exports){
 'use strict';
 
 function base(ALPHABET, name) {
@@ -85316,7 +92006,7 @@ var _brrp__multiformats_scope_baseX = src;
 
 module.exports = _brrp__multiformats_scope_baseX;
 
-},{}],443:[function(require,module,exports){
+},{}],462:[function(require,module,exports){
 'use strict';
 
 var encode_1 = encode;
@@ -85375,7 +92065,7 @@ var varint$1 = _brrp_varint;
 
 module.exports = varint$1;
 
-},{}],444:[function(require,module,exports){
+},{}],463:[function(require,module,exports){
 'use strict'
 
 if (globalThis.fetch && globalThis.Headers && globalThis.Request && globalThis.Response) {
@@ -85394,7 +92084,7 @@ if (globalThis.fetch && globalThis.Headers && globalThis.Request && globalThis.R
   }
 }
 
-},{"node-fetch":445}],445:[function(require,module,exports){
+},{"node-fetch":464}],464:[function(require,module,exports){
 (function (global){(function (){
 "use strict";
 
@@ -85422,7 +92112,7 @@ exports.Headers = global.Headers;
 exports.Request = global.Request;
 exports.Response = global.Response;
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],446:[function(require,module,exports){
+},{}],465:[function(require,module,exports){
 'use strict'
 
 var durationRE = /(-?(?:\d+\.?\d*|\d*\.?\d+)(?:e[-+]?\d+)?)\s*([\p{L}]*)/uig
@@ -85498,13 +92188,13 @@ function unitRatio(str) {
   return parse[str] || parse[str.toLowerCase().replace(/s$/, '')]
 }
 
-},{}],447:[function(require,module,exports){
+},{}],466:[function(require,module,exports){
 // minimal library entry point.
 
 "use strict";
 module.exports = require("./src/index-minimal");
 
-},{"./src/index-minimal":448}],448:[function(require,module,exports){
+},{"./src/index-minimal":467}],467:[function(require,module,exports){
 "use strict";
 var protobuf = exports;
 
@@ -85542,7 +92232,7 @@ function configure() {
 // Set up buffer utility according to the environment
 configure();
 
-},{"./reader":449,"./reader_buffer":450,"./roots":451,"./rpc":452,"./util/minimal":455,"./writer":456,"./writer_buffer":457}],449:[function(require,module,exports){
+},{"./reader":468,"./reader_buffer":469,"./roots":470,"./rpc":471,"./util/minimal":474,"./writer":475,"./writer_buffer":476}],468:[function(require,module,exports){
 "use strict";
 module.exports = Reader;
 
@@ -85955,7 +92645,7 @@ Reader._configure = function(BufferReader_) {
     });
 };
 
-},{"./util/minimal":455}],450:[function(require,module,exports){
+},{"./util/minimal":474}],469:[function(require,module,exports){
 "use strict";
 module.exports = BufferReader;
 
@@ -86008,7 +92698,7 @@ BufferReader.prototype.string = function read_string_buffer() {
 
 BufferReader._configure();
 
-},{"./reader":449,"./util/minimal":455}],451:[function(require,module,exports){
+},{"./reader":468,"./util/minimal":474}],470:[function(require,module,exports){
 "use strict";
 module.exports = {};
 
@@ -86028,7 +92718,7 @@ module.exports = {};
  * var root = protobuf.roots["myroot"];
  */
 
-},{}],452:[function(require,module,exports){
+},{}],471:[function(require,module,exports){
 "use strict";
 
 /**
@@ -86066,7 +92756,7 @@ var rpc = exports;
 
 rpc.Service = require("./rpc/service");
 
-},{"./rpc/service":453}],453:[function(require,module,exports){
+},{"./rpc/service":472}],472:[function(require,module,exports){
 "use strict";
 module.exports = Service;
 
@@ -86210,7 +92900,7 @@ Service.prototype.end = function end(endedByRPC) {
     return this;
 };
 
-},{"../util/minimal":455}],454:[function(require,module,exports){
+},{"../util/minimal":474}],473:[function(require,module,exports){
 "use strict";
 module.exports = LongBits;
 
@@ -86412,7 +93102,7 @@ LongBits.prototype.length = function length() {
          : part2 < 128 ? 9 : 10;
 };
 
-},{"../util/minimal":455}],455:[function(require,module,exports){
+},{"../util/minimal":474}],474:[function(require,module,exports){
 (function (global){(function (){
 "use strict";
 var util = exports;
@@ -86837,7 +93527,7 @@ util._configure = function() {
 };
 
 }).call(this)}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./longbits":454,"@protobufjs/aspromise":135,"@protobufjs/base64":136,"@protobufjs/eventemitter":137,"@protobufjs/float":138,"@protobufjs/inquire":139,"@protobufjs/pool":140,"@protobufjs/utf8":141}],456:[function(require,module,exports){
+},{"./longbits":473,"@protobufjs/aspromise":146,"@protobufjs/base64":147,"@protobufjs/eventemitter":148,"@protobufjs/float":149,"@protobufjs/inquire":150,"@protobufjs/pool":151,"@protobufjs/utf8":152}],475:[function(require,module,exports){
 "use strict";
 module.exports = Writer;
 
@@ -87304,7 +93994,7 @@ Writer._configure = function(BufferWriter_) {
     BufferWriter._configure();
 };
 
-},{"./util/minimal":455}],457:[function(require,module,exports){
+},{"./util/minimal":474}],476:[function(require,module,exports){
 "use strict";
 module.exports = BufferWriter;
 
@@ -87391,7 +94081,7 @@ BufferWriter.prototype.string = function write_string_buffer(value) {
 
 BufferWriter._configure();
 
-},{"./util/minimal":455,"./writer":456}],458:[function(require,module,exports){
+},{"./util/minimal":474,"./writer":475}],477:[function(require,module,exports){
 (function (setImmediate){(function (){
 "use strict";
 
@@ -87883,7 +94573,7 @@ BufferWriter._configure();
 })(this);
 
 }).call(this)}).call(this,require("timers").setImmediate)
-},{"timers":4}],459:[function(require,module,exports){
+},{"timers":11}],478:[function(require,module,exports){
 module.exports = readable => {
   // Node.js stream
   if (readable[Symbol.asyncIterator]) return readable
@@ -87908,7 +94598,7 @@ module.exports = readable => {
   throw new Error('unknown stream')
 }
 
-},{}],460:[function(require,module,exports){
+},{}],479:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -87928,7 +94618,7 @@ function concat(arrays, length) {
 
 exports.concat = concat;
 
-},{}],461:[function(require,module,exports){
+},{}],480:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -87950,7 +94640,7 @@ function equals(a, b) {
 
 exports.equals = equals;
 
-},{}],462:[function(require,module,exports){
+},{}],481:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -87967,7 +94657,7 @@ function fromString(string, encoding = 'utf8') {
 
 exports.fromString = fromString;
 
-},{"./util/bases.js":464}],463:[function(require,module,exports){
+},{"./util/bases.js":483}],482:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', { value: true });
@@ -87984,7 +94674,7 @@ function toString(array, encoding = 'utf8') {
 
 exports.toString = toString;
 
-},{"./util/bases.js":464}],464:[function(require,module,exports){
+},{"./util/bases.js":483}],483:[function(require,module,exports){
 'use strict';
 
 var basics = require('multiformats/basics');
@@ -88034,4 +94724,8 @@ const BASES = {
 
 module.exports = BASES;
 
-},{"multiformats/basics":431}]},{},[6]);
+},{"multiformats/basics":450}],484:[function(require,module,exports){
+// https://github.com/browserify/browserify/issues/1986
+// shim for browserify
+module.exports = {"browser": true}
+},{}]},{},[16]);
