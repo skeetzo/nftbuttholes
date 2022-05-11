@@ -1,6 +1,6 @@
 {
   "name": "NFTButtholes",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "main": "index.html",
   "author": "Skeetzo",
   "license": "MIT",
@@ -32,8 +32,7 @@
     "pretest": "yarn start:ganache",
     "test": "npx truffle test",
     "posttest": "yarn stop:ganache",
-    "fulltest": "yarn pretest && npx truffle test && yarn posttest",
-    "start:server": "npx http-server",
+    "start:server": "npx http-server -p 3000",
     "start": "yarn start:ganache && yarn start:server"
   }
 }

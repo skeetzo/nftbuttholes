@@ -2,138 +2,13 @@
 // Add, update, or renounce a butthole NFT.
 
 require('dotenv').config();
-// const { Command } = require('commander');
+const ButtholesInterface = require('./Buttholes.js');
 const commander = require('commander'),
 	  Command = commander.Command;
-// var argv = require('minimist')(process.argv.slice(2),{'string':['a','b','d','n','i']});
 const ethers = require('ethers');
+const ipfs = require('./ipfs.js');
 const { readFileSync } = require('fs');
 const path = require('path');
-
-// https://stackoverflow.com/questions/18193953/waiting-for-user-to-enter-input-in-node-js
-const readline = require('readline');
-function askQuestion(query) {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-    });
-
-    return new Promise(resolve => rl.question(query, ans => {
-        rl.close();
-        resolve(ans);
-    }))
-}
-
-const { create } = require('ipfs-http-client');
-const IPFS = create();
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Contract //
-
-let Buttholes; // connected ETH account & NFT contract
-
-/**
- * @dev Connects to Butthole contract via provided Web3.0 url.
- */
-async function connectToContract() {
-	try {
-		var url = process.env.ETHEREUM_NODE || "http://localhost:8545";
-		console.log("Connecting to Ethereum node @ %s", url)
-		var web3Provider = new ethers.providers.JsonRpcProvider(url);
-		const signer = web3Provider.getSigner();
-		// account = await signer.getAddress();
-		// console.debug("Connected Account: %s", account);
-		const ButtholesInterface = require('../build/contracts/Buttholes.json');
-		const abi = ButtholesInterface.abi;
-		const { chainId } = await web3Provider.getNetwork();
-		console.debug("Chain ID: %s", chainId);
-		const address = ButtholesInterface.networks[chainId].address;
-		console.debug("Contract Address: %s", address);
-		Buttholes = new ethers.Contract(address, abi, signer);
-	}
-	catch (err) {
-		console.error(err);
-		process.exit(1);
-	}
-}
-
-/**
- * @dev Adds a newly generated butthole NFT.
- * @param newButtholeAddress The artist's ETH address.
- * @param newButtholeURI The CID of the token's metadata.json on IPFS.
- */
-async function addButthole(newButtholeAddress, newButtholeURI) {
-	if (!Buttholes) Buttholes = await connectToContract();
-	console.log("Adding butthole to contract: %s -> %s", newButtholeAddress, newButtholeURI);
-	try {
-		const gasLimit = await Buttholes.estimateGas.addButthole(newButtholeAddress.toString(), newButtholeURI.toString());
-		const tx = await Buttholes.addButthole(newButtholeAddress.toString(), newButtholeURI.toString(), {'gasLimit':gasLimit});
-		const receipt = await tx.wait();
-		const event = receipt.events.find(x => x.event === "PuckerUp");
-		if (event) {
-			// console.debug(event);
-			console.log(`Successfully added butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
-		}
-		else
-			console.warn("Failed to add new butthole!");
-	}
-	catch (err) {
-		// console.error(err);
-		console.warn("Unable to add new butthole!");
-		console.error(JSON.parse(err.body).error.data.reason);
-	}
-}
-
-/**
- * @dev Adds starving artists for the provided ETH address.
- * @param address The artist's ETH address.
- * @param donor1 The 1st donation address.
- * @param donor2 The 2nd donation address.
- * @param donor3 The 3rd donation address.
- */
-async function addStarvingArtists(address, donor1, donor2, donor3) {
-	if (!Buttholes) Buttholes = await connectToContract();
-	console.log("Adding starving artists to contract for address: %s\n-> %s\n-> %s\n-> %s", address, donor1, donor2, donor3);
-	try {
-		const gasLimit = await Buttholes.estimateGas.updateCheekSpreader(address.toString(), donor1.toString(), donor2.toString(), donor3.toString());
-		const tx = await Buttholes.updateCheekSpreader(address, donor1, donor2, donor3, {'gasLimit':gasLimit});
-		const receipt = await tx.wait();
-		// console.debug(receipt);
-		console.log("Successfully added starving artists!");
-	}
-	catch (err) {
-		// console.error(err);
-		console.warn("Unable to add new starving artists!");
-		console.error(JSON.parse(err.body).error.data.reason);
-	}
-}
-
-/**
- * @dev Renounce your Butthole NFT. Must be called by the rouncing artist.
- */
-async function renounceButthole() {
-	if (!Buttholes) Buttholes = await connectToContract();
-	console.log("Renouncing butthole from contract...");
-	const gasLimit = await Buttholes.estimateGas.renounceButthole();
-	const tx = await Buttholes.renounceButthole({'gasLimit':gasLimit});
-	try {
-		const receipt = await tx.wait();
-		const event = receipt.events.find(x => x.event === "PuckerDown");
-		if (event) {
-			// console.debug(event);
-			console.log("Successfully renounced butthole!");		
-		}
-		else
-			console.warn("Failed to renounce butthole!");
-	}
-	catch (err) {
-		// console.error(err);
-		console.warn("Unable to renounce butthole!");
-		console.error(JSON.parse(err.body).error.data.reason);
-	}
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -162,7 +37,7 @@ function _getDefaultMetadata() {
  * @dev Create's a butthole NFT's metadata from the provided butthole data.
  * @param butthole An object containing nft metadata.
  */
-function createButtholeMetadata(butthole) {
+function _createButtholeMetadata(butthole) {
 	// load default metadata.json and update default values
 	const nft = _getDefaultMetadata();
 	// update birthday
@@ -194,109 +69,80 @@ function createButtholeMetadata(butthole) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// IPFS //
+// Contract Interface //
 
-const IPFS_BUTTHOLES = "/nfts/buttholes",
-	  IPFS_METADATA = "/nfts/buttholes/metadata",
-	  IPFS_IMAGES = "/nfts/buttholes/images";
-
-async function createIPFS() {
-	console.log("Creating IPFS Folder Structure");
+var ButtholesContract;
+async function getContract() {
+	if (ButtholesContract) return ButtholesContract;
+	let web3Provider, signer;
 	try {
-		await IPFS.files.mkdir(IPFS_METADATA, { parents: true })
-		await IPFS.files.mkdir(IPFS_IMAGES, { parents: true })
-	}
-	catch (err) {_ipfsError(err);}
-}
-
-function _ipfsError(err) {
-	console.warn("Check IPFS daemon!");
-	console.error(err.message);
-	process.exit(1);
-}
-
-/**
- * @dev Check if artist name exists already in IPFS.
- * @param butthole An object containing nft metadata.
- */
-async function findButthole(butthole, i=0) {
-	console.debug("checking for preexisting butthole...");
-	let existingButtholes = [];
-	try {
-		// const metadataDir = await IPFS.files.stat(IPFS_METADATA);
-		// console.debug(metadataDir);
-		for await (const file of IPFS.files.ls(IPFS_METADATA)) {
-		  console.log(`${file.name} vs ${butthole.properties.name.value}`);
-		  console.debug(file);
-		  if (file.name == butthole.properties.name.value+".json")
-		  	existingButtholes.push(file);
-		}
-	  	console.debug("preexisting butthole nfts found: %s", existingButtholes.length);
+	  function _default() {
+	    try {
+	      web3Provider = new ethers.getDefaultProvider(window.ethereum);
+	    	console.debug("connected to: default provider")
+	    }
+	    catch (err) {
+	      console.error(err.message);
+	    }
+	  }
+	  function _web3() {
+	    try {
+	      web3Provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+	    	console.debug("connected to: web3 provider")
+	    }
+	    catch (err) {
+	      alert("Be sure to unlock your wallet!");
+	      console.error(err.message);
+	    }
+	  }
+	  function _static() {
+	    try {
+	      web3Provider = new ethers.providers.StaticJsonRpcProvider(window.ethereum ?? "localhost:8545");
+	    	console.debug("connected to: static provider")
+	    }
+	    catch (err) {
+	      alert("Be sure to unlock your wallet!");
+	      console.error(err.message);
+	    }
+	  }
+	  _default();
+	  if (!web3Provider&&window.ethereum) _web3();
+	  if (!web3Provider) _static();
+	  if (!web3Provider) return console.error("Unable to connect to provider!");
+		// await web3Provider.send("eth_requestAccounts", []);
+	  signer = web3Provider.getSigner();
+	  account = await signer.getAddress();
+	  console.debug("Connected Account: %s", account);
+	  const contract = require('../build/contracts/Buttholes.json');
+	  const abi = contract.abi;
+	  // load network to find contract address
+	  const { chainId } = await web3Provider.getNetwork();
+	  console.log("Chain ID: %s", chainId); // 42
+	  const address = contract.networks[chainId].address;
+	  console.log("Contract Address: %s", address);
+	  ButtholesContract = new ethers.Contract(address, abi, signer);
+	  web3Provider.on("network", (newNetwork, oldNetwork) => {
+	    // When a Provider makes its initial connection, it emits a "network"
+	    // event with a null oldNetwork along with the newNetwork. So, if the
+	    // oldNetwork exists, it represents a changing network
+	    if (oldNetwork) {
+	      if (oldNetwork != 0)
+	        alert("Please connect your wallet to the Ethereum network!");
+	      window.location.reload();
+	    }
+	  });
+	  console.debug("successfully connected to contract!");
+	  return ButtholesContract;
 	}
 	catch (err) {
-		if (err.message == "file does not exist" && i == 0) {
-			await createIPFS();
-			return findButthole(butthole, 1);
-		}
-		_ipfsError(err);
+		console.warn("failed to connect to contract!");
+		console.error(err);
+		// alert("Please refresh the page!");
+		reload();
 	}
-	console.debug("preexisting butthole nft not found!");
-	return existingButtholes;
 }
 
-/**
- * @dev Uploads content to IPFS: image first then combined metadata.json + image hash / CID.
- * @param butthole An object containing nft metadata.
- */
-async function uploadButthole(butthole) {
-	butthole.properties.butthole.value = await uploadButtholeImage(butthole);
-	return await uploadButtholeMetadata(butthole);
-}
-
-/**
- * @dev Upload a butthole's jpeg/png file and return the CID.
- * @param butthole An object containing nft metadata.
- */
-async function uploadButtholeImage(butthole) {
-	let image = path.resolve(__dirname, "../", butthole.properties.butthole.value);
-	image = new Uint8Array(readFileSync(image));
-	console.debug("uploading butthole image: %s", butthole.properties.butthole.value);
-	const file = {
-	  path: IPFS_IMAGES,
-	  content: image
-	}
-	try {
-		const { cid: metadataCid } = await IPFS.add(file);
-		console.log("Successfully added butthole image to IPFS: %s", cid.toString());
-		await IPFS.files.write(`${IPFS_IMAGES}/${butthole.properties.name.value}`, image, {'create':true});
-		console.log("Successfully wrote butthole image to IPFS: %s", butthole.properties.name.value);
-		return cid.toString();
-	}
-	catch (err) {_ipfsError(err);}
-}
-
-/**
- * @dev Upload a butthole's metadata.json file and return the CID.
- * @param butthole An object containing nft metadata.
- */
-async function uploadButtholeMetadata(butthole) {
-	console.debug("uploading butthole metadata: %s\n%s", butthole.properties.name.value, JSON.parse(JSON.stringify(butthole),null,4));
-	const file = {
-	  name: butthole.properties.name.value,
-	  path: IPFS_METADATA,
-	  content: JSON.stringify(butthole),
-	}
-	try {
-		const { cid: metadataCid } = await IPFS.add(file);
-		console.log("Successfully added butthole metadata to IPFS: %s", cid.toString());
-		await IPFS.files.write(`${IPFS_METADATA}/${butthole.properties.name.value}.json`, JSON.stringify(butthole), {'create':true});
-		console.log("Successfully wrote butthole metadata to IPFS: %s", butthole.properties.name.value);
-		return cid.toString();
-	}
-	catch (err) {_ipfsError(err);}
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////
 
 /**
  * @dev Create and add a new butthole NFT. Update edition number if artist already exists.
@@ -304,65 +150,55 @@ async function uploadButtholeMetadata(butthole) {
  */
 async function add(butthole) {
 	const d = butthole.starvingArtists; 
-	butthole = createButtholeMetadata(butthole);
+	butthole = _createButtholeMetadata(butthole);
 	butthole.starvingArtists = d;
+	try {
+		if (!await ipfs.checkExistingButtholes(butthole))
+			console.log(`Adding new Butthole Artist: ${butthole.properties.name.value} - ${butthole.properties.artist.value}`);
+		// TODO
+		// else butthole = 
+		// connect this function to the check
 
-	
-	// check if butthole already exists in metadata collection
-	let existingButtholes = await findButthole(butthole);
 
-	if (existingButtholes.length > 0) {
 
-		async function _getLatestButthole(buttholes) {
-			if (buttholes.length == 1) return buttholes[0];
-			let latestButthole = buttholes[1];
-			for (let butt of buttholes) {
-				const chunks = [];
-				for await (const chunk of IPFS.cat(buttholeCID.cid))
-				  chunks.push(chunk)
-				butt = JSON.parse(Buffer.from(Buffer.concat(chunks)).toString('utf8'));
-
-				let edition1 = butt.attributes.filter(obj => {return obj["trait_type"] === "edition"});
-				let edition2 = latestButthole.attributes.filter(obj => {return obj["trait_type"] === "edition"});
-
-				console.log("edition1 vs edition2: %s - %s", edition1, edition2);
-
-				if (parseInt(edition1) > parseInt(edition2))
-					latestButthole = butt;
-			}
-			return latestButthole;
-		}
-		let latestButthole = await _getLatestButthole(existingButtholes);
-        console.log(`Butthole Artist \"${butthole.properties.name.value}\" already exists.`);
-        console.log(`Latest Edition #: ${butthole.attributes.filter(obj => {if (obj["trait_type"] === "edition") return obj.value})[0].value}`);
-		const answer = await askQuestion("Add new edition? yes/[n]o: ");
-		if (answer.includes("y")) {
-			console.log ("Adding new " + butthole.properties.name.value);
-			butthole.attributes.map(a => {if (a["trait_type"] == "edition") a["value"] = parseInt(a["value"]) + 1 });
-		}
-		else {
-			console.log ("Not adding new " + butthole.properties.name.value);
-			return;
-		}
+		buttholeCID = await ipfs.uploadButthole(butthole);
+		await ButtholesInterface.add(await getContract(), butthole.properties.artist.value, buttholeCID);
+		if (butthole.starvingArtists.length > 0)
+			await ButtholesInterface.update(await getContract(), butthole);
 	}
-	else
-		console.log(`Adding new Butthole Artist: ${butthole.properties.name.value} - ${butthole.properties.artist.value}`);
-	// console.debug(butthole)
-	buttholeCID = await uploadButthole(butthole);
-
-	process.exit(0);
-
-	await addButthole(butthole.properties.artist.value, buttholeCID);
-	if (butthole.starvingArtists.length > 0)
-		await starvingArtists(butthole);
+	catch (err) {console.error(err);}
 }
+module.exports.add = add;
+
+async function addMinter() {
+	await ButtholesInterface.addMinter(await getContract());
+};
+module.exports.addMinter = addMinter;
+
+async function isAdmin(address) {
+	return ButtholesInterface.isAdmin(await getContract(), address);
+}
+module.exports.isAdmin = isAdmin;
+
+async function isMinter(address) {
+	return ButtholesInterface.isMinter(await getContract(), address);
+}
+module.exports.isMinter = isMinter;
+
+/**
+ * @dev Mint a Butthole NFT.
+ * @param to The address to mint to.
+ */
+async function mint(to) {
+	await ButtholesInterface.mint(await getContract(), to);
+}
+module.exports.mint = mint;
 
 /**
  * @dev Update a butthole NFT's CheekSpreader contract data.
  * @param butthole An object containing nft metadata.
  */
-async function starvingArtists(butthole) {
-	console.log("Updating starving artists...");
+async function update(butthole) {
 	let defaultStarvingArtists = [process.env.DEFAULT_DONATION1, process.env.DEFAULT_DONATION2, process.env.DEFAULT_DONATION3];
 	let artist1 = butthole.starvingArtists[0],
 		artist2 = butthole.starvingArtists[1],
@@ -379,10 +215,21 @@ async function starvingArtists(butthole) {
 		artist3 = defaultStarvingArtists.shift();
 		console.warn("Missing Donor3.");
 	}
-	await addStarvingArtists(butthole.properties ? butthole.properties.artist.value : butthole.artist, artist1, artist2, artist3);
+	await ButtholesInterface.update(await getContract(), butthole.properties ? butthole.properties.artist.value : butthole.artist, artist1, artist2, artist3);
 }
+module.exports.update = update;
+
+/**
+ * @dev Renounce your Butthole NFT. Must be called by the rouncing artist.
+ */
+async function renounce(ButtholesContract=null) {
+	await ButtholesInterface.renounce(await getContract());
+}
+module.exports.renounce = renounce;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Commander //
 
 // ensure value is an 0x address
 function parseAddress(value) {
@@ -422,24 +269,24 @@ function isValidDate(dateString) {
 
     // Check the range of the day
     return day > 0 && day <= monthLength[month - 1];
-};
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
- * @dev Add, update, or renounce a butthole NFT.
+ * @dev Add an artist, addMinter, mint, update starving artists, or renounce a butthole NFT.
  */
 (async function main() {
 
 	const program = new Command();
 
 	const butthole = {
-		artist : "",
-		image : "",
-		name : "",
-		description : "",
-		birthday : "",
-		starvingArtists : []
+		'artist' : "",
+		'image' : "",
+		'name' : "",
+		'description' : "",
+		'birthday' : "",
+		'starvingArtists' : []
 	};
 
 	program
@@ -468,6 +315,20 @@ Example call:
 	  	await add(butthole);
 	  });
 
+	program.command('addMinter')
+	  .description('Add caller as a minter.')
+	  .action(addMinter);
+
+	program.command('mint')
+	  .description('Mint a butthole.')
+	  .argument('<address>', 'The receiving address.', parseAddress)
+	  .addHelpText('after', `
+Example call:
+ $ butthole mint 0x00.. `)
+	  .action(async (to) => {
+	  	await mint(to);
+	  });
+
 	program.command('update')
 	  .description('Update your starving artist(s).')
 	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
@@ -478,12 +339,12 @@ Example call:
 	  .action(async (artist, options) => {
 	  	butthole.artist = artist;
 	  	butthole.starvingArtists = options.starve;
-	  	await starvingArtists(butthole);
+	  	await update(butthole);
 	  });
 
 	program.command('renounce')
 	  .description('Renounce your butthole.')
-	  .action(renounceButthole);
+	  .action(renounce);
 
 	await program.parseAsync(process.argv);
 

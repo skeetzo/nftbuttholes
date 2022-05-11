@@ -62,6 +62,9 @@
 	- tested main.js
 	- tested contract web interface buttons
 	- updates to index.html
+	**0.0.12 : 5/11/2022**
+	- restructured js scripts
+	- added 'process' file shim @ project root for browserify
 
 ------------------------------------------------------------------------
 
@@ -92,6 +95,8 @@
 - [after release] add final address of contract on mainnet to etherscan links in docs
 
 # Dev
+
+requires node @ 16.0.0
 
 http-server
 
@@ -186,3 +191,10 @@ OpenSea also supports a date display_type. Traits of this type will appear in th
 
 curl -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":67}' localhost:8545
 
+
+
+
+// if they have an IPFS enabled browser, return
+// <!-- <img src="https://ipfs.infura.io:5001/api/v0/cat/QmQuTjzy8aZyYqYRyH7UdE5qcDXTxLFYEE9GKNhPY6D6K1"> -->
+
+// if they do not have an IPFS enabled browser, fetch the image resource for them
