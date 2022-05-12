@@ -2,7 +2,7 @@
 // Add, update, or renounce a butthole NFT.
 
 require('dotenv').config();
-const ButtholesInterface = require('./Buttholes.js');
+const ButtholesContract = require('./Buttholes.js');
 const commander = require('commander'),
 	  Command = commander.Command;
 const ethers = require('ethers');
@@ -152,47 +152,33 @@ async function add(butthole) {
 	const d = butthole.starvingArtists; 
 	butthole = _createButtholeMetadata(butthole);
 	butthole.starvingArtists = d;
-	try {
-		if (!await ipfs.checkExistingButtholes(butthole))
-			console.log(`Adding new Butthole Artist: ${butthole.properties.name.value} - ${butthole.properties.artist.value}`);
-		// TODO
-		// else butthole = 
-		// connect this function to the check
-
-
-
-		buttholeCID = await ipfs.uploadButthole(butthole);
-		await ButtholesInterface.add(await getContract(), butthole.properties.artist.value, buttholeCID);
-		if (butthole.starvingArtists.length > 0)
-			await ButtholesInterface.update(await getContract(), butthole);
-	}
-	catch (err) {console.error(err);}
+	butthole = await ipfs.checkExistingButtholes(butthole);
+	console.log(`Adding new Butthole: ${butthole.properties.name.value} - ${butthole.properties.artist.value}`);
+	buttholeCID = await ipfs.uploadButthole(butthole);
+	await ButtholesContract.add(await getContract(), butthole.properties.artist.value, buttholeCID);
+	if (butthole.starvingArtists.length > 0)
+		await ButtholesContract.update(await getContract(), butthole);
 }
-module.exports.add = add;
 
 async function addMinter() {
-	await ButtholesInterface.addMinter(await getContract());
+	await ButtholesContract.addMinter(await getContract());
 };
-module.exports.addMinter = addMinter;
 
 async function isAdmin(address) {
-	return ButtholesInterface.isAdmin(await getContract(), address);
+	return ButtholesContract.isAdmin(await getContract(), address);
 }
-module.exports.isAdmin = isAdmin;
 
 async function isMinter(address) {
-	return ButtholesInterface.isMinter(await getContract(), address);
+	return ButtholesContract.isMinter(await getContract(), address);
 }
-module.exports.isMinter = isMinter;
 
 /**
  * @dev Mint a Butthole NFT.
  * @param to The address to mint to.
  */
 async function mint(to) {
-	await ButtholesInterface.mint(await getContract(), to);
+	await ButtholesContract.mint(await getContract(), to);
 }
-module.exports.mint = mint;
 
 /**
  * @dev Update a butthole NFT's CheekSpreader contract data.
@@ -215,17 +201,15 @@ async function update(butthole) {
 		artist3 = defaultStarvingArtists.shift();
 		console.warn("Missing Donor3.");
 	}
-	await ButtholesInterface.update(await getContract(), butthole.properties ? butthole.properties.artist.value : butthole.artist, artist1, artist2, artist3);
+	await ButtholesContract.update(await getContract(), butthole.properties ? butthole.properties.artist.value : butthole.artist, artist1, artist2, artist3);
 }
-module.exports.update = update;
 
 /**
  * @dev Renounce your Butthole NFT. Must be called by the rouncing artist.
  */
 async function renounce(ButtholesContract=null) {
-	await ButtholesInterface.renounce(await getContract());
+	await ButtholesContract.renounce(await getContract());
 }
-module.exports.renounce = renounce;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -349,3 +333,7 @@ Example call:
 	await program.parseAsync(process.argv);
 
 })();
+
+module.exports = {
+	add, addMinter, isAdmin, isMinter, mint, update, renounce
+}

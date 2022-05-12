@@ -1,6 +1,15 @@
 // Access Functions for Smart Contract
 // -> add, mint, update, renounce
 
+
+function _catchRevert(revert) {
+	console.error(err);
+	// console.error(JSON.parse(err.body).error.data.reason);
+
+}
+
+
+
 /**
  * @dev Adds a newly generated butthole NFT.
  * @param Buttholes The Buttholes contract object provided by Ethers.
@@ -23,9 +32,8 @@ async function add(Buttholes, newButtholeAddress, newButtholeURI) {
 			console.warn("Failed to add new butthole!");
 	}
 	catch (err) {
-		console.error(err);
 		console.warn("Unable to add new butthole!");
-		console.error(JSON.parse(err.body).error.data.reason);
+		_catchRevert(err);
 	}
 }
 
@@ -44,7 +52,10 @@ async function addMinter(Buttholes) {
 		console.log(event.args.account); // account
 		console.log("successfully added minting!");		    
 	}
-	catch (err) {console.error(err);}
+	catch (err) {
+		console.warn("Unable to add new minter!");
+		_catchRevert(err);
+	}
 };
 
 /**
@@ -52,7 +63,13 @@ async function addMinter(Buttholes) {
  * @param address The address to check.
  */
 async function isAdmin(Buttholes, address) {
-	return await Buttholes.hasRole(await Buttholes.DEFAULT_ADMIN_ROLE(), address);
+	try {
+		return await Buttholes.hasRole(await Buttholes.DEFAULT_ADMIN_ROLE(), address);
+	}
+	catch (err) {
+		console.warn("Unable to check if admin!");
+		_catchRevert(err);
+	}
 }
 
 /**
@@ -60,7 +77,13 @@ async function isAdmin(Buttholes, address) {
  * @param address The address to check.
  */
 async function isMinter(Buttholes, address) {
-	return await Buttholes.hasRole(await Buttholes.MINTER_ROLE(), address);
+	try {
+		return await Buttholes.hasRole(await Buttholes.MINTER_ROLE(), address);
+	}
+	catch (err) {
+		console.warn("Unable to check if minter!");
+		_catchRevert(err);
+	}
 }
 
 /**
@@ -84,9 +107,8 @@ async function mint(Buttholes, to) {
 			console.warn("Failed to mint butthole!");
 	}
 	catch (err) {
-		console.error(err);
 		console.warn("Unable to mint butthole!");
-		console.error(JSON.parse(err.body).error.data.reason);
+		_catchRevert(err);
 	}
 }
 
@@ -109,9 +131,8 @@ async function update(Buttholes, address, donor1, donor2, donor3) {
 			console.log("Successfully added starving artists!");
 		}
 		catch (err) {
-			console.error(err);
 			console.warn("Unable to add new starving artists!");
-			console.error(JSON.parse(err.body).error.data.reason);
+			_catchRevert(err);
 			return false;
 		}
 		return true;
@@ -125,9 +146,8 @@ async function update(Buttholes, address, donor1, donor2, donor3) {
 			console.log("Successfully created starving artists!");
 		}
 		catch (err) {
-			console.error(err);
 			console.warn("Unable to create new starving artists!");
-			console.error(JSON.parse(err.body).error.data.reason);
+			_catchRevert(err);
 		}
 	}
 	// create if update fails
@@ -154,9 +174,8 @@ async function renounce(Buttholes) {
 			console.warn("Failed to renounce butthole!");
 	}
 	catch (err) {
-		// console.error(err);
 		console.warn("Unable to renounce butthole!");
-		console.error(JSON.parse(err.body).error.data.reason);
+		_catchRevert(err);
 	}
 }
 

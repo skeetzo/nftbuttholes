@@ -14,18 +14,15 @@ var account;
  * @dev Add a butthole. Must be owner.
  */
 document.getElementById("add").onclick = async function () {
-	try {
-		const butthole = {
-			artist : prompt("Artist's ETH address"),
-			image : prompt("Path to image"),
-			name : prompt("Artist's name"),
-			description : prompt("Artist's description"),
-			birthday : prompt("Artist's birthday"),
-			starvingArtists : [prompt("1st starving artist"), prompt("2nd starving artist"), prompt("3rd starving artist")]
-		};
-		await ButtholesInterface.add(butthole);
-	}
-	catch (err) {console.error(err);}
+	const butthole = {
+		artist : prompt("Artist's ETH address"),
+		image : prompt("Path to image"),
+		name : prompt("Artist's name"),
+		description : prompt("Artist's description"),
+		birthday : prompt("Artist's birthday"),
+		starvingArtists : [prompt("1st starving artist"), prompt("2nd starving artist"), prompt("3rd starving artist")]
+	};
+	await ButtholesInterface.add(butthole);
 }
 
 /**
@@ -54,46 +51,39 @@ document.getElementById("connect").onclick = async function () {
  * @dev Confirm 18+ and add minter role.
  */
 document.getElementById("eighteen").onclick = async function () {
-	try {
-		if (await ButtholesInterface.isAdmin(account)) {	
-			$("#add").show();
-			document.getElementById("add").removeAttribute("disabled");
-		}
-		if (!await ButtholesInterface.isMinter(account))
-			await ButtholesInterface.addMinter();
-		$("#mint").show();
-		document.getElementById("mint").removeAttribute("disabled");
-		$("view").show();
-		$("#eighteen").hide();
-		console.log("successfully accepted consequences!");
+	if (await ButtholesInterface.isAdmin(account)) {	
+		$("#add").show();
+		document.getElementById("add").removeAttribute("disabled");
 	}
-	catch (err) {console.error(err);}
+	if (!await ButtholesInterface.isMinter(account))
+		await ButtholesInterface.addMinter();
+	$("#mint").show();
+	document.getElementById("mint").removeAttribute("disabled");
+	$("view").show();
+	$("#eighteen").hide();
+	console.log("successfully accepted consequences!");
 };
 
 /**
  * @dev Mint butthole. Requires minter role.
  */
 document.getElementById("mint").onclick = async function () {
-	try {await ButtholesInterface.mint(account);}
-	catch (err) {console.error(err);}
+	await ButtholesInterface.mint(account);
 };
 
 /**
  * @dev Updates starving artists.
  */
 document.getElementById("update").onclick = async function () {
-	try {
-		let artist1 = prompt("1st starving artist");
-		let artist2 = prompt("2nd starving artist");
-		let artist3 = prompt("3rd starving artist");
-		//
-		const butthole = {
-			'artist' : account.toString(),
-			'starvingArtists' : [artist1, artist2, artist3]
-		};
-		await ButtholesInterface.update(butthole);
-	}
-	catch (err) {console.error(err);}
+	let artist1 = prompt("1st starving artist");
+	let artist2 = prompt("2nd starving artist");
+	let artist3 = prompt("3rd starving artist");
+	//
+	const butthole = {
+		'artist' : account.toString(),
+		'starvingArtists' : [artist1, artist2, artist3]
+	};
+	await ButtholesInterface.update(butthole);
 };
 
 /**
