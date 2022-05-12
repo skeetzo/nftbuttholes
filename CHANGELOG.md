@@ -65,12 +65,18 @@
 	**0.0.12 : 5/11/2022**
 	- restructured js scripts
 	- added 'process' file shim @ project root for browserify
+	**0.0.13 : 5/12/2022**
+	- added test file for js/butthole.js
+	- added test file for js/main.js
+	- added tests for birthday date string & eth address validation
 
 ------------------------------------------------------------------------
+
 
 	- finish testing main.js
 	- finish testing contract web interface buttons
 	- finish IPFS interaction in butthole.js that requires updated naming scheme
+	- finish testing loading IPFS images
 
 # TODO
 
@@ -82,10 +88,6 @@
 
 - actually test new cheekspreader interaction w/ royalties
 - write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
-
-- add test file for js/butthole.js
--- add tests for birthday date string
-- add test file for js/main.js
 
 - implement Loopring counterfactual nfts & submitMintNft functionality
 - add tests for Loopring interactions

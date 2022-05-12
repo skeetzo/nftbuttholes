@@ -32,9 +32,7 @@ function _ipfsError(err) {
 async function checkExistingButtholes(butthole) {
 	// check if butthole already exists in metadata collection
 	let existingButtholes = await _findButthole(butthole);
-
 	if (existingButtholes.length > 0) {
-
 		async function _getLatestButthole(buttholes) {
 			if (buttholes.length == 1) return buttholes[0];
 			let latestButthole = buttholes[1];
@@ -57,7 +55,6 @@ async function checkExistingButtholes(butthole) {
 		let latestButthole = await _getLatestButthole(existingButtholes);
         console.log(`Butthole Artist \"${butthole.properties.name.value}\" already exists.`);
         console.log(`Latest Edition #: ${butthole.attributes.filter(obj => {if (obj["trait_type"] === "edition") return obj.value})[0].value}`);
-
         // https://stackoverflow.com/questions/18193953/waiting-for-user-to-enter-input-in-node-js
         function askQuestion(query) {
 		    const rl = readline.createInterface({
@@ -70,26 +67,18 @@ async function checkExistingButtholes(butthole) {
 		        resolve(ans);
 		    }))
 		}
-
 		const answer = await askQuestion("Add new edition? yes/[n]o: ");
 		if (answer.includes("y")) {
-			console.log ("Adding new " + butthole.properties.name.value);
+			console.log ("Adding new edition for " + butthole.properties.name.value);
 			butthole.attributes.map(a => {if (a["trait_type"] == "edition") a["value"] = parseInt(a["value"]) + 1 });
 		}
 		else {
 			console.log ("Not adding new " + butthole.properties.name.value);
 			throw "Existing Butthole found!";
 		}
-		return true;
 	}
-	else return false;
+	return butthole;
 }
-
-
-
-
-
-
 
 /**
  * @dev Check if artist name exists already in IPFS.
@@ -112,7 +101,7 @@ async function _findButthole(butthole, i=0) {
 	catch (err) {
 		if (err.message == "file does not exist" && i == 0) {
 			await createIPFS();
-			return _findButthole(butthole, 1);
+			return await _findButthole(butthole, 1);
 		}
 		_ipfsError(err);
 	}
@@ -121,10 +110,27 @@ async function _findButthole(butthole, i=0) {
 }
 
 /**
+ * @dev Get the butthole NFT metadata from IPFS.
+ * @param buttholeURI The butthole NFT to get.
+ */
+async function getButtholeFromIPFS(buttholeURI) {
+	return JSON.parse(await IPFS.files.cat(buttholeURI));
+}
+
+/**
+ * @dev Get the butthole NFT image from IPFS.
+ * @param buttholeURI The butthole NFT to get.
+ */
+async function getButtholeImageFromIPFS(buttholeURI) {
+	let file = await IPFS.files.cat(buttholeURI);
+	return file.toString("base64");
+}
+
+/**
  * @dev Upload a butthole's jpeg/png file and return the CID.
  * @param butthole An object containing nft metadata.
  */
-async function _uploadButtholeImage(butthole) {
+async function uploadButtholeImage(butthole) {
 	let image = path.resolve(__dirname, "../", butthole.properties.butthole.value);
 	image = new Uint8Array(readFileSync(image));
 	console.debug("uploading butthole image: %s", butthole.properties.butthole.value);
@@ -163,40 +169,18 @@ async function _uploadButtholeMetadata(butthole) {
 	catch (err) {_ipfsError(err);}
 }
 
-////////////////////////////////////////////////////////////////////////////////////
-
 /**
  * @dev Uploads content to IPFS: image first then combined metadata.json + image hash / CID.
  * @param butthole An object containing artist nft metadata.
  */
 async function uploadButthole(butthole) {
-	butthole.properties.butthole.value = await _uploadButtholeImage(butthole);
+	butthole.properties.butthole.value = await uploadButtholeImage(butthole);
 	return await _uploadButtholeMetadata(butthole);
 }
 
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////////
-
-
-
-
-/**
- * @dev Get the butthole NFT metadata from IPFS.
- * @param buttholeURI The butthole NFT to get.
- */
-async function getButtholeFromIPFS(buttholeURI) {
-	return JSON.parse(await IPFS.files.cat(buttholeURI));
-}
-
-/**
- * @dev Get the butthole NFT image from IPFS.
- * @param buttholeURI The butthole NFT to get.
- */
-async function getButtholeImageFromIPFS(buttholeURI) {
-	let file = await IPFS.files.cat(buttholeURI);
-	return file.toString("base64");
+module.exports = {
+	getButtholeFromIPFS,
+	getButtholeImageFromIPFS,
+	uploadButthole,
+	uploadButtholeImage
 }
