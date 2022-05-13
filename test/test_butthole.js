@@ -4,17 +4,6 @@ const chaiAlmost = require('chai-almost');
 chai.use(chaiAlmost());
 
 const assert = require("chai").assert;
-// const truffleAssert = require('truffle-assertions');
-
-// const Exceptions = require("../js/exceptions.js");
-// const catchRevertPausable = Exceptions.catchRevertPausable,
-//       catchRevertPause = Exceptions.catchRevertPause,
-//       catchRevertUnpause = Exceptions.catchRevertUnpause,
-//       catchOwnable = Exceptions.catchOwnable,
-//       catchRevertButthole = Exceptions.catchRevertButthole,
-//       catchRevertMinter = Exceptions.catchRevertMinter,
-//       catchRevertButtholeAddress = Exceptions.catchRevertButtholeAddress,
-//       catchRevertCheeksSet = Exceptions.catchRevertCheeksSet;
 
 const Buttholes = artifacts.require("./Buttholes.sol");
 const butthole = require("../js/butthole.js");
@@ -43,56 +32,52 @@ contract("Buttholes", async (accounts) => {
 
   describe('IPFS', async () => {
 
-    var b = {
-      'artist' : owner,
-      'image' : "/home/skeetzo/Projects/nftbuttholes/images/doughnut.jpg",
-      'name' : "Alex D.",
-      'description' : "The man, the myth, the moron.",
-      'birthday' : "06/06/1990",
-      'starvingArtists' : []
-    };
+    var b;
 
-    let buttholeCID, buttholeImageCID;
-
-    it('can upload metadata', async () => {
+    beforeEach(async () => {
+      b = {
+        'artist' : owner,
+        'image' : "/home/skeetzo/Projects/nftbuttholes/images/doughnut.jpg",
+        'name' : "Alex D.",
+        'description' : "The man, the myth, the moron.",
+        'birthday' : "06/06/1990",
+        'starvingArtists' : []
+      };
       const d = b.starvingArtists; 
       b = butthole.createButtholeMetadata(b);
       b.starvingArtists = d;
-      buttholeCID = await ipfs.uploadButthole(b);
-      assert.notEqual(buttholeCID.toString().length, 0, "does not upload image");
     });
 
     it('can upload image', async () => {
-      try {
-        buttholeImageCID = await ipfs.uploadButtholeImage(b);
-        console.log(buttholeImageCID)
-        for (const value in buttholeImageCID)
-          console.log(value)
-        assert.notEqual(buttholeImageCID.toString().length, 0, "does not upload image");
-      }
-      catch (err) {
-        console.error(err);
-      }
+      let cid = await ipfs.uploadButtholeImage(b);
+      assert.notEqual(cid.toString().length, 0, "does not upload image");
+    });
+
+    it('can upload metadata', async () => {
+      let cid = await ipfs.uploadButtholeMetadata(b);
+      assert.notEqual(cid.toString().length, 0, "does not upload metadata");
+    });
+
+    it('can find most recent', async () => {
+      let butthole = await ipfs.findMostRecent(b);
+      assert.notEqual(butthole, {}, "does not find most recent");
+    });
+
+    it('can upload butthole', async () => {
+      let cid = await ipfs.uploadButthole(b);
+      assert.notEqual(cid.toString().length, 0, "does not upload butthole");
     });
 
     it('can get metadata', async () => {
-      let buttholeMetadata = await ipfs.getButtholeFromIPFS(buttholeCID);
-      console.log(buttholeMetadata)
-      // for (const value in buttholeMetadata)
-        // console.log(value)
-      // console.log(buttholeMetadata)
-      // console.log(buttholeMetadata)
-      assert.notEqual(buttholeMetadata, Object, "does not get metadata");
+      let cid = await ipfs.uploadButtholeMetadata(b);
+      let metadata = await ipfs.getButtholeFromIPFS(cid);
+      assert.notEqual(metadata.properties.name.value, b.name, "does not get metadata");
     });
 
     it('can get image', async () => {
-      let buttholeImage = await ipfs.getButtholeImageFromIPFS(buttholeImageCID);
-      console.log(buttholeImage)
-      for (const value in buttholeImage)
-        console.log(value);
-      // console.log(buttholeImage)
-      // console.log(buttholeImage)
-      assert.notEqual(buttholeImage.toString().length, 0, "does not get image");
+      let cid = await ipfs.uploadButtholeImage(b);
+      let image = await ipfs.getButtholeImageFromIPFS(cid);
+      assert.notEqual(image.toString().length, 0, "does not get image");
     });
 
   });
@@ -120,7 +105,7 @@ contract("Buttholes", async (accounts) => {
     });
 
     it('can add minters', async () => {
-      assert.equal(await butthole.addMinter(), true, "does not add buttholes");
+      assert.equal(await butthole.addMinter(), true, "does not add minter");
     });
 
     it('can check admin', async () => {

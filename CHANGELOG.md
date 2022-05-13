@@ -70,10 +70,13 @@
 	- added test file for js/main.js
 	- added tests for birthday date string & eth address validation
 	- almost completed test/butthole.js tests
+	**0.0.14 : 5/13/2022**
+	- mostly finished testing test/test_butthole.js
+
 
 ------------------------------------------------------------------------
 
-	- finish final testing via test/butthole.js
+	- completely finish for test_butthole.js
 
 	- finish testing contract web interface buttons
 	- finish IPFS interaction in butthole.js that requires updated naming scheme
@@ -81,6 +84,8 @@
 
 
 # TODO
+
+- finish IPFS metadata test in test_butthole.js
 
 - create testing file for main.js
 - finish testing main.js

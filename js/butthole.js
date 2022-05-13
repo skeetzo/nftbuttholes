@@ -170,7 +170,7 @@ async function add(butthole) {
 	const d = butthole.starvingArtists; 
 	butthole = createButtholeMetadata(butthole);
 	butthole.starvingArtists = d;
-	butthole = await checkExistingButtholes(butthole);
+	await checkExistingButtholes(butthole);
 	buttholeCID = await uploadButthole(butthole);
 	if (buttholeCID.length==0) return false;
 	let successful = await ButtholesContract.add(await getContract(), butthole.properties.artist.value, buttholeCID);

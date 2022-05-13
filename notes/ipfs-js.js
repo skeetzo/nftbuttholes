@@ -36,3 +36,25 @@ const ipfs = create({ host: 'localhost', port: '5001', protocol: 'http' })
 
 // or specifying a specific API path
 const ipfs = create({ host: '1.1.1.1', port: '80', apiPath: '/ipfs/api/v0' })
+
+
+
+
+
+
+
+
+
+
+
+//using fetch 
+const response = await fetch(ipfs_url);
+
+if(!response.ok)
+  throw new Error(response.statusText);
+
+const json = await response.json();
+
+//using ipfs
+const ipfs = await IPFS.create();
+const result = await ipfs.cat(cid);
