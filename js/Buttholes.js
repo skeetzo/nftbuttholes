@@ -1,14 +1,16 @@
 // Access Functions for Smart Contract
 // -> add, mint, update, renounce
 
-
+/**
+ * @dev Catch an error from a contract call.
+ * @param revert An object containing reverted transaction data.
+ */
 function _catchRevert(revert) {
-	console.error(err);
+	if (revert.body&&revert.body.error&&revert.body.error.message)
+		console.error(revert.body.error.message);
+	// console.error(revert);
 	// console.error(JSON.parse(err.body).error.data.reason);
-
 }
-
-
 
 /**
  * @dev Adds a newly generated butthole NFT.
@@ -22,11 +24,11 @@ async function add(Buttholes, newButtholeAddress, newButtholeURI) {
 		const gasLimit = await Buttholes.estimateGas.addButthole(newButtholeAddress.toString(), newButtholeURI.toString());
 		const tx = await Buttholes.addButthole(newButtholeAddress.toString(), newButtholeURI.toString(), {'gasLimit':gasLimit});
 		const receipt = await tx.wait();
-		console.debug(receipt);
+		// console.debug(receipt);
 		const event = receipt.events.find(x => x.event === "PuckerUp");
 		if (event) {
-			console.debug(event);
-			console.log(`Successfully added butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
+			// console.debug(event);
+			console.log(`Successfully added butthole!\n${event.args.addedButthole} - ${event.args.buttholeHash}`);
 		}
 		else
 			console.warn("Failed to add new butthole!");
@@ -34,7 +36,9 @@ async function add(Buttholes, newButtholeAddress, newButtholeURI) {
 	catch (err) {
 		console.warn("Unable to add new butthole!");
 		_catchRevert(err);
+		return false;
 	}
+	return true;
 }
 
 /**
@@ -46,16 +50,17 @@ async function addMinter(Buttholes) {
 		const gasLimit = await Buttholes.estimateGas.addMinter();
 		const tx = await Buttholes.addMinter({'gasLimit':gasLimit});
 		const receipt = await tx.wait();
-		console.log(receipt.logs);
+		// console.log(receipt.logs);
 		const event = receipt.events.find(x => x.event === "RoleGranted");
-		console.log(event);
-		console.log(event.args.account); // account
-		console.log("successfully added minting!");		    
+		// console.debug(event);
+		console.log(`Successfully added minting!\n${event.args.account}`);		    
 	}
 	catch (err) {
 		console.warn("Unable to add new minter!");
 		_catchRevert(err);
+		return false;
 	}
+	return true;
 };
 
 /**
@@ -69,7 +74,9 @@ async function isAdmin(Buttholes, address) {
 	catch (err) {
 		console.warn("Unable to check if admin!");
 		_catchRevert(err);
+		return false;
 	}
+	return true;
 }
 
 /**
@@ -83,7 +90,9 @@ async function isMinter(Buttholes, address) {
 	catch (err) {
 		console.warn("Unable to check if minter!");
 		_catchRevert(err);
+		return false;
 	}
+	return true;
 }
 
 /**
@@ -97,11 +106,11 @@ async function mint(Buttholes, to) {
 		const gasLimit = await Buttholes.estimateGas.mint(to.toString());
 		const tx = await Buttholes.mint(to.toString(), {'gasLimit':gasLimit});
 		const receipt = await tx.wait();
-		console.debug(receipt);
+		// console.debug(receipt);
 		const event = receipt.events.find(x => x.event === "Transfer");
 		if (event) {
-			console.debug(event);
-			console.log(`Successfully minted butthole: ${event.args.addedButthole} - ${event.args.buttholeHash}`);
+			// console.debug(event);
+			console.log(`Successfully minted butthole!\n${event.args.to} - ${event.args.tokenId}`);
 		}
 		else
 			console.warn("Failed to mint butthole!");
@@ -109,7 +118,9 @@ async function mint(Buttholes, to) {
 	catch (err) {
 		console.warn("Unable to mint butthole!");
 		_catchRevert(err);
+		return false;
 	}
+	return true;
 }
 
 /**
@@ -127,8 +138,8 @@ async function update(Buttholes, address, donor1, donor2, donor3) {
 			const gasLimit = await Buttholes.estimateGas.updateCheekSpreader(address.toString(), donor1.toString(), donor2.toString(), donor3.toString());
 			const tx = await Buttholes.updateCheekSpreader(address.toString(), donor1.toString(), donor2.toString(), donor3.toString(), {'gasLimit':gasLimit});
 			const receipt = await tx.wait();
-			console.debug(receipt);
-			console.log("Successfully added starving artists!");
+			// console.debug(receipt);
+			console.log(`Successfully added starving artists!\n-> ${donor1}\n-> ${donor2}\n-> ${donor3}`);
 		}
 		catch (err) {
 			console.warn("Unable to add new starving artists!");
@@ -142,16 +153,19 @@ async function update(Buttholes, address, donor1, donor2, donor3) {
 			const gasLimit = await Buttholes.estimateGas.createCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString());
 			const tx = await Buttholes.updateCheekSpreader(donor1.toString(), donor2.toString(), donor3.toString(), {'gasLimit':gasLimit});
 			const receipt = await tx.wait();
-			console.debug(receipt);
-			console.log("Successfully created starving artists!");
+			// console.debug(receipt);
+			console.log(`Successfully created starving artists! ${address}\n-> ${donor1}\n-> ${donor2}\n-> ${donor3}`);
 		}
 		catch (err) {
 			console.warn("Unable to create new starving artists!");
 			_catchRevert(err);
+			return false;
 		}
+		return true;
 	}
 	// create if update fails
-	if (!await _update()) await _create();
+	if (!await _update()) return await _create();
+	return true;
 }
 
 /**
@@ -164,11 +178,11 @@ async function renounce(Buttholes) {
 	const tx = await Buttholes.renounceButthole({'gasLimit':gasLimit});
 	try {
 		const receipt = await tx.wait();
-		console.debug(receipt);
+		// console.debug(receipt);
 		const event = receipt.events.find(x => x.event === "PuckerDown");
 		if (event) {
-			console.debug(event);
-			console.log("Successfully renounced butthole!");		
+			// console.debug(event);
+			console.log(`Successfully renounced butthole! ${event.args.removedButthole}`);		
 		}
 		else
 			console.warn("Failed to renounce butthole!");
@@ -176,7 +190,9 @@ async function renounce(Buttholes) {
 	catch (err) {
 		console.warn("Unable to renounce butthole!");
 		_catchRevert(err);
+		return false;
 	}
+	return true;
 }
 
 module.exports = {

@@ -29,7 +29,7 @@ contract("Buttholes", async (accounts) => {
         donor2            = accounts[4],
         donor3            = accounts[5];
 
-  web3.eth.defaultAccount = notOwner;
+  web3.eth.defaultAccount = owner;
 
   let buttholesContract;
 
@@ -38,76 +38,110 @@ contract("Buttholes", async (accounts) => {
     buttholesContract.numberFormat = 'BN';
   });
 
-  // Buttholes Interface via CLI //
-
-  describe('Interface', async () => {
-
-    const b = {
-      'artist' : "",
-      'image' : "",
-      'name' : "",
-      'description' : "",
-      'birthday' : "",
-      'starvingArtists' : []
-    };
-
-    it('can add buttholes', async () => {
-      await butthole.add(b);
-      assert.equal(true, true);
-    });
-
-    it('can add minters', async () => {
-      await butthole.addMinter()
-      assert.equal(true, true);
-    });
-
-    it('can check admin', async () => {
-      web3.eth.defaultAccount = owner;
-      assert.equal(await butthole.isAdmin(), true, "does not check if admin");
-      web3.eth.defaultAccount = notOwner;
-    });
-
-    it('can check minter', async () => {
-      assert.equal(await butthole.isMinter(), true, "does not check if minter");
-    });
-
-    it('can mint', async () => {
-      butthole.mint(notOwner);
-      assert.equal(true, true);
-    });
-
-    it('can update', async () => {
-      await butthole.update(b);
-      assert.equal(true, true);
-    });
-
-    it('can renounce', async () => {
-      await butthole.renounce();
-      assert.equal(true, true);
-    });
-
-  });
 
   // IPFS //
 
   describe('IPFS', async () => {
-    it('can get metadata', async () => {
-      await ipfs.getButtholeFromIPFS()
-      assert.equal(typeof Object, await ipfs.getButtholeFromIPFS(), "does not get metadata");
-    });
-    it('can get image', async () => {
-      await ipfs.getButtholeImageFromIPFS()
-      assert.equal(typeof String, await ipfs.getButtholeImageFromIPFS(), "does not get image");
 
-    });
+    var b = {
+      'artist' : owner,
+      'image' : "/home/skeetzo/Projects/nftbuttholes/images/doughnut.jpg",
+      'name' : "Alex D.",
+      'description' : "The man, the myth, the moron.",
+      'birthday' : "06/06/1990",
+      'starvingArtists' : []
+    };
+
+    let buttholeCID, buttholeImageCID;
+
     it('can upload metadata', async () => {
-      await ipfs.uploadButthole()
-      assert.equal(typeof String, await ipfs.uploadButthole(), "does not upload image");
-
+      const d = b.starvingArtists; 
+      b = butthole.createButtholeMetadata(b);
+      b.starvingArtists = d;
+      buttholeCID = await ipfs.uploadButthole(b);
+      assert.notEqual(buttholeCID.toString().length, 0, "does not upload image");
     });
+
     it('can upload image', async () => {
-      await ipfs.uploadButtholeImage()
-      assert.equal(typeof String, await ipfs.uploadButtholeImage(), "does not upload image");
+      try {
+        buttholeImageCID = await ipfs.uploadButtholeImage(b);
+        console.log(buttholeImageCID)
+        for (const value in buttholeImageCID)
+          console.log(value)
+        assert.notEqual(buttholeImageCID.toString().length, 0, "does not upload image");
+      }
+      catch (err) {
+        console.error(err);
+      }
+    });
+
+    it('can get metadata', async () => {
+      let buttholeMetadata = await ipfs.getButtholeFromIPFS(buttholeCID);
+      console.log(buttholeMetadata)
+      // for (const value in buttholeMetadata)
+        // console.log(value)
+      // console.log(buttholeMetadata)
+      // console.log(buttholeMetadata)
+      assert.notEqual(buttholeMetadata, Object, "does not get metadata");
+    });
+
+    it('can get image', async () => {
+      let buttholeImage = await ipfs.getButtholeImageFromIPFS(buttholeImageCID);
+      console.log(buttholeImage)
+      for (const value in buttholeImage)
+        console.log(value);
+      // console.log(buttholeImage)
+      // console.log(buttholeImage)
+      assert.notEqual(buttholeImage.toString().length, 0, "does not get image");
+    });
+
+  });
+
+  // Buttholes Interface via CLI //
+
+  describe('Interface', async () => {
+
+    var b = {
+      'artist' : owner,
+      'image' : "/home/skeetzo/Projects/nftbuttholes/images/doughnut.jpg",
+      'name' : "Alex D.",
+      'description' : "The man, the myth, the moron.",
+      'birthday' : "06/06/1990",
+      'starvingArtists' : []
+    };
+
+    it('can add buttholes', async () => {
+      let successful = false; 
+      for (let i=0;i<accounts.length&&!successful;i++) {
+        successful = await butthole.add(b);
+        b.artist = accounts[i];
+      }
+      assert.equal(successful, true, "does not add buttholes");
+    });
+
+    it('can add minters', async () => {
+      assert.equal(await butthole.addMinter(), true, "does not add buttholes");
+    });
+
+    it('can check admin', async () => {
+      assert.equal(await butthole.isAdmin(owner), true, "does not check if admin");
+    });
+
+    it('can check minter', async () => {
+      assert.equal(await butthole.isMinter(owner), true, "does not check if minter");
+    });
+
+    it('can mint', async () => {
+      assert.equal(await butthole.mint(owner), true, "does not mint butthole");
+      assert.equal(await butthole.mint(notOwner), true, "does not mint butthole");
+    });
+
+    it('can update', async () => {
+      assert.equal(await butthole.update(b), true, "does not update starving artists");
+    });
+
+    it('can renounce', async () => {
+      assert.equal(await butthole.renounce(), true, "does not renounce butthole");
     });
 
   });

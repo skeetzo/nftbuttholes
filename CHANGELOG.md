@@ -69,16 +69,21 @@
 	- added test file for js/butthole.js
 	- added test file for js/main.js
 	- added tests for birthday date string & eth address validation
+	- almost completed test/butthole.js tests
 
 ------------------------------------------------------------------------
 
+	- finish final testing via test/butthole.js
 
-	- finish testing main.js
 	- finish testing contract web interface buttons
 	- finish IPFS interaction in butthole.js that requires updated naming scheme
 	- finish testing loading IPFS images
 
+
 # TODO
+
+- create testing file for main.js
+- finish testing main.js
 
 - add ETH cost to minting
 

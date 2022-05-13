@@ -11,11 +11,6 @@
       "value": 1546360800
     },
     {
-      "display_type": "number", 
-      "trait_type": "edition", 
-      "value": 1
-    },
-    {
       "trait_type": "base", 
       "value": "Starfish"
     }, 
@@ -58,6 +53,10 @@
     "butthole": {
         "type": "string",
         "description": "A URI pointing to a resource with mime type image/* representing the artist's ass to which this token belongs."
+    },
+    "edition" : {
+      "type" : "number",
+      "description" : "The release edition."
     }
   }
 }

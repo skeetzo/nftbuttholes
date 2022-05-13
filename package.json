@@ -33,6 +33,7 @@
     "test": "npx truffle test",
     "posttest": "yarn stop:ganache",
     "start:server": "npx http-server -p 3000",
-    "start": "yarn start:ganache && yarn start:server"
+    "start": "yarn start:ganache && yarn start:server",
+    "cli": "node js/cli.js ${ARGS}"
   }
 }
