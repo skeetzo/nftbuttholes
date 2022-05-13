@@ -8,7 +8,7 @@
 function _catchRevert(revert) {
 	if (revert.body&&revert.body.error&&revert.body.error.message)
 		console.error(revert.body.error.message);
-	// console.error(revert);
+	console.error(revert);
 	// console.error(JSON.parse(err.body).error.data.reason);
 }
 
@@ -53,7 +53,10 @@ async function addMinter(Buttholes) {
 		// console.log(receipt.logs);
 		const event = receipt.events.find(x => x.event === "RoleGranted");
 		// console.debug(event);
-		console.log(`Successfully added minting!\n${event.args.account}`);		    
+		if (event)
+			console.log(`Successfully added minting!\n${event.args.account}`);		    
+		else
+			console.log("Maybe added minting!");		    
 	}
 	catch (err) {
 		console.warn("Unable to add new minter!");
@@ -103,8 +106,8 @@ async function isMinter(Buttholes, address) {
 async function mint(Buttholes, to) {
 	console.log("Minting butthole to address: %s", to);
 	try {
-		const gasLimit = await Buttholes.estimateGas.mint(to.toString());
-		const tx = await Buttholes.mint(to.toString(), {'gasLimit':gasLimit});
+		const gasLimit = await Buttholes.estimateGas.mint(to);
+		const tx = await Buttholes.mint(to, {'gasLimit':gasLimit});
 		const receipt = await tx.wait();
 		// console.debug(receipt);
 		const event = receipt.events.find(x => x.event === "Transfer");
@@ -112,8 +115,10 @@ async function mint(Buttholes, to) {
 			// console.debug(event);
 			console.log(`Successfully minted butthole!\n${event.args.to} - ${event.args.tokenId}`);
 		}
-		else
+		else {
 			console.warn("Failed to mint butthole!");
+			return false;
+		}
 	}
 	catch (err) {
 		console.warn("Unable to mint butthole!");
@@ -174,9 +179,9 @@ async function update(Buttholes, address, donor1, donor2, donor3) {
  */
 async function renounce(Buttholes) {
 	console.log("Renouncing butthole from contract...");
-	const gasLimit = await Buttholes.estimateGas.renounceButthole();
-	const tx = await Buttholes.renounceButthole({'gasLimit':gasLimit});
 	try {
+		const gasLimit = await Buttholes.estimateGas.renounceButthole();
+		const tx = await Buttholes.renounceButthole({'gasLimit':gasLimit});
 		const receipt = await tx.wait();
 		// console.debug(receipt);
 		const event = receipt.events.find(x => x.event === "PuckerDown");
