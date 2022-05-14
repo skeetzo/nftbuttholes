@@ -32,6 +32,7 @@ document.getElementById("connect").onclick = async function () {
 	try {
 		let accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
 		account = accounts[0];
+        document.getElementById("account").innerHTML = account;
 		if (await ButtholesInterface.isAdmin(account)) {	
 			$("#add").show();
 			document.getElementById("add").removeAttribute("disabled");

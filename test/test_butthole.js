@@ -27,7 +27,6 @@ contract("Buttholes", async (accounts) => {
     buttholesContract.numberFormat = 'BN';
   });
 
-
   // IPFS //
 
   describe('IPFS', async () => {
