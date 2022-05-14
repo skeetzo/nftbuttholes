@@ -72,7 +72,8 @@
 	- almost completed test/butthole.js tests
 	**0.0.14 : 5/13/2022**
 	- mostly finished testing test/test_butthole.js
-
+	- created testing file for main.js
+	- finished IPFS metadata test in test_butthole.js
 
 ------------------------------------------------------------------------
 
@@ -85,26 +86,27 @@
 
 # TODO
 
-- finish IPFS metadata test in test_butthole.js
+- update instructions for performers / butthole artists 
+- update instructions for myself for later
 
-- create testing file for main.js
-- finish testing main.js
-
-- add ETH cost to minting
-
+IPFS Metadata Schema Check:
 - restructure naming scheme and folder layout: artistName/images, artistName/editions
 -- so basically change metadata to edition #?
 -- and organize within artistName folders to allow multiple same named files in places
 
-- actually test new cheekspreader interaction w/ royalties
-- write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
-
 - implement Loopring counterfactual nfts & submitMintNft functionality
 - add tests for Loopring interactions
 
-- update instructions for performers / butthole artists 
+- finish testing main.js
+
+- add ETH cost to minting
+
+- actually test new cheekspreader interaction w/ royalties
+- write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
+
 - [later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
 - [after release] add final address of contract on mainnet to etherscan links in docs
+- [much later] implement decentraland metaverse gallery
 
 # Dev
 
