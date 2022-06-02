@@ -70,7 +70,7 @@
 	- added test file for js/main.js
 	- added tests for birthday date string & eth address validation
 	- almost completed test/butthole.js tests
-	**0.0.14 : 5/13/2022**
+**0.0.14 : 5/13/2022**
 	- mostly finished testing test/test_butthole.js
 	- created testing file for main.js
 	- finished IPFS metadata test in test_butthole.js
@@ -85,6 +85,16 @@
 
 
 # TODO
+
+- update Buttholes.js comments to match comment style found in Minty
+- update cli.js to match Minty's minty.js style
+- possibly remove butthole.js; redistribute web3 functionality
+- combine ipfs.js with Minty's minty.js ipfs code into "minty butthole addon"
+
+- file reference for overriding commander cli
+https://github.com/tj/commander.js/blob/HEAD/examples/custom-command-class.js
+https://www.npmjs.com/package/commander#stand-alone-executable-subcommands
+
 
 - update instructions for performers / butthole artists 
 - update instructions for myself for later
