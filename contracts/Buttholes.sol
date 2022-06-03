@@ -41,7 +41,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   /**
    * @dev 18+ confirm to enable minting.
    */
-  function addMinter() public {
+  function confirmAge() public {
     _setupRole(MINTER_ROLE, _msgSender());
   }
 

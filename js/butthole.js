@@ -182,8 +182,8 @@ async function add(butthole) {
 /**
  * @dev Add to minter role / confirm 18+.
  */
-async function addMinter() {
-	return await ButtholesContract.addMinter(await getContract());
+async function confirm() {
+	return await ButtholesContract.confirm(await getContract());
 };
 
 /**
@@ -251,5 +251,5 @@ async function renounce() {
 }
 
 module.exports = {
-	add, addMinter, createButtholeMetadata, isAdmin, isMinter, mint, update, renounce
+	add, confirm, createButtholeMetadata, isAdmin, isMinter, mint, update, renounce
 }
