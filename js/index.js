@@ -1,7 +1,11 @@
 const commander = require('commander'),
 	  Command = commander.Command;
 
-const { add, addMinter, mint, update, renounce } = require('./butthole.js');
+const { add, confirm, mint, update, renounce } = require('./butthole.js');
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Helpers //
 
 // ensure value is an 0x address
 function parseAddress(value) {
@@ -43,25 +47,43 @@ function isValidDate(dateString) {
     return day > 0 && day <= monthLength[month - 1];
 }
 
+async function promptForMissing(cliOptions, prompts) {
+    const questions = []
+    for (const [name, prompt] of Object.entries(prompts)) {
+        prompt.name = name;
+        prompt.when = (answers) => {
+            if (cliOptions[name]) {
+                answers[name] = cliOptions[name]
+                return false
+            }
+            return true
+        }
+        questions.push(prompt);
+    }
+    return inquirer.prompt(questions);
+}
+
+function alignOutput(labelValuePairs) {
+    const maxLabelLength = labelValuePairs
+      .map(([l, _]) => l.length)
+      .reduce((len, max) => len > max ? len : max);
+    for (const [label, value] of labelValuePairs) {
+        console.log(label.padEnd(maxLabelLength+1), value);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /**
- * @dev Add an artist, addMinter, mint, update starving artists, or renounce a butthole NFT.
+ * @dev Add an artist, confirm, mint, update starving artists, or renounce a butthole NFT.
  */
-(async function main() {
+async function main() {
 
 	const program = new Command();
 
-	const butthole = {
-		'artist' : "",
-		'image' : "",
-		'name' : "",
-		'description' : "",
-		'birthday' : "",
-		'starvingArtists' : []
-	};
-
 	program
-	  .name('Buttholes')
-	  .description('CLI to some Butthole NFT utilities')
+	  .name('Minty Buttholes')
+	  .description('CLI to some JavaScript NFT utilities')
 	  .version('0.0.13');
 
 	program.command('add')
@@ -76,20 +98,21 @@ function isValidDate(dateString) {
 Example call:
  $ butthole add 0x00.. /path/to/image.jpg -n "My Name" -d "A description." -b "06/06/1990 -s 0x01.. 0x02.. 0x03..`)
 	  .action(async (artist, image, options) => {
-	  	butthole.artist = artist;
-	  	butthole.image = image;
-	  	butthole.name = options.name;
-	  	butthole.description = options.description;
-	  	butthole.birthday = options.birthday;
-	  	butthole.starvingArtists = options.starve;
-	  	await add(butthole);
+	  	await add({
+	  		'artist' : artist,
+		  	'image' : image,
+		  	'name' : options.name,
+		  	'description' : options.description,
+		  	'birthday' : options.birthday,
+		  	'starvingArtists' : options.starve	
+	  	});
 	  });
 
-	program.command('addMinter')
-	  .description('Add caller as a minter.')
-	  .action(addMinter);
+	program.command('confirm')
+	  .description('Add caller as a minter to confirm 18+ age requirement.')
+	  .action(confirm);
 
-	program.command('mint')
+	program.command('mint <image-path>')
 	  .description('Mint a butthole.')
 	  .argument('<address>', 'The receiving address.', parseAddress)
 	  .addHelpText('after', `
@@ -107,15 +130,29 @@ Example call:
 Example call:
  $ butthole update 0x00.. -s 0x01.. 0x02.. 0x03..`)
 	  .action(async (artist, options) => {
-	  	butthole.artist = artist;
-	  	butthole.starvingArtists = options.starve;
-	  	await update(butthole);
+	  	await update({
+	  		'artist' : artist,
+			'starvingArtists' : options.starve
+	  	});
 	  });
 
 	program.command('renounce')
 	  .description('Renounce your butthole.')
 	  .action(renounce);
 
-	await program.parseAsync(process.argv);
+	return program;
+}
+module.exports = main;
 
-})();
+if (require.main === module) {
+    // console.log('called directly');
+	main().then(async (program) => {
+		await program.parseAsync(process.argv)
+	    process.exit(0);
+	}).catch(err => {
+	    console.error(err);
+	    process.exit(1);
+	})
+} else {
+    // console.log('required as a module');
+}

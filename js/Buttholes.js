@@ -45,10 +45,10 @@ async function add(Buttholes, newButtholeAddress, newButtholeURI) {
  * @dev Adds a user to minting role aka 18+ access.
  * @param Buttholes The Buttholes contract object provided by Ethers.
  */
-async function addMinter(Buttholes) {
+async function confirm(Buttholes) {
 	try {
-		const gasLimit = await Buttholes.estimateGas.addMinter();
-		const tx = await Buttholes.addMinter({'gasLimit':gasLimit});
+		const gasLimit = await Buttholes.estimateGas.confirmAge();
+		const tx = await Buttholes.confirmAge({'gasLimit':gasLimit});
 		const receipt = await tx.wait();
 		// console.log(receipt.logs);
 		const event = receipt.events.find(x => x.event === "RoleGranted");
@@ -202,7 +202,7 @@ async function renounce(Buttholes) {
 
 module.exports = {
 	add,
-	addMinter,
+	confirm,
 	isAdmin,
 	isMinter,
 	update,
