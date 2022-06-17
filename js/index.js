@@ -5,6 +5,92 @@ const { add, confirm, mint, update, renounce } = require('./butthole.js');
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/**
+ * @dev Add an artist, confirm, mint, update starving artists, or renounce a butthole NFT.
+ */
+async function main() {
+
+	const program = new Command();
+
+	program
+	  .name('Minty Buttholes')
+	  .description('CLI to some JavaScript NFT utilities')
+	  .version('0.0.13');
+
+	program.command('add')
+	  .description('Add a butthole. Caller must be contract owner.')
+	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
+	  .argument('<image>', 'The local path to the butthole image')
+	  .option('-n, --name <string>', 'The artist\'s name')
+	  .option('-d, --description <string>', 'The artist\'s description')
+	  .option('-b, --birthday <date>', 'The artist\'s birthday (MM/DD/YYYY)', parseDate)
+	  .option('-s, --starve [addresses...]', 'Up to 3 starving artist ETH addresses', 'specify at least 1 starving artist')
+	  .addHelpText('after', `
+Example call:
+ $ butthole add 0x00.. /path/to/image.jpg -n "My Name" -d "A description." -b "06/06/1990 -s 0x01.. 0x02.. 0x03..`)
+
+	  .action(addNFT)	  
+	  .action(async (artist, image, options) => {
+	  	await add({
+	  		'artist': artist,
+		  	'image': image,
+		  	'name': options.name,
+		  	'description': options.description,
+		  	'birthday': options.birthday,
+		  	'starvingArtists': options.starve	
+	  	});
+
+
+	  });
+
+	program.command('confirm')
+	  .description('Add caller as a minter to confirm 18+ age requirement.')
+	  .action(confirm);
+
+	program.command('mint')
+	  .description('Mint a butthole.')
+	  .option('-a, --address <address>', 'An optional receiving address. Defaults to caller', parseAddress)
+	  .option('-b, --butthole <id>', 'Specify the butthole to mint by id', parseId)
+	  .option('-r, --random', 'Mint a random butthole (default)')
+	  .addHelpText('after', `
+Example call:
+ $ butthole mint -a 0x00.. -r`)
+	  .action(async (options) => {
+	  	let {address, butthole} = options;
+	  	if (options.random) butthole = -1;
+	  	await mint(address, butthole);
+	  });
+
+	program.command('update')
+	  .description('Update your starving artist(s).')
+	  .option('-a, --address <address>', 'The address of the artist to update. Defaults to caller', parseAddress)
+	  .requiredOption('-s, --starve [addresses...]', 'Up to 3 \"starving artist\" ETH addresses', 'specify at least 1 starving artist')
+	  .addHelpText('after', `
+Example call:
+ $ butthole update -a 0x00.. -s 0x01.. 0x02.. 0x03..`)
+	  .action(async (artist, options) => {
+	  	await update({
+	  		'artist': artist,
+			'starvingArtists': options.starve
+	  	});
+	  });
+
+	program.command('renounce')
+	  .description('Renounce your butthole. You can only renounce your own butthole.')
+	  .action(renounce);
+
+	return program;
+}
+module.exports = main;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// ---- command action functions
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Helpers //
 
 // ensure value is an 0x address
@@ -47,105 +133,67 @@ function isValidDate(dateString) {
     return day > 0 && day <= monthLength[month - 1];
 }
 
-async function promptForMissing(cliOptions, prompts) {
-    const questions = []
-    for (const [name, prompt] of Object.entries(prompts)) {
-        prompt.name = name;
-        prompt.when = (answers) => {
-            if (cliOptions[name]) {
-                answers[name] = cliOptions[name]
-                return false
-            }
-            return true
-        }
-        questions.push(prompt);
-    }
-    return inquirer.prompt(questions);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Metadata //
+
+// return skeleton {} metadata
+/**
+ * @dev Loads and returns the default butthole metadata template.
+ */
+function _getDefaultMetadata() {
+	const nft = require('./metadata.json', 'utf8');
+	nft.animation_url = process.env.DEFAULT_ANIMATION_URI
+	const date = new Date();
+	const timestampInMs = date.getTime();
+	const unixTimestamp = Math.floor(date.getTime() / 1000);
+	nft.attributes.birthday = unixTimestamp;
+	// Properties //
+	// image
+	nft.properties.image.value = process.env.DEFAULT_PLACEHOLDER_URI
+	// butthole
+	nft.properties.butthole.value = process.env.DEFAULT_PLACEHOLDER_URI
+	nft.properties.edition.value = 1;
+	return nft;
 }
 
-function alignOutput(labelValuePairs) {
-    const maxLabelLength = labelValuePairs
-      .map(([l, _]) => l.length)
-      .reduce((len, max) => len > max ? len : max);
-    for (const [label, value] of labelValuePairs) {
-        console.log(label.padEnd(maxLabelLength+1), value);
-    }
+/**
+ * @dev Create's a butthole NFT's metadata from the provided butthole data.
+ * @param butthole An object containing nft metadata.
+ */
+function createButtholeMetadata(butthole) {
+	// load default metadata.json and update default values
+	const nft = _getDefaultMetadata();
+	// update birthday
+	// https://stackoverflow.com/questions/4060004/calculate-age-given-the-birth-date-in-the-format-yyyymmdd
+	function _getAge(dateString) {
+	    var today = new Date();
+	    var birthDate = new Date(dateString);
+	    var age = today.getFullYear() - birthDate.getFullYear();
+	    var m = today.getMonth() - birthDate.getMonth();
+	    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+	        age--;
+	    }
+	    return age;
+	}
+	const date = new Date(butthole.birthday);
+	const unixTimestamp = Math.floor(date.getTime() / 1000);
+	const age = _getAge(butthole.birthday);
+	console.log(`Birthday: (${age}) ${butthole.birthday} --> ${unixTimestamp}`);
+	// update attributes
+	nft.attributes.map(a => {if (a["trait_type"] == "birthday") a["value"] = unixTimestamp });
+	nft.attributes.map(a => {if (a["trait_type"] == "level") a["value"] = age });
+	// update properties
+	nft.properties.artist.value = butthole.artist;
+	nft.properties.name.value = butthole.name;
+	nft.properties.description.value = butthole.description;
+	nft.properties.butthole.value = butthole.image;
+	return nft;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/**
- * @dev Add an artist, confirm, mint, update starving artists, or renounce a butthole NFT.
- */
-async function main() {
-
-	const program = new Command();
-
-	program
-	  .name('Minty Buttholes')
-	  .description('CLI to some JavaScript NFT utilities')
-	  .version('0.0.13');
-
-	program.command('add')
-	  .description('Add a butthole.')
-	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
-	  .argument('<image>', 'The local path to the butthole image')
-	  .option('-n, --name <string>', 'The artist\'s name')
-	  .option('-d, --description <string>', 'The artist\'s description')
-	  .option('-b, --birthday <date>', 'The artist\'s birthday (MM/DD/YYYY)', parseDate)
-	  .option('-s, --starve [addresses...]', 'Up to 3 starving artist ETH addresses', 'specify at least 1 starving artist')
-	  .addHelpText('after', `
-Example call:
- $ butthole add 0x00.. /path/to/image.jpg -n "My Name" -d "A description." -b "06/06/1990 -s 0x01.. 0x02.. 0x03..`)
-	  .action(async (artist, image, options) => {
-	  	await add({
-	  		'artist' : artist,
-		  	'image' : image,
-		  	'name' : options.name,
-		  	'description' : options.description,
-		  	'birthday' : options.birthday,
-		  	'starvingArtists' : options.starve	
-	  	});
-	  });
-
-	program.command('confirm')
-	  .description('Add caller as a minter to confirm 18+ age requirement.')
-	  .action(confirm);
-
-	program.command('mint <image-path>')
-	  .description('Mint a butthole.')
-	  .argument('<address>', 'The receiving address.', parseAddress)
-	  .addHelpText('after', `
-Example call:
- $ butthole mint 0x00.. `)
-	  .action(async (to) => {
-	  	await mint(to);
-	  });
-
-	program.command('update')
-	  .description('Update your starving artist(s).')
-	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
-	  .requiredOption('-s, --starve [addresses...]', 'Up to 3 starving artist ETH addresses', 'specify at least 1 starving artist')
-	  .addHelpText('after', `
-Example call:
- $ butthole update 0x00.. -s 0x01.. 0x02.. 0x03..`)
-	  .action(async (artist, options) => {
-	  	await update({
-	  		'artist' : artist,
-			'starvingArtists' : options.starve
-	  	});
-	  });
-
-	program.command('renounce')
-	  .description('Renounce your butthole.')
-	  .action(renounce);
-
-	return program;
-}
-module.exports = main;
-
-if (require.main === module) {
-    // console.log('called directly');
+if (require.main === module)
 	main().then(async (program) => {
 		await program.parseAsync(process.argv)
 	    process.exit(0);
@@ -153,6 +201,3 @@ if (require.main === module) {
 	    console.error(err);
 	    process.exit(1);
 	})
-} else {
-    // console.log('required as a module');
-}

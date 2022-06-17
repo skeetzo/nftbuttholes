@@ -100,14 +100,15 @@ async function isMinter(Buttholes, address) {
 
 /**
  * @dev Mints a butthole NFT.
- * @param to The address to receive the token.
  * @param Buttholes The Buttholes contract object provided by Ethers.
+ * @param to The address to receive the token.
+ * @param butthole The id of the butthole to mint.
  */
-async function mint(Buttholes, to) {
+async function mint(Buttholes, to, butthole) {
 	console.log("Minting butthole to address: %s", to);
 	try {
-		const gasLimit = await Buttholes.estimateGas.mint(to);
-		const tx = await Buttholes.mint(to, {'gasLimit':gasLimit});
+		const gasLimit = await Buttholes.estimateGas.mint(to, butthole);
+		const tx = await Buttholes.mint(to, butthole, {'gasLimit':gasLimit});
 		const receipt = await tx.wait();
 		// console.debug(receipt);
 		const event = receipt.events.find(x => x.event === "Transfer");

@@ -25,67 +25,9 @@ if (typeof window !== 'undefined') {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Metadata //
-
-// return skeleton {} metadata
-/**
- * @dev Loads and returns the default butthole metadata template.
- */
-function _getDefaultMetadata() {
-	const nft = require('./metadata.json', 'utf8');
-	nft.animation_url = process.env.DEFAULT_ANIMATION_URI
-	const date = new Date();
-	const timestampInMs = date.getTime();
-	const unixTimestamp = Math.floor(date.getTime() / 1000);
-	nft.attributes.birthday = unixTimestamp;
-	// Properties //
-	// image
-	nft.properties.image.value = process.env.DEFAULT_PLACEHOLDER_URI
-	// butthole
-	nft.properties.butthole.value = process.env.DEFAULT_PLACEHOLDER_URI
-	nft.properties.edition.value = 1;
-	return nft;
-}
-
-/**
- * @dev Create's a butthole NFT's metadata from the provided butthole data.
- * @param butthole An object containing nft metadata.
- */
-function createButtholeMetadata(butthole) {
-	// load default metadata.json and update default values
-	const nft = _getDefaultMetadata();
-	// update birthday
-	// https://stackoverflow.com/questions/4060004/calculate-age-given-the-birth-date-in-the-format-yyyymmdd
-	function _getAge(dateString) {
-	    var today = new Date();
-	    var birthDate = new Date(dateString);
-	    var age = today.getFullYear() - birthDate.getFullYear();
-	    var m = today.getMonth() - birthDate.getMonth();
-	    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-	        age--;
-	    }
-	    return age;
-	}
-	const date = new Date(butthole.birthday);
-	const unixTimestamp = Math.floor(date.getTime() / 1000);
-	const age = _getAge(butthole.birthday);
-	console.log(`Birthday: (${age}) ${butthole.birthday} --> ${unixTimestamp}`);
-	// update attributes
-	nft.attributes.map(a => {if (a["trait_type"] == "birthday") a["value"] = unixTimestamp });
-	nft.attributes.map(a => {if (a["trait_type"] == "level") a["value"] = age });
-	// update properties
-	nft.properties.artist.value = butthole.artist;
-	nft.properties.name.value = butthole.name;
-	nft.properties.description.value = butthole.description;
-	nft.properties.butthole.value = butthole.image;
-	return nft;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 // Contract Interface //
 
-var _ButtholesContract;
+var _ButtholesContract, account;
 
 /**
  * @dev Connect to and return the Buttholes contract as an ethers object.
@@ -129,14 +71,14 @@ async function getContract() {
 	  if (!web3Provider) return console.error("Unable to connect to provider!");
 		// await web3Provider.send("eth_requestAccounts", []);
 	  signer = web3Provider.getSigner();
-	  let account = await signer.getAddress();
+	  account = await signer.getAddress();
 	  console.debug("Connected Account: %s", account);
 	  const contract = require('../build/contracts/Buttholes.json');
 	  const abi = contract.abi;
 	  // load network to find contract address
 	  const { chainId } = await web3Provider.getNetwork();
 	  console.log("Chain ID: %s", chainId); // 42
-	  const address = contract.networks[chainId].address;
+	  let address = contract.networks[chainId].address;
 	  console.log("Contract Address: %s", address);
 	  _ButtholesContract = new ethers.Contract(address, abi, signer);
 	  web3Provider.on("network", (newNetwork, oldNetwork) => {
@@ -229,9 +171,11 @@ async function isMinter(address) {
 /**
  * @dev Mint a Butthole NFT.
  * @param to The address to mint to.
+ * @param butthole The id of the butthole to mint.
  */
-async function mint(to) {
-	return await ButtholesContract.mint(await getContract(), to);
+async function mint(to, butthole) {
+	if (isNaN(to)) to = account;
+	return await ButtholesContract.mint(await getContract(), to, butthole);
 }
 
 /**

@@ -74,6 +74,8 @@
 	- mostly finished testing test/test_butthole.js
 	- created testing file for main.js
 	- finished IPFS metadata test in test_butthole.js
+	**0.0.15 : 6/17/2022**
+
 
 ------------------------------------------------------------------------
 
@@ -85,6 +87,12 @@
 
 
 # TODO
+
+- create method for performers to "sign" a butthole NFT after a delayed lockout period
+-- method should be added in a way that best promotes rarity while being simple to do in public (on a phone) 
+
+- update / fix metadata format --> 'properties'
+- create schema for metadata
 
 - update Buttholes.js comments to match comment style found in Minty
 - update cli.js to match Minty's minty.js style
@@ -222,3 +230,28 @@ curl -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],
 // <!-- <img src="https://ipfs.infura.io:5001/api/v0/cat/QmQuTjzy8aZyYqYRyH7UdE5qcDXTxLFYEE9GKNhPY6D6K1"> -->
 
 // if they do not have an IPFS enabled browser, fetch the image resource for them
+
+
+
+
+
+
+
+
+Metadata Layout
+
+Butthole jpeg on IPFS --> bCID
+bCID stored in smart contract for each performer --> buttholes mapping address -> string
+
+minting process unaffected by chance --> mint any butthole by request or randomly
+value of buttholes: signed by performers
+
+erc721 mint(to, templateURI) --> creates token for to, templateURI points to template for butthole nft at ipfs url in buttholes mapping
+
+added process: "sign" --> copies the template at the tokenURI, creates new ipfs entry for "signed" token, updates values of token in ipfs
+
+
+- only I can upload buttholes for each performer
+- performers can each update their starving artists anytime
+- performers cannot update an existing butthole
+- performers may renounce their butthole template at anytime
