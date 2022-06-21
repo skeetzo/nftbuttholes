@@ -98,16 +98,16 @@ function _ipfsError(err) {
 async function checkExistingButtholes(butthole) {
 	let recentButthole = await findMostRecent(butthole);
 	if (!recentButthole) return;
-    console.log(`Butthole Artist \"${butthole.properties.name.value}\" already exists.`);
+    console.log(`Butthole Artist \"${butthole.name}\" already exists.`);
     // console.debug(recentButthole)
-    console.log(`Latest Edition #: ${recentButthole.properties.edition.value}`);
+    console.log(`Latest Edition #: ${recentButthole.edition}`);
 	const answer = await askQuestion("Add new edition? yes/[n]o: ");
 	if (answer.includes("y")) {
-		console.log ("Adding new edition for " + butthole.properties.name.value);
-		butthole.properties.edition.value = parseInt(butthole.properties.edition.value) + 1;
+		console.log ("Adding new edition for " + butthole.name);
+		butthole.edition = parseInt(butthole.edition) + 1;
 	}
 	else {
-		console.log(`Existing Butthole: ${butthole.properties.name.value} - ${butthole.properties.artist.value}`);
+		console.log(`Existing Butthole: ${butthole.name} - ${butthole.artist}`);
 		process.exit(0);
 	}
 }
@@ -124,9 +124,9 @@ async function findMostRecent(butthole, i=0) {
 		// const metadataDir = await IPFS.files.stat(IPFS_METADATA);
 		// console.debug(metadataDir);
 		for await (const file of IPFS.files.ls(IPFS_METADATA)) {
-		  console.log(`${file.name} vs ${butthole.properties.name.value}-${butthole.properties.edition.value}.json`);
+		  console.log(`${file.name} vs ${butthole.name}-${butthole.edition}.json`);
 		  // console.debug(file);
-		  if (file.name == butthole.properties.name.value+"-"+butthole.properties.edition.value+".json")
+		  if (file.name == butthole.name+"-"+butthole.edition+".json")
 		  	existingButtholes.push(file);
 		}
 		if (existingButtholes.length == 0) {
@@ -149,8 +149,8 @@ async function findMostRecent(butthole, i=0) {
 				throw "Unable to parse IPFS metadata!";
 			}
 			if (existingButtholes.length == 1) return butt;
-			let edition1 = butt.properties.edition.value;
-			let edition2 = latestButthole.properties.edition.value;
+			let edition1 = butt.edition;
+			let edition2 = latestButthole.edition;
 			console.log("edition1 vs edition2: %s - %s", edition1, edition2);
 			if (parseInt(edition1) > parseInt(edition2))
 				latestButthole = butt;
@@ -219,24 +219,24 @@ async function getButtholeImageFromIPFS(cid) {
  */
 async function uploadButtholeImage(butthole) {
 	try {
-		fs.openSync(butthole.properties.butthole.value);
+		fs.openSync(butthole.butthole);
 	}
 	catch (err) {
 		console.error(err);
 		throw "Butthole image file must exist to upload!";
 	}
-	let image = new Uint8Array(fs.readFileSync(butthole.properties.butthole.value));
-	console.debug("uploading butthole image: %s", butthole.properties.butthole.value);
+	let image = new Uint8Array(fs.readFileSync(butthole.butthole));
+	console.debug("uploading butthole image: %s", butthole.butthole);
 	const file = {
-	  name: butthole.properties.name.value+"-"+butthole.properties.edition.value,
-	  path: IPFS_IMAGES+"/"+butthole.properties.name.value+"-"+butthole.properties.edition.value,
+	  name: butthole.name+"-"+butthole.edition,
+	  path: IPFS_IMAGES+"/"+butthole.name+"-"+butthole.edition,
 	  content: image
 	}
 	try {
 		const { cid: cid } = await IPFS.add(file);
 		console.log("Successfully added image to IPFS: %s", cid);
-		await IPFS.files.write(`${IPFS_IMAGES}/${butthole.properties.name.value}-${butthole.properties.edition.value}`, image, FILE_OPTIONS);
-		console.log("Successfully wrote image to IPFS: %s", butthole.properties.name.value);
+		await IPFS.files.write(`${IPFS_IMAGES}/${butthole.name}-${butthole.edition}`, image, FILE_OPTIONS);
+		console.log("Successfully wrote image to IPFS: %s", butthole.name);
 		return cid.toString();
 	}
 	catch (err) {_ipfsError(err);}
@@ -247,18 +247,18 @@ async function uploadButtholeImage(butthole) {
  * @param butthole An object containing nft metadata.
  */
 async function uploadButtholeMetadata(butthole) {
-	// console.debug("uploading butthole metadata: %s\n%s", butthole.properties.name.value, JSON.parse(JSON.stringify(butthole),null,4));
-	console.debug("uploading butthole metadata: %s", butthole.properties.name.value);
+	// console.debug("uploading butthole metadata: %s\n%s", butthole.name, JSON.parse(JSON.stringify(butthole),null,4));
+	console.debug("uploading butthole metadata: %s", butthole.name);
 	const file = {
-	  name: butthole.properties.name.value+"-"+butthole.properties.edition.value+".json",
-	  path: IPFS_METADATA+"/"+butthole.properties.name.value+"-"+butthole.properties.edition.value+".json",
+	  name: butthole.name+"-"+butthole.edition+".json",
+	  path: IPFS_METADATA+"/"+butthole.name+"-"+butthole.edition+".json",
 	  content: JSON.stringify(butthole),
 	}
 	try {
 		const { cid: cid } = await IPFS.add(file);
 		console.log("Successfully added metadata to IPFS: %s", cid);
-		await IPFS.files.write(`${IPFS_METADATA}/${butthole.properties.name.value}-${butthole.properties.edition.value}.json`, JSON.stringify(butthole), FILE_OPTIONS);
-		console.log("Successfully wrote metadata to IPFS: %s", butthole.properties.name.value);
+		await IPFS.files.write(`${IPFS_METADATA}/${butthole.name}-${butthole.edition}.json`, JSON.stringify(butthole), FILE_OPTIONS);
+		console.log("Successfully wrote metadata to IPFS: %s", butthole.name);
 		return cid.toString();
 	}
 	catch (err) {_ipfsError(err);}
@@ -270,7 +270,7 @@ async function uploadButtholeMetadata(butthole) {
  */
 async function uploadButthole(butthole) {
 	try {
-		butthole.properties.butthole.value = await uploadButtholeImage(butthole);
+		butthole.butthole = await uploadButtholeImage(butthole);
 		return await uploadButtholeMetadata(butthole);
 	}
 	catch (err) {

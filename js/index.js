@@ -1,7 +1,13 @@
 const commander = require('commander'),
 	  Command = commander.Command;
 
-const { add, confirm, mint, update, renounce } = require('./butthole.js');
+const { add, confirm, getButthole, mint, update, renounce } = require('./butthole.js');
+
+// TODO
+// this will totally not work
+// figure out how to require the helpers correctly or move them to minty
+const { MakeMinty, mintyHelpers } = require('minty-fresh');
+const CONTRACT_NAME = "Buttholes";
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -18,7 +24,8 @@ async function main() {
 	  .version('0.0.13');
 
 	program.command('add')
-	  .description('Add a butthole. Caller must be contract owner.')
+	  .description('Add a butthole template of a performer for minting. Caller must be contract owner.')
+            .description('add an NFT schema to IPFS as an available template')
 	  .argument('<address>', 'The butthole artist\'s ETH address', parseAddress)
 	  .argument('<image>', 'The local path to the butthole image')
 	  .option('-n, --name <string>', 'The artist\'s name')
@@ -28,20 +35,7 @@ async function main() {
 	  .addHelpText('after', `
 Example call:
  $ butthole add 0x00.. /path/to/image.jpg -n "My Name" -d "A description." -b "06/06/1990 -s 0x01.. 0x02.. 0x03..`)
-
-	  .action(addNFT)	  
-	  .action(async (artist, image, options) => {
-	  	await add({
-	  		'artist': artist,
-		  	'image': image,
-		  	'name': options.name,
-		  	'description': options.description,
-		  	'birthday': options.birthday,
-		  	'starvingArtists': options.starve	
-	  	});
-
-
-	  });
+	  .action(addButthole);
 
 	program.command('confirm')
 	  .description('Add caller as a minter to confirm 18+ age requirement.')
@@ -55,11 +49,7 @@ Example call:
 	  .addHelpText('after', `
 Example call:
  $ butthole mint -a 0x00.. -r`)
-	  .action(async (options) => {
-	  	let {address, butthole} = options;
-	  	if (options.random) butthole = -1;
-	  	await mint(address, butthole);
-	  });
+	  .action(mintButthole);
 
 	program.command('update')
 	  .description('Update your starving artist(s).')
@@ -87,7 +77,43 @@ module.exports = main;
 
 // ---- command action functions
 
+async function addButthole(artist, image, options) {
+    const minty = await MakeMinty(CONTRACT_NAME);
+    const {assetCid, assetURI, assetGatewayURL} = await minty.uploadAssetData(image, "buttholes");
+    options.artist = artist;
+    options.image = assetCid;
+  	const schema = await selectSchema("butthole");
+	const butthole = await promptNFTMetadata(schema, options);
+    await add(butthole);
+    console.log('🌿 Added a new butthole: ');
+    mintyHelpers.alignOutput(
+        ['Contract Name:', chalk.green(minty.name)],
+        ['Contract Address:', chalk.yellow(minty.contract.address)],
+        ['Butthole Artist:', chalk.green(artist)],
+        ['Asset Address:', chalk.blue(assetURI)],
+        ['Asset Gateway URL:', chalk.blue(assetGatewayURL)]);
+    console.log(colorize(JSON.stringify(butthole), colorizeOptions));
+}
 
+async function mintButthole(options) {
+    const minty = await MakeMinty(CONTRACT_NAME);
+    options.schema = "butthole";
+    options.skipMint = true;
+    if (options.random) options.butthole = -1;
+    options.butthole = await getButthole(options.butthole);
+    const nft = await minty.createNFT(options);
+    await mint(options.address, nft.metadataURI);
+    console.log('🌿 Minted a new butthole: ');
+    mintyHelpers.alignOutput(
+        ['Contract Name:', chalk.green(minty.name)],
+        ['Contract Address:', chalk.yellow(minty.contract.address)],
+        ['Token ID:', chalk.green(nft.tokenId)],
+        ['Metadata Address:', chalk.blue(nft.metadataURI)],
+        ['Metadata Gateway URL:', chalk.blue(nft.metadataGatewayURL)],
+        ['Asset Address:', chalk.blue(nft.assetURI)],
+        ['Asset Gateway URL:', chalk.blue(nft.assetGatewayURL)]);
+    console.log(colorize(JSON.stringify(nft.metadata), colorizeOptions));
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -131,64 +157,6 @@ function isValidDate(dateString) {
 
     // Check the range of the day
     return day > 0 && day <= monthLength[month - 1];
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// Metadata //
-
-// return skeleton {} metadata
-/**
- * @dev Loads and returns the default butthole metadata template.
- */
-function _getDefaultMetadata() {
-	const nft = require('./metadata.json', 'utf8');
-	nft.animation_url = process.env.DEFAULT_ANIMATION_URI
-	const date = new Date();
-	const timestampInMs = date.getTime();
-	const unixTimestamp = Math.floor(date.getTime() / 1000);
-	nft.attributes.birthday = unixTimestamp;
-	// Properties //
-	// image
-	nft.properties.image.value = process.env.DEFAULT_PLACEHOLDER_URI
-	// butthole
-	nft.properties.butthole.value = process.env.DEFAULT_PLACEHOLDER_URI
-	nft.properties.edition.value = 1;
-	return nft;
-}
-
-/**
- * @dev Create's a butthole NFT's metadata from the provided butthole data.
- * @param butthole An object containing nft metadata.
- */
-function createButtholeMetadata(butthole) {
-	// load default metadata.json and update default values
-	const nft = _getDefaultMetadata();
-	// update birthday
-	// https://stackoverflow.com/questions/4060004/calculate-age-given-the-birth-date-in-the-format-yyyymmdd
-	function _getAge(dateString) {
-	    var today = new Date();
-	    var birthDate = new Date(dateString);
-	    var age = today.getFullYear() - birthDate.getFullYear();
-	    var m = today.getMonth() - birthDate.getMonth();
-	    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-	        age--;
-	    }
-	    return age;
-	}
-	const date = new Date(butthole.birthday);
-	const unixTimestamp = Math.floor(date.getTime() / 1000);
-	const age = _getAge(butthole.birthday);
-	console.log(`Birthday: (${age}) ${butthole.birthday} --> ${unixTimestamp}`);
-	// update attributes
-	nft.attributes.map(a => {if (a["trait_type"] == "birthday") a["value"] = unixTimestamp });
-	nft.attributes.map(a => {if (a["trait_type"] == "level") a["value"] = age });
-	// update properties
-	nft.properties.artist.value = butthole.artist;
-	nft.properties.name.value = butthole.name;
-	nft.properties.description.value = butthole.description;
-	nft.properties.butthole.value = butthole.image;
-	return nft;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

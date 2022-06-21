@@ -109,16 +109,7 @@ async function getContract() {
  * @param butthole An object containing nft metadata.
  */
 async function add(butthole) {
-	const d = butthole.starvingArtists; 
-	butthole = createButtholeMetadata(butthole);
-	butthole.starvingArtists = d;
-	await checkExistingButtholes(butthole);
-	buttholeCID = await uploadButthole(butthole);
-	if (buttholeCID.length==0) return false;
-	let successful = await ButtholesContract.add(await getContract(), butthole.properties.artist.value, buttholeCID);
-	if (successful && butthole.starvingArtists.length > 0)
-		return await update(butthole);
-	return successful;
+	return await ButtholesContract.add(await getContract(), butthole.artist, butthole.image, butthole.starve);
 }
 
 /**
@@ -134,9 +125,9 @@ async function confirm() {
  */
 function _fillArtists(butthole) {
 	let defaultStarvingArtists = [process.env.DEFAULT_DONATION1, process.env.DEFAULT_DONATION2, process.env.DEFAULT_DONATION3];
-	let artist1 = butthole.starvingArtists[0],
-		artist2 = butthole.starvingArtists[1],
-		artist3 = butthole.starvingArtists[2];
+	let artist1 = butthole.starve[0],
+		artist2 = butthole.starve[1],
+		artist3 = butthole.starve[2];
 	if (!artist1) {
 		artist1 = defaultStarvingArtists.shift();
 		console.warn("Missing Donor1.");
@@ -150,6 +141,15 @@ function _fillArtists(butthole) {
 		console.warn("Missing Donor3.");
 	}
 	return { 'artist1': artist1, 'artist2': artist2, 'artist3': artist3 };
+}
+
+async function getButthole(address) {
+	if (address == -1) {
+		// get random address
+		const buttholes = await ButtholesContract.getButtholeOwners();
+		address = buttholes[Math.floor(Math.random()*buttholes.length)];
+	}
+	return await ButtholesContract.getButtholeURI(await getContract(), address);
 }
 
 /**
@@ -184,7 +184,7 @@ async function mint(to, butthole) {
  */
 async function update(butthole) {
 	const { artist1, artist2, artist3 } = _fillArtists(butthole);
-	return await ButtholesContract.update(await getContract(), !isNaN(butthole.properties) ? butthole.properties.artist.value : butthole.artist, artist1, artist2, artist3);
+	return await ButtholesContract.update(await getContract(), butthole.artist, artist1, artist2, artist3);
 }
 
 /**
@@ -195,5 +195,68 @@ async function renounce() {
 }
 
 module.exports = {
-	add, confirm, createButtholeMetadata, isAdmin, isMinter, mint, update, renounce
+	add, confirm, createButtholeMetadata, getButthole, isAdmin, isMinter, mint, update, renounce
+}
+
+
+
+
+
+
+
+
+// Metadata //
+
+// return skeleton {} metadata
+/**
+ * @dev Loads and returns the default butthole metadata template.
+ */
+function _getDefaultMetadata() {
+	const nft = require('./metadata.json', 'utf8');
+	nft.animation_url = process.env.DEFAULT_ANIMATION_URI
+	const date = new Date();
+	const timestampInMs = date.getTime();
+	const unixTimestamp = Math.floor(date.getTime() / 1000);
+	nft.attributes.birthday = unixTimestamp;
+	// Properties //
+	// image
+	nft.image = process.env.DEFAULT_PLACEHOLDER_URI;
+	// butthole
+	nft.butthole = process.env.DEFAULT_PLACEHOLDER_URI;
+	nft.edition = 1;
+	return nft;
+}
+
+/**
+ * @dev Create's a butthole NFT's metadata from the provided butthole data.
+ * @param butthole An object containing nft metadata.
+ */
+function createButtholeMetadata(butthole) {
+	// load default metadata.json and update default values
+	const nft = _getDefaultMetadata();
+	// update birthday
+	// https://stackoverflow.com/questions/4060004/calculate-age-given-the-birth-date-in-the-format-yyyymmdd
+	function _getAge(dateString) {
+	    var today = new Date();
+	    var birthDate = new Date(dateString);
+	    var age = today.getFullYear() - birthDate.getFullYear();
+	    var m = today.getMonth() - birthDate.getMonth();
+	    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+	        age--;
+	    }
+	    return age;
+	}
+	const date = new Date(butthole.birthday);
+	const unixTimestamp = Math.floor(date.getTime() / 1000);
+	const age = _getAge(butthole.birthday);
+	console.log(`Birthday: (${age}) ${butthole.birthday} --> ${unixTimestamp}`);
+	// update attributes
+	nft.attributes.map(a => {if (a["trait_type"] == "birthday") a["value"] = unixTimestamp });
+	nft.attributes.map(a => {if (a["trait_type"] == "level") a["value"] = age });
+	// update properties
+	nft.artist = butthole.artist;
+	nft.name = butthole.name;
+	nft.description = butthole.description;
+	nft.butthole = butthole.image;
+	return nft;
 }

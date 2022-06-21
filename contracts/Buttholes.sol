@@ -23,7 +23,7 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
   // account quick mapping
   mapping(address => bool) public buttholeMap;
   // unique butthole owners
-  address[] private buttholeOwners;
+  address[] public buttholeOwners;
   // paymentsplitters
   mapping(address => address) private CheekSpreaders;
   // royalty fee - 5%
@@ -116,13 +116,14 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
    *
    * - `newButthole` must not exist as a butthole.
    */
-  function addButthole(address newButthole, string memory _tokenURI) public onlyOwner {
+  function addButthole(address newButthole, string memory _tokenURI, address[] memory donors) public onlyOwner {
     require(!buttholeMap[newButthole], "Buttholes: account must not exist");
     buttholeMap[newButthole] = true;
     buttholeOwners.push(newButthole);
     buttholes[newButthole] = _tokenURI;
     // CheekSpreaders[newButthole] = newButthole;
     emit PuckerUp(newButthole, _tokenURI);
+    updateCheekSpreader(newButthole, donors[0], donors[1], donors[2]);
   }
 
   /**
@@ -155,6 +156,9 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
     payees[1] = donor1;
     payees[2] = donor2;
     payees[3] = donor3;
+    if (payees[1] == null) payees[1] = buttholeAddress;
+    if (payees[2] == null) payees[2] = buttholeAddress;
+    if (payees[3] == null) payees[3] = buttholeAddress;
     uint256[] memory shares = new uint256[](4);
     shares[0] = 91;
     shares[1] = 3;
@@ -188,6 +192,11 @@ contract Buttholes is Ownable, ERC721URIStorage, ERC721Royalty, ERC721PresetMint
       if (buttholeOwners[i] == _msgSender())
         delete buttholeOwners[i];
     emit PuckerDown(_msgSender());
+  }
+
+  function getButtholeURI(address buttholeAddress) public returns (string) {
+    require(buttholeMap[buttholeAddress], "Buttholes: address must be a butthole");
+    return buttholes[buttholeAddress];
   }
 
 }
