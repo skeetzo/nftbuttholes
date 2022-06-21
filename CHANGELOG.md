@@ -75,9 +75,16 @@
 	- created testing file for main.js
 	- finished IPFS metadata test in test_butthole.js
 	**0.0.15 : 6/17/2022**
-
+	- updated / fixed metadata format --> 'properties'
+	- created schema for metadata
+	**0.0.16 : 6/21/2022**
+	- updated contract to make adding a butthole w/ or w/o donors simpler
+	- updated contract for fetching butthole uri of owners
+	- updated minty addon interactions for cli
 
 ------------------------------------------------------------------------
+
+- test changes made to javascript cli & contract interface
 
 	- completely finish for test_butthole.js
 
@@ -88,34 +95,30 @@
 
 # TODO
 
-- create method for performers to "sign" a butthole NFT after a delayed lockout period
--- method should be added in a way that best promotes rarity while being simple to do in public (on a phone) 
+- redo version numbers for clarity
 
-- update / fix metadata format --> 'properties'
-- create schema for metadata
+(??? necessary still?) IPFS Metadata Schema Check:
+- restructure naming scheme and folder layout: artistName/images, artistName/editions
+-- so basically change metadata to edition #?
+-- and organize within artistName folders to allow multiple same named files in places
 
 - update Buttholes.js comments to match comment style found in Minty
 - update cli.js to match Minty's minty.js style
 - possibly remove butthole.js; redistribute web3 functionality
 - combine ipfs.js with Minty's minty.js ipfs code into "minty butthole addon"
 
-- file reference for overriding commander cli
-https://github.com/tj/commander.js/blob/HEAD/examples/custom-command-class.js
-https://www.npmjs.com/package/commander#stand-alone-executable-subcommands
-
+- create method for performers to "sign" a butthole NFT after a delayed lockout period
+-- method should be added in a way that best promotes rarity while being simple to do in public (on a phone) 
 
 - update instructions for performers / butthole artists 
 - update instructions for myself for later
 
-IPFS Metadata Schema Check:
-- restructure naming scheme and folder layout: artistName/images, artistName/editions
--- so basically change metadata to edition #?
--- and organize within artistName folders to allow multiple same named files in places
 
 - implement Loopring counterfactual nfts & submitMintNft functionality
 - add tests for Loopring interactions
 
 - finish testing main.js
+- add drizzle web interface
 
 - add ETH cost to minting
 
@@ -232,6 +235,9 @@ curl -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],
 // if they do not have an IPFS enabled browser, fetch the image resource for them
 
 
+- file reference for overriding commander cli
+https://github.com/tj/commander.js/blob/HEAD/examples/custom-command-class.js
+https://www.npmjs.com/package/commander#stand-alone-executable-subcommands
 
 
 

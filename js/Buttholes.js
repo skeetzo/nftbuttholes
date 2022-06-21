@@ -66,6 +66,28 @@ async function confirm(Buttholes) {
 	return true;
 };
 
+async function getButtholeOwners() {
+	try {
+		return await Buttholes.buttholeOwners();
+	}
+	catch (err) {
+		console.warn("Unable to get butthole owners!");
+		_catchRevert(err);
+	}
+	return [];
+}
+
+async function getButtholeURI(Buttholes, address) {
+	try {
+		return await Buttholes.getButtholeURI(address);
+	}
+	catch (err) {
+		console.warn("Unable to get butthole owners!");
+		_catchRevert(err);
+	}
+	return null;
+}
+
 /**
  * @dev Check if address has admin role.
  * @param address The address to check.
@@ -204,6 +226,8 @@ async function renounce(Buttholes) {
 module.exports = {
 	add,
 	confirm,
+	getButtholeOwners,
+	getButtholeURI,
 	isAdmin,
 	isMinter,
 	update,
