@@ -1,12 +1,13 @@
 const commander = require('commander'),
 	  Command = commander.Command;
+const path = require('path');
 
 const { add, confirm, getButthole, mint, update, renounce } = require('./butthole.js');
 
 // TODO
 // this will totally not work
 // figure out how to require the helpers correctly or move them to minty
-const { MakeMinty, mintyHelpers } = require('minty-fresh');
+const { MakeMinty } = require('minty-fresh');
 const CONTRACT_NAME = "Buttholes";
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -69,6 +70,9 @@ Example call:
 	  .description('Renounce your butthole. You can only renounce your own butthole.')
 	  .action(renounce);
 
+	const rootDir = path.join(__dirname, '..');
+	process.chdir(rootDir);
+
 	return program;
 }
 module.exports = main;
@@ -86,7 +90,7 @@ async function addButthole(artist, image, options) {
 	const butthole = await promptNFTMetadata(schema, options);
     await add(butthole);
     console.log('🌿 Added a new butthole: ');
-    mintyHelpers.alignOutput(
+    alignOutput(
         ['Contract Name:', chalk.green(minty.name)],
         ['Contract Address:', chalk.yellow(minty.contract.address)],
         ['Butthole Artist:', chalk.green(artist)],
@@ -104,7 +108,7 @@ async function mintButthole(options) {
     const nft = await minty.createNFT(options);
     await mint(options.address, nft.metadataURI);
     console.log('🌿 Minted a new butthole: ');
-    mintyHelpers.alignOutput(
+    alignOutput(
         ['Contract Name:', chalk.green(minty.name)],
         ['Contract Address:', chalk.yellow(minty.contract.address)],
         ['Token ID:', chalk.green(nft.tokenId)],
@@ -123,6 +127,10 @@ async function mintButthole(options) {
 function parseAddress(value) {
 	if (!ethers.utils.isAddress(value))
 	    throw new commander.InvalidArgumentError('Not an ETH address.');
+	return value;
+}
+
+function parseId(value) {
 	return value;
 }
 
@@ -157,6 +165,15 @@ function isValidDate(dateString) {
 
     // Check the range of the day
     return day > 0 && day <= monthLength[month - 1];
+}
+
+function alignOutput(labelValuePairs) {
+    const maxLabelLength = labelValuePairs
+      .map(([l, _]) => l.length)
+      .reduce((len, max) => len > max ? len : max);
+    for (const [label, value] of labelValuePairs) {
+        console.log(label.padEnd(maxLabelLength+1), value);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

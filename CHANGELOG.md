@@ -70,61 +70,56 @@
 	- added test file for js/main.js
 	- added tests for birthday date string & eth address validation
 	- almost completed test/butthole.js tests
-**0.0.14 : 5/13/2022**
+	**0.0.14 : 5/13/2022**
 	- mostly finished testing test/test_butthole.js
 	- created testing file for main.js
 	- finished IPFS metadata test in test_butthole.js
 	**0.0.15 : 6/17/2022**
 	- updated / fixed metadata format --> 'properties'
 	- created schema for metadata
-	**0.0.16 : 6/21/2022**
+**0.0.16 : 6/21/2022**
 	- updated contract to make adding a butthole w/ or w/o donors simpler
 	- updated contract for fetching butthole uri of owners
 	- updated minty addon interactions for cli
+**0.0.17 : 7/22/2022**
+	- updated Buttholes.js comments to match comment style found in Minty
+	- updated cli.js to match Minty's minty.js style
+	- combined ipfs.js with Minty's minty.js ipfs code into "minty butthole addon" -> remove current ipfs
+	- updated / tested basic minty addon interaction
 
 ------------------------------------------------------------------------
 
-- test changes made to javascript cli & contract interface
-
-	- completely finish for test_butthole.js
-
-	- finish testing contract web interface buttons
-	- finish IPFS interaction in butthole.js that requires updated naming scheme
-	- finish testing loading IPFS images
-
-
 # TODO
 
-- redo version numbers for clarity
-
-(??? necessary still?) IPFS Metadata Schema Check:
+IPFS Metadata Schema Check: double check long term metadata storage layout
 - restructure naming scheme and folder layout: artistName/images, artistName/editions
 -- so basically change metadata to edition #?
 -- and organize within artistName folders to allow multiple same named files in places
-
-- update Buttholes.js comments to match comment style found in Minty
-- update cli.js to match Minty's minty.js style
-- possibly remove butthole.js; redistribute web3 functionality
-- combine ipfs.js with Minty's minty.js ipfs code into "minty butthole addon"
-
-- create method for performers to "sign" a butthole NFT after a delayed lockout period
--- method should be added in a way that best promotes rarity while being simple to do in public (on a phone) 
-
-- update instructions for performers / butthole artists 
-- update instructions for myself for later
-
+- finish IPFS interaction in butthole.js that requires updated naming scheme
 
 - implement Loopring counterfactual nfts & submitMintNft functionality
 - add tests for Loopring interactions
 
-- finish testing main.js
-- add drizzle web interface
-
 - add ETH cost to minting
+- test added ETH costs for minting
 
-- actually test new cheekspreader interaction w/ royalties
+- add drizzle web interface
+- finish testing main.js w/ added drizzle interface
+
+- test all changes made to javascript cli & contract interface
+- completely finish all major changes and rerun tests for test_butthole.js
+- test cheekspreader interactions w/ royalties
 - write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
+- finish testing contract web interface buttons
+- finish testing loading IPFS images
 
+- create method for performers to "sign" or "endorse" a butthole NFT after a delayed lockout period
+-- method should be added in a way that best promotes rarity while being simple to do in public (on a phone)
+-- or signature method should be an overlap from PleasurePalace 
+
+- redo version numbers for clarity
+- [anytime before live] update instructions for performers / butthole artists 
+- [anytime before live] update instructions for myself for later
 - [later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
 - [after release] add final address of contract on mainnet to etherscan links in docs
 - [much later] implement decentraland metaverse gallery
