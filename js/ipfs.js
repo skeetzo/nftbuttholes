@@ -257,8 +257,8 @@ async function uploadButtholeMetadata(butthole) {
 	try {
 		const { cid: cid } = await IPFS.add(file);
 		console.log("Successfully added metadata to IPFS: %s", cid);
-		await IPFS.files.write(`${IPFS_METADATA}/${butthole.name}-${butthole.edition}.json`, JSON.stringify(butthole), FILE_OPTIONS);
-		console.log("Successfully wrote metadata to IPFS: %s", butthole.name);
+		await IPFS.files.write(file.path, JSON.stringify(butthole), FILE_OPTIONS);
+		console.log("Successfully wrote metadata to IPFS: %s", file.name);
 		return cid.toString();
 	}
 	catch (err) {_ipfsError(err);}
