@@ -94,6 +94,8 @@
 
 # TODO
 
+- clean up .env history
+- add git branches for staging & production
 - finish long-term plan for how this project is going to work while shooting scenes
 - finish writing & testing multiple butthole contract copies
 
