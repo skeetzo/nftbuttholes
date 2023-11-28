@@ -94,6 +94,9 @@
 
 # TODO
 
+- finish long-term plan for how this project is going to work while shooting scenes
+- finish writing & testing multiple butthole contract copies
+
 - finish removing ipfs
 - clean package.json (if necessary)
 
@@ -103,6 +106,9 @@
 - store butthole jpeg on blockchain
 - add ETH purchase cost to minting
 - test added ETH costs for minting
+- write new tests for new Butthole smart contract
+- write / update tests for PaymentSplitter 
+
 
 (interface)
 - add drizzle web interface
@@ -112,6 +118,8 @@
 - test all changes made to javascript cli & contract interface
 - completely finish all major changes and rerun tests for test_butthole.js
 - finish testing contract web interface buttons (after drizzle update)
+- write tests for updated smart contracts
+
 
 (staging)
 - update instructions for performers / butthole artists 

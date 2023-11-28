@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Contracts v4.4.1 (finance/PaymentSplitPusher.sol)
 
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 
 /**
- * @title CheekSpreader
+ * @title PaymentSplitter
  * @dev This contract allows to split Ether payments among a group of accounts. The sender does not need to be aware
  * that the Ether will be split in this way, since it is handled transparently by the contract.
  *
@@ -16,7 +16,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
  * account to a number of shares. Of all the Ether that this contract receives, each account will then be able to claim
  * an amount proportional to the percentage of total shares they were assigned.
  *
- * `CheekSpreader` follows a _pull payment_ model. This means that payments are not automatically forwarded to the
+ * `PaymentSplitter` follows a _pull payment_ model. This means that payments are not automatically forwarded to the
  * accounts but kept in this contract, and the actual transfer is triggered as a separate step by calling the {release}
  * function.
  *
@@ -24,7 +24,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
  * tokens that apply fees during transfers, are likely to not be supported as expected. If in doubt, we encourage you
  * to run tests before sending real value to this contract.
  */
-contract CheekSpreader is Context {
+contract PaymentSplitter is Context {
     event PayeeAdded(address account, uint256 shares);
     event PaymentReleased(address to, uint256 amount);
     event ERC20PaymentReleased(IERC20 indexed token, address to, uint256 amount);
@@ -41,15 +41,15 @@ contract CheekSpreader is Context {
     mapping(IERC20 => mapping(address => uint256)) private _erc20Released;
 
     /**
-     * @dev Creates an instance of `CheekSpreader` where each account in `payees` is assigned the number of shares at
+     * @dev Creates an instance of `PaymentSplitter` where each account in `payees` is assigned the number of shares at
      * the matching position in the `shares` array.
      *
      * All addresses in `payees` must be non-zero. Both arrays must have the same non-zero length, and there must be no
      * duplicates in `payees`.
      */
     constructor(address[] memory payees, uint256[] memory shares_) payable {
-        require(payees.length == shares_.length, "CheekSpreader: payees and shares length mismatch");
-        require(payees.length > 0, "CheekSpreader: no payees");
+        require(payees.length == shares_.length, "PaymentSplitter: payees and shares length mismatch");
+        require(payees.length > 0, "PaymentSplitter: no payees");
 
         for (uint256 i = 0; i < payees.length; i++) {
             _addPayee(payees[i], shares_[i]);
@@ -125,12 +125,12 @@ contract CheekSpreader is Context {
      * total shares and their previous withdrawals.
      */
     function release(address payable account) internal virtual {
-        require(_shares[account] > 0, "CheekSpreader: account has no shares");
+        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
 
         uint256 totalReceived = address(this).balance + totalReleased();
         uint256 payment = _pendingPayment(account, totalReceived, released(account));
 
-        require(payment != 0, "CheekSpreader: account is not due payment");
+        require(payment != 0, "PaymentSplitter: account is not due payment");
 
         _released[account] += payment;
         _totalReleased += payment;
@@ -145,12 +145,12 @@ contract CheekSpreader is Context {
      * contract.
      */
     function release(IERC20 token, address account) internal virtual {
-        require(_shares[account] > 0, "CheekSpreader: account has no shares");
+        require(_shares[account] > 0, "PaymentSplitter: account has no shares");
 
         uint256 totalReceived = token.balanceOf(address(this)) + totalReleased(token);
         uint256 payment = _pendingPayment(account, totalReceived, released(token, account));
 
-        require(payment != 0, "CheekSpreader: account is not due payment");
+        require(payment != 0, "PaymentSplitter: account is not due payment");
 
         _erc20Released[token][account] += payment;
         _erc20TotalReleased[token] += payment;
@@ -177,9 +177,9 @@ contract CheekSpreader is Context {
      * @param shares_ The number of shares owned by the payee.
      */
     function _addPayee(address account, uint256 shares_) private {
-        require(account != address(0), "CheekSpreader: account is the zero address");
-        require(shares_ > 0, "CheekSpreader: shares are 0");
-        require(_shares[account] == 0, "CheekSpreader: account already has shares");
+        require(account != address(0), "PaymentSplitter: account is the zero address");
+        require(shares_ > 0, "PaymentSplitter: shares are 0");
+        require(_shares[account] == 0, "PaymentSplitter: account already has shares");
 
         _payees.push(account);
         _shares[account] = shares_;
@@ -195,13 +195,27 @@ contract CheekSpreader is Context {
     * @dev Triggers a transfer to all accounts of the amount of Ether they are owed, according to their percentage of the
     * total shares and their previous withdrawals.
     */
-    function releaseAll() public {
+    function releaseEthereum() public {
       for (uint i=0;i<_payees.length;i++) {
         if (_shares[_payees[i]] == 0) continue;
           uint256 totalReceived = address(this).balance + totalReleased();
           uint256 payment = _pendingPayment(_payees[i], totalReceived, released(_payees[i]));
         if (payment != 0)
           release(payable(_payees[i]));
+      }
+    }
+
+    /**
+    * @dev Triggers a transfer to all accounts of the amount of tokens they are owed, according to their percentage of the
+    * total shares and their previous withdrawals.
+    */
+    function releaseTokens(IERC20 token) public {
+      for (uint i=0;i<_payees.length;i++) {
+        if (_shares[_payees[i]] == 0) continue;
+          uint256 totalReceived = address(this).balance + totalReleased(token);
+          uint256 payment = _pendingPayment(_payees[i], totalReceived, released(token, _payees[i]));
+        if (payment != 0)
+          release(token, payable(_payees[i]));
       }
     }
     
