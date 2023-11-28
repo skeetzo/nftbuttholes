@@ -89,16 +89,20 @@
 **0.0.18 : 11-27-2023**
 - project revisit / cleanup
 - moved excess parts to /notes/old
+**ARCHIVING : 11-28-2023**
+- end of project --> do something else instead of only buttholes
+- cleaned up .env history
+- finish long-term plan for how this project is going to work while shooting scenes (hint: it's not)
 
 ------------------------------------------------------------------------
 
-# TODO
+# TODO (ARCHIVED)
 
-- clean up .env history
+(cleanup)
 - add git branches for staging & production
-- finish long-term plan for how this project is going to work while shooting scenes
 - finish writing & testing multiple butthole contract copies
-
+- reorg js/ into actual scripts
+- separate web component from js/
 - finish removing ipfs
 - clean package.json (if necessary)
 
@@ -111,7 +115,6 @@
 - write new tests for new Butthole smart contract
 - write / update tests for PaymentSplitter 
 
-
 (interface)
 - add drizzle web interface
 - finish testing main.js w/ added drizzle interface
@@ -121,7 +124,6 @@
 - completely finish all major changes and rerun tests for test_butthole.js
 - finish testing contract web interface buttons (after drizzle update)
 - write tests for updated smart contracts
-
 
 (staging)
 - update instructions for performers / butthole artists 
