@@ -77,52 +77,54 @@
 	**0.0.15 : 6/17/2022**
 	- updated / fixed metadata format --> 'properties'
 	- created schema for metadata
-**0.0.16 : 6/21/2022**
+	**0.0.16 : 6/21/2022**
 	- updated contract to make adding a butthole w/ or w/o donors simpler
 	- updated contract for fetching butthole uri of owners
 	- updated minty addon interactions for cli
-**0.0.17 : 7/22/2022**
+	**0.0.17 : 7/22/2022**
 	- updated Buttholes.js comments to match comment style found in Minty
 	- updated cli.js to match Minty's minty.js style
 	- combined ipfs.js with Minty's minty.js ipfs code into "minty butthole addon" -> remove current ipfs
 	- updated / tested basic minty addon interaction
+**0.0.18 : 11-27-2023**
+- project revisit / cleanup
+- moved excess parts to /notes/old
 
 ------------------------------------------------------------------------
 
 # TODO
 
-IPFS Metadata Schema Check: double check long term metadata storage layout
-- restructure naming scheme and folder layout: artistName/images, artistName/editions
--- so basically change metadata to edition #?
--- and organize within artistName folders to allow multiple same named files in places
-- finish IPFS interaction in butthole.js that requires updated naming scheme
+- finish removing ipfs
+- clean package.json (if necessary)
 
-- implement Loopring counterfactual nfts & submitMintNft functionality
-- add tests for Loopring interactions
-
-- add ETH cost to minting
+(smart contract)
+- rewrite main smart contract to be super simple ERC-721 --> 1 deployed per butthole
+- include PaymentSplitter in royalty process
+- store butthole jpeg on blockchain
+- add ETH purchase cost to minting
 - test added ETH costs for minting
 
+(interface)
 - add drizzle web interface
 - finish testing main.js w/ added drizzle interface
 
+(testing)
 - test all changes made to javascript cli & contract interface
 - completely finish all major changes and rerun tests for test_butthole.js
-- test cheekspreader interactions w/ royalties
-- write better tests for CheekSpreader even though it totally already works fine (totally, yeah, sure)
-- finish testing contract web interface buttons
-- finish testing loading IPFS images
+- finish testing contract web interface buttons (after drizzle update)
 
-- create method for performers to "sign" or "endorse" a butthole NFT after a delayed lockout period
--- method should be added in a way that best promotes rarity while being simple to do in public (on a phone)
--- or signature method should be an overlap from PleasurePalace 
+(staging)
+- update instructions for performers / butthole artists 
+- update instructions for myself for later
 
-- redo version numbers for clarity
-- [anytime before live] update instructions for performers / butthole artists 
-- [anytime before live] update instructions for myself for later
-- [later] update contract to use 1 total CheekSpreader.sol for each NFT instead of individual contracts
-- [after release] add final address of contract on mainnet to etherscan links in docs
-- [much later] implement decentraland metaverse gallery
+(production)
+- add final address of contract on mainnet to etherscan links in docs
+- verify smart contract on etherscan
+
+(loopring)
+is this even possible? or helpful?
+- implement Loopring counterfactual nfts & submitMintNft functionality
+- add tests for Loopring interactions
 
 # Dev
 
@@ -192,67 +194,14 @@ https://github.com/ethers-io/ethers.js/discussions/2439
 https://www.npmjs.com/package/http-server
 
 
-# Addresses
-
-Ukraine Government:
-0x165CD37b4C644C2921454429E7F9358d18A45e14
-
-https://www.actionagainsthunger.org/story/donate-crypto
-Action Against Hunger USA
-0xC7c3A15b7e5C1f121fE09064f6eCe9aBF87Bbd8c
-
-https://internationalmedicalcorps.org/get-involved/other-ways-to-give/donatebitcoin/
-International Medical Corps
-0x5F08845e53Ba171B7a782D0CdEA96Ab720426260
-
 # Scraps
 
 browserify js/main.js -o js/bundle.js
 
-Date Traits
-OpenSea also supports a date display_type. Traits of this type will appear in the right column near "Rankings" and "Stats." Pass in a unix timestamp (seconds) as the value.
-
-    {
-      "display_type": "date", 
-      "trait_type": "birthday", 
-      "value": 1546360800
-    }
-
-
 curl -X POST --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":67}' localhost:8545
-
-
-
-
-// if they have an IPFS enabled browser, return
-// <!-- <img src="https://ipfs.infura.io:5001/api/v0/cat/QmQuTjzy8aZyYqYRyH7UdE5qcDXTxLFYEE9GKNhPY6D6K1"> -->
-
-// if they do not have an IPFS enabled browser, fetch the image resource for them
 
 
 - file reference for overriding commander cli
 https://github.com/tj/commander.js/blob/HEAD/examples/custom-command-class.js
 https://www.npmjs.com/package/commander#stand-alone-executable-subcommands
 
-
-
-
-
-
-Metadata Layout
-
-Butthole jpeg on IPFS --> bCID
-bCID stored in smart contract for each performer --> buttholes mapping address -> string
-
-minting process unaffected by chance --> mint any butthole by request or randomly
-value of buttholes: signed by performers
-
-erc721 mint(to, templateURI) --> creates token for to, templateURI points to template for butthole nft at ipfs url in buttholes mapping
-
-added process: "sign" --> copies the template at the tokenURI, creates new ipfs entry for "signed" token, updates values of token in ipfs
-
-
-- only I can upload buttholes for each performer
-- performers can each update their starving artists anytime
-- performers cannot update an existing butthole
-- performers may renounce their butthole template at anytime
