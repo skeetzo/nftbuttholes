@@ -1,10 +1,12 @@
-
 require('dotenv').config();
+
+const path = require("path");
 // const web3 = require('web3');
 // const HDWalletProvider = require('@truffle/hdwallet-provider')
 // if (typeof process.env.MNEMONIC === 'undefined') throw new Error(`MNEMONIC has not been set.`);
 
 module.exports = {
+  contracts_build_directory: path.join(__dirname, "client/src/contracts"),
 
   networks: {
     development: {
